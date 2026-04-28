@@ -1,11 +1,11 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+import datetime
 import os
-from datetime import datetime
 
 app = FastAPI()
 
-# CORS (per Shopify)
+# CORS (fondamentale per Shopify)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -13,16 +13,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# cartella storage locale (MVP)
-UPLOAD_DIR = "data"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-
-def genera_token(order_id: str):
-    year = datetime.now().year
-    return f"RACC-{year}-{order_id}"
-
 
 @app.get("/")
 def home():
@@ -35,31 +25,35 @@ async def crea_raccomandata(
     mittente: str = Form(...),
     destinatario: str = Form(...),
     testo: str = Form(None),
-    file: UploadFile = File(None),
+    file: UploadFile = File(None)
 ):
-    token = genera_token(order_id)
+    try:
+        anno = datetime.datetime.now().year
 
-    record = {
-        "token": token,
-        "order_id": order_id,
-        "mittente": mittente,
-        "destinatario": destinatario,
-        "testo": testo,
-        "file": None
-    }
+        token = f"RACC-{anno}-{order_id}"
 
-    # salva PDF se presente
-    if file:
-        file_path = f"{UPLOAD_DIR}/{token}_{file.filename}"
-        with open(file_path, "wb") as f:
-            f.write(await file.read())
-        record["file"] = file_path
+        # SALVATAGGIO BASE (MVP)
+        os.makedirs("data", exist_ok=True)
 
-    # salva record semplice (MVP)
-    with open(f"{UPLOAD_DIR}/{token}.txt", "w") as f:
-        f.write(str(record))
+        with open(f"data/{token}.txt", "w") as f:
+            f.write(f"MITTENTE: {mittente}\n")
+            f.write(f"DESTINATARIO: {destinatario}\n\n")
+            if testo:
+                f.write("TESTO:\n" + testo)
 
-    return {
-        "success": True,
-        "token": token
-    }
+        # Se file PDF
+        if file:
+            contents = await file.read()
+            with open(f"data/{token}.pdf", "wb") as f:
+                f.write(contents)
+
+        return {
+            "success": True,
+            "token": token
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
