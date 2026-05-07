@@ -103,4 +103,21 @@ async def crea_raccomandata(
             "success": False,
             "error": str(e)
         }
-                }
+
+@app.get("/raccomandata/{token}/pdf")
+async def scarica_pdf(token: str):
+    pdf_path = f"data/{token}/documento.pdf"
+
+    if not os.path.exists(pdf_path):
+        return {
+            "success": False,
+            "error": "PDF non trovato"
+        }
+
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=f"{token}.pdf"
+    )
+
+                
