@@ -115,7 +115,8 @@ async def crea_raccomandata(
         with open(f"{pratica_dir}/pratica.txt", "w", encoding="utf-8") as f:
             f.write(f"TOKEN: {token}\n")
             f.write(f"DATA CREAZIONE: {timestamp}\n")
-            f.write(f"ORDER ID: {order_id}\n\n")
+            f.write(f"ORDER ID: {order_id}\n")
+            f.write("STATO: RICEVUTA\n\n")
             f.write(f"METODO: {metodo}\n")
             f.write(f"OGGETTO: {oggetto}\n")
             f.write(f"PAGINE: {pagine}\n")
