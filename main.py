@@ -4,10 +4,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
+from supabase import create_client
 import datetime
 import os
 
 app = FastAPI()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "eccomi-posta")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 app.add_middleware(
     CORSMiddleware,
@@ -148,12 +155,27 @@ async def crea_raccomandata(
             )
             pdf_saved = True
 
-        return {
-            "success": True,
-            "token": token,
-            "pdf_saved": pdf_saved,
-            "folder": pratica_dir
+        storage_path = f"raccomandate/{token}/documento.pdf"
+
+with open(pdf_path, "rb") as f:
+    supabase.storage.from_(SUPABASE_BUCKET).upload(
+        path=storage_path,
+        file=f,
+        file_options={
+            "content-type": "application/pdf",
+            "upsert": "true"
         }
+    )
+
+pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(storage_path)
+
+        return {
+    "success": True,
+    "token": token,
+    "pdf_saved": pdf_saved,
+    "folder": pratica_dir,
+    "pdf_url": pdf_url
+}
 
     except Exception as e:
         return {"success": False, "error": str(e)}
