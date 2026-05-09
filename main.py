@@ -24,6 +24,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/")
 def home():
     return {"status": "Eccomi Posta Backend OK 🚀"}
@@ -36,15 +37,18 @@ def genera_pdf_da_testo(pdf_path, mittente, destinatario, oggetto, testo, firma)
 
     def draw_wrapped(text, x, y, max_width, size=11, font="Times-Roman", line_height=0.55 * cm):
         c.setFont(font, size)
+
         for raw_line in (text or "").split("\n"):
             words = raw_line.split()
             line = ""
+
             if not words:
                 y -= line_height
                 continue
 
             for word in words:
                 test = f"{line} {word}".strip()
+
                 if c.stringWidth(test, font, size) <= max_width:
                     line = test
                 else:
@@ -63,11 +67,10 @@ def genera_pdf_da_testo(pdf_path, mittente, destinatario, oggetto, testo, firma)
 
         return y
 
-    c.setFont("Times-Roman", 11)
-
     y = draw_wrapped(mittente, 2 * cm, y, width - 4 * cm, 11)
     y -= 0.5 * cm
 
+    c.setFont("Times-Roman", 11)
     c.drawRightString(width - 2 * cm, y, datetime.datetime.now().strftime("%d/%m/%Y"))
     y -= 1.2 * cm
 
@@ -82,6 +85,7 @@ def genera_pdf_da_testo(pdf_path, mittente, destinatario, oggetto, testo, firma)
     y = draw_wrapped(testo, 2 * cm, y, width - 4 * cm, 11)
 
     y -= 1 * cm
+
     if y < 4 * cm:
         c.showPage()
         y = height - 2 * cm
@@ -108,7 +112,7 @@ async def crea_raccomandata(
     pagine: str = Form(None),
     ricevuta_ritorno: str = Form(None),
     metodo: str = Form(None),
-    file: UploadFile = File(None)
+    file: UploadFile = File(None),
 ):
     try:
         now = datetime.datetime.now()
@@ -119,25 +123,30 @@ async def crea_raccomandata(
         pratica_dir = f"data/{token}"
         os.makedirs(pratica_dir, exist_ok=True)
 
-        with open(f"{pratica_dir}/pratica.txt", "w", encoding="utf-8") as f:
+        pratica_path = f"{pratica_dir}/pratica.txt"
+        pdf_path = f"{pratica_dir}/documento.pdf"
+
+        with open(pratica_path, "w", encoding="utf-8") as f:
             f.write(f"TOKEN: {token}\n")
             f.write(f"DATA CREAZIONE: {timestamp}\n")
             f.write(f"ORDER ID: {order_id}\n")
             f.write("STATO: RICEVUTA\n\n")
+
             f.write(f"METODO: {metodo}\n")
             f.write(f"OGGETTO: {oggetto}\n")
             f.write(f"PAGINE: {pagine}\n")
             f.write(f"RICEVUTA DI RITORNO: {ricevuta_ritorno}\n")
             f.write(f"FIRMA: {firma}\n\n")
+
             f.write("MITTENTE:\n")
             f.write(f"{mittente}\n\n")
+
             f.write("DESTINATARIO:\n")
             f.write(f"{destinatario}\n\n")
-                        if testo:
+
+            if testo:
                 f.write("TESTO RACCOMANDATA:\n")
                 f.write(testo)
-
-        pdf_path = f"{pratica_dir}/documento.pdf"
 
         if file:
             contents = await file.read()
@@ -151,11 +160,10 @@ async def crea_raccomandata(
                 destinatario=destinatario,
                 oggetto=oggetto,
                 testo=testo or "",
-                firma=firma or ""
+                firma=firma or "",
             )
             pdf_saved = True
 
-        # UPLOAD PDF SU SUPABASE
         storage_path = f"raccomandate/{token}/documento.pdf"
 
         with open(pdf_path, "rb") as f:
@@ -164,8 +172,8 @@ async def crea_raccomandata(
                 file=f,
                 file_options={
                     "content-type": "application/pdf",
-                    "upsert": "true"
-                }
+                    "upsert": "true",
+                },
             )
 
         pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(storage_path)
@@ -175,7 +183,7 @@ async def crea_raccomandata(
             "token": token,
             "pdf_saved": pdf_saved,
             "folder": pratica_dir,
-            "pdf_url": pdf_url
+            "pdf_url": pdf_url,
         }
 
     except Exception as e:
@@ -192,5 +200,5 @@ async def scarica_pdf(token: str):
     return FileResponse(
         pdf_path,
         media_type="application/pdf",
-        filename=f"{token}.pdf"
+        filename=f"{token}.pdf",
     )
