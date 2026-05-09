@@ -1,3 +1,6 @@
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,10 +49,12 @@ def test_poste_h2h():
     try:
         session = Session()
 
-        session.auth = HTTPBasicAuth(
-            POSTE_H2H_USERID,
-            POSTE_H2H_PASSWORD
-        )
+session.auth = HTTPBasicAuth(
+    POSTE_H2H_USERID,
+    POSTE_H2H_PASSWORD
+)
+
+session.verify = False
 
         transport = Transport(
             session=session,
