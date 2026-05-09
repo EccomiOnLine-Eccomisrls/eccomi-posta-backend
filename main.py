@@ -30,13 +30,46 @@ def home():
     return {"status": "Eccomi Posta Backend OK 🚀"}
 
 
+def format_indirizzo_blocco(testo):
+    testo = testo or ""
+
+    if " - " in testo:
+        nome, resto = testo.split(" - ", 1)
+    else:
+        nome, resto = testo, ""
+
+    via = resto
+    cap_citta = ""
+
+    if "," in resto:
+        via, cap_citta = resto.split(",", 1)
+
+    return [
+        nome.strip(),
+        via.strip(),
+        cap_citta.strip()
+    ]
+
+
 def genera_pdf_da_testo(pdf_path, mittente, destinatario, oggetto, testo, firma):
     c = canvas.Canvas(pdf_path, pagesize=A4)
     width, height = A4
-    y = height - 2 * cm
 
-    def draw_wrapped(text, x, y, max_width, size=11, font="Times-Roman", line_height=0.55 * cm):
-        c.setFont(font, size)
+    left = 2.7 * cm
+    right = width - 2.7 * cm
+    y = height - 2.8 * cm
+
+    def draw_lines(lines, x, y, size=10.5, bold_first=True):
+        for i, line in enumerate(lines):
+            if not line:
+                continue
+            c.setFont("Times-Bold" if i == 0 and bold_first else "Times-Roman", size)
+            c.drawString(x, y, line)
+            y -= 0.48 * cm
+        return y
+
+    def draw_wrapped(text, x, y, max_width, size=11, line_height=0.62 * cm):
+        c.setFont("Times-Roman", size)
 
         for raw_line in (text or "").split("\n"):
             words = raw_line.split()
@@ -49,17 +82,17 @@ def genera_pdf_da_testo(pdf_path, mittente, destinatario, oggetto, testo, firma)
             for word in words:
                 test = f"{line} {word}".strip()
 
-                if c.stringWidth(test, font, size) <= max_width:
+                if c.stringWidth(test, "Times-Roman", size) <= max_width:
                     line = test
                 else:
                     c.drawString(x, y, line)
                     y -= line_height
                     line = word
 
-                    if y < 2.5 * cm:
+                    if y < 3 * cm:
                         c.showPage()
-                        y = height - 2 * cm
-                        c.setFont(font, size)
+                        y = height - 2.8 * cm
+                        c.setFont("Times-Roman", size)
 
             if line:
                 c.drawString(x, y, line)
@@ -67,36 +100,51 @@ def genera_pdf_da_testo(pdf_path, mittente, destinatario, oggetto, testo, firma)
 
         return y
 
-    y = draw_wrapped(mittente, 2 * cm, y, width - 4 * cm, 11)
-    y -= 0.5 * cm
+    # MITTENTE
+    y = draw_lines(format_indirizzo_blocco(mittente), left, y, size=10.5)
+    y -= 1.0 * cm
 
-    c.setFont("Times-Roman", 11)
-    c.drawRightString(width - 2 * cm, y, datetime.datetime.now().strftime("%d/%m/%Y"))
-    y -= 1.2 * cm
+    # DATA
+    c.setFont("Times-Roman", 10.5)
+    c.drawRightString(right, y, f"Roma, {datetime.datetime.now().strftime('%d/%m/%Y')}")
+    y -= 1.5 * cm
 
-    y = draw_wrapped(destinatario, 2 * cm, y, width - 4 * cm, 11)
-    y -= 0.8 * cm
+    # DESTINATARIO
+    y = draw_lines(format_indirizzo_blocco(destinatario), left, y, size=10.5)
+    y -= 1.0 * cm
 
+    # OGGETTO
     if oggetto:
-        c.setFont("Times-Bold", 12)
-        c.drawString(2 * cm, y, f"Oggetto: {oggetto}")
-        y -= 1 * cm
-
-    y = draw_wrapped(testo, 2 * cm, y, width - 4 * cm, 11)
-
-    y -= 1 * cm
-
-    if y < 4 * cm:
-        c.showPage()
-        y = height - 2 * cm
-
-    if firma:
+        c.setFont("Times-Bold", 11)
+        c.drawString(left, y, "OGGETTO:")
         c.setFont("Times-Roman", 11)
-        c.drawRightString(width - 2 * cm, y, "Distinti saluti")
+        c.drawString(left + 2.5 * cm, y, oggetto.upper())
         y -= 1.2 * cm
 
-        c.setFont("Times-Italic", 14)
-        c.drawRightString(width - 2 * cm, y, firma)
+    # TESTO
+    y = draw_wrapped(
+        testo or "",
+        left,
+        y,
+        right - left,
+        size=10.8,
+        line_height=0.68 * cm
+    )
+
+    # FIRMA
+    y -= 1.2 * cm
+
+    if y < 5 * cm:
+        c.showPage()
+        y = height - 2.8 * cm
+
+    c.setFont("Times-Roman", 10.5)
+    c.drawRightString(right, y, "Distinti saluti")
+    y -= 0.7 * cm
+
+    if firma:
+        c.setFont("Times-Italic", 13)
+        c.drawRightString(right, y, firma)
 
     c.save()
 
