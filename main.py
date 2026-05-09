@@ -128,6 +128,43 @@ def poste_operations():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/types")
+def poste_types():
+    try:
+        session = Session()
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_USERID,
+            POSTE_H2H_PASSWORD
+        )
+        session.verify = False
+
+        transport = Transport(
+            session=session,
+            timeout=30
+        )
+
+        client = Client(
+            wsdl=POSTE_H2H_ROL_WSDL,
+            transport=transport
+        )
+
+        richiesta_type = client.get_type("ns1:Richiesta")
+        documento_type = client.get_type("ns1:Documento")
+        inviodoc_result_type = client.get_type("ns0:InvioDocResult")
+
+        return {
+            "success": True,
+            "Richiesta": str(richiesta_type),
+            "Documento": str(documento_type),
+            "InvioDocResult": str(inviodoc_result_type)
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 def format_indirizzo_blocco(testo):
     testo = testo or ""
