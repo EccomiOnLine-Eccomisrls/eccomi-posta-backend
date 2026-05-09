@@ -49,12 +49,12 @@ def test_poste_h2h():
     try:
         session = Session()
 
-session.auth = HTTPBasicAuth(
-    POSTE_H2H_USERID,
-    POSTE_H2H_PASSWORD
-)
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_USERID,
+            POSTE_H2H_PASSWORD
+        )
 
-session.verify = False
+        session.verify = False
 
         transport = Transport(
             session=session,
@@ -70,9 +70,7 @@ session.verify = False
 
         for service in client.wsdl.services.values():
             for port in service.ports.values():
-                operations.extend(
-                    list(port.binding._operations.keys())
-                )
+                operations.extend(list(port.binding._operations.keys()))
 
         return {
             "success": True,
