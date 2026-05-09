@@ -137,7 +137,7 @@ async def crea_raccomandata(
                 f.write("TESTO RACCOMANDATA:\n")
                 f.write(testo)
 
-        pdf_path = f"{pratica_dir}/documento.pdf"
+                pdf_path = f"{pratica_dir}/documento.pdf"
 
         if file:
             contents = await file.read()
@@ -155,27 +155,28 @@ async def crea_raccomandata(
             )
             pdf_saved = True
 
+        # UPLOAD PDF SU SUPABASE
         storage_path = f"raccomandate/{token}/documento.pdf"
 
-with open(pdf_path, "rb") as f:
-    supabase.storage.from_(SUPABASE_BUCKET).upload(
-        path=storage_path,
-        file=f,
-        file_options={
-            "content-type": "application/pdf",
-            "upsert": "true"
-        }
-    )
+        with open(pdf_path, "rb") as f:
+            supabase.storage.from_(SUPABASE_BUCKET).upload(
+                path=storage_path,
+                file=f,
+                file_options={
+                    "content-type": "application/pdf",
+                    "upsert": "true"
+                }
+            )
 
-pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(storage_path)
+        pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(storage_path)
 
         return {
-    "success": True,
-    "token": token,
-    "pdf_saved": pdf_saved,
-    "folder": pratica_dir,
-    "pdf_url": pdf_url
-}
+            "success": True,
+            "token": token,
+            "pdf_saved": pdf_saved,
+            "folder": pratica_dir,
+            "pdf_url": pdf_url
+        }
 
     except Exception as e:
         return {"success": False, "error": str(e)}
