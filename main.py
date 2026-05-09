@@ -86,6 +86,48 @@ def test_poste_h2h():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/operations")
+def poste_operations():
+    try:
+        session = Session()
+
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_USERID,
+            POSTE_H2H_PASSWORD
+        )
+
+        session.verify = False
+
+        transport = Transport(
+            session=session,
+            timeout=30
+        )
+
+        client = Client(
+            wsdl=POSTE_H2H_ROL_WSDL,
+            transport=transport
+        )
+
+        operation = client.service._binding._operations.get("InvioDoc")
+
+        if not operation:
+            return {
+                "success": False,
+                "error": "Operazione InvioDoc non trovata"
+            }
+
+        return {
+            "success": True,
+            "input": str(operation.input.signature()),
+            "output": str(operation.output.signature())
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 def format_indirizzo_blocco(testo):
     testo = testo or ""
