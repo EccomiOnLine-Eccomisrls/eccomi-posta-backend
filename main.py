@@ -5,6 +5,10 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 from supabase import create_client
+from requests import Session
+from requests.auth import HTTPBasicAuth
+from zeep import Client
+from zeep.transports import Transport
 import datetime
 import os
 
@@ -13,6 +17,14 @@ app = FastAPI()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "eccomi-posta")
+POSTE_H2H_USERID = os.getenv("POSTE_H2H_USERID")
+POSTE_H2H_PASSWORD = os.getenv("POSTE_H2H_PASSWORD")
+POSTE_H2H_CONTRACT_ID = os.getenv("POSTE_H2H_CONTRACT_ID")
+
+POSTE_H2H_ROL_WSDL = os.getenv(
+    "POSTE_H2H_ROL_WSDL",
+    "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc?wsdl"
+)
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
@@ -28,6 +40,48 @@ app.add_middleware(
 @app.get("/")
 def home():
     return {"status": "Eccomi Posta Backend OK 🚀"}
+
+@app.get("/poste/h2h/test")
+def test_poste_h2h():
+    try:
+        session = Session()
+
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_USERID,
+            POSTE_H2H_PASSWORD
+        )
+
+        transport = Transport(
+            session=session,
+            timeout=30
+        )
+
+        client = Client(
+            wsdl=POSTE_H2H_ROL_WSDL,
+            transport=transport
+        )
+
+        operations = []
+
+        for service in client.wsdl.services.values():
+            for port in service.ports.values():
+                operations.extend(
+                    list(port.binding._operations.keys())
+                )
+
+        return {
+            "success": True,
+            "service": "Poste H2H Raccomandata Online",
+            "userid": POSTE_H2H_USERID,
+            "contract_id": POSTE_H2H_CONTRACT_ID,
+            "operations": operations
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 
 def format_indirizzo_blocco(testo):
