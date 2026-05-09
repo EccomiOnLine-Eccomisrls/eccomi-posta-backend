@@ -3,3 +3,6 @@ uvicorn
 python-multipart
 reportlab
 supabase
+zeep
+requests
+lxml
