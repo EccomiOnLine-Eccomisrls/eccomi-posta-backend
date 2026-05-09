@@ -133,11 +133,11 @@ async def crea_raccomandata(
             f.write(f"{mittente}\n\n")
             f.write("DESTINATARIO:\n")
             f.write(f"{destinatario}\n\n")
-            if testo:
+                        if testo:
                 f.write("TESTO RACCOMANDATA:\n")
                 f.write(testo)
 
-                pdf_path = f"{pratica_dir}/documento.pdf"
+        pdf_path = f"{pratica_dir}/documento.pdf"
 
         if file:
             contents = await file.read()
