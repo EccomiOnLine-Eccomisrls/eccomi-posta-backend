@@ -74,7 +74,6 @@ def poste_client(timeout=60):
         wsdl=POSTE_H2H_ROL_WSDL,
         transport=transport,
         plugins=[
-            WsAddressingPlugin(),
             ForcePosteAddressPlugin()
         ]
     )
