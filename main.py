@@ -527,6 +527,157 @@ def poste_test_submit():
 
         }
 
+@app.get("/poste/h2h/invio-test")
+def poste_invio_test():
+
+    try:
+
+        client, service = poste_client(timeout=60)
+
+        Mittente = client.get_type("ns1:Mittente")
+
+        Nominativo = client.get_type("ns1:Nominativo")
+
+        Indirizzo = client.get_type("ns1:Indirizzo")
+
+        Destinatario = client.get_type("ns1:Destinatario")
+
+        Documento = client.get_type("ns1:Documento")
+
+        OpzionidiStampa = client.get_type("ns1:OpzionidiStampa")
+
+        ROLSubmit = client.get_type("ns0:ROLSubmit")
+
+        indirizzo_mitt = Indirizzo(
+
+            DUG="VIA",
+
+            Toponimo="ROMA",
+
+            NumeroCivico="1"
+
+        )
+
+        nom_mitt = Nominativo(
+
+            Nome="TEST",
+
+            Cognome="MITTENTE",
+
+            CAP="00100",
+
+            Citta="ROMA",
+
+            Provincia="RM",
+
+            Indirizzo=indirizzo_mitt
+
+        )
+
+        mittente = Mittente(
+
+            Nominativo=nom_mitt,
+
+            InviaStampa=False
+
+        )
+
+        indirizzo_dest = Indirizzo(
+
+            DUG="VIA",
+
+            Toponimo="MILANO",
+
+            NumeroCivico="10"
+
+        )
+
+        nom_dest = Nominativo(
+
+            Nome="TEST",
+
+            Cognome="DESTINATARIO",
+
+            CAP="20100",
+
+            Citta="MILANO",
+
+            Provincia="MI",
+
+            Indirizzo=indirizzo_dest
+
+        )
+
+        destinatario = Destinatario(
+
+            Nominativo=nom_dest
+
+        )
+
+        pdf_fake = base64.b64encode(
+
+            b"%PDF-1.4 TEST PDF"
+
+        ).decode()
+
+        documento = Documento(
+
+            Immagine=pdf_fake,
+
+            TipoDocumento="PDF"
+
+        )
+
+        stampa = OpzionidiStampa(
+
+            ResolutionX="300",
+            ResolutionY="300",
+            BW="true",
+            FronteRetro="false"
+            
+        )
+
+        submit = ROLSubmit(
+
+            Mittente=mittente,
+            Destinatari={"Destinatario": [destinatario]},
+            NumeroDestinatari=1,
+            Documento=[documento],
+            Opzioni={
+                "OpzionidiStampa": stampa,
+                "SecurPaper": False,
+                "DPM": False,
+                "InserisciMittente": True,
+                "Archiviazione": False,
+                "FirmaElettronica": False
+            },
+            PrezzaturaSincrona=True,
+            Nazionale="true",
+            ForzaInvioDestinazioniValide=True
+        )
+
+        result = service.Invio(
+            IDRichiesta="TEST-INVIO-001",
+            Cliente=POSTE_H2H_USERID,
+            CodiceContratto=POSTE_H2H_CONTRACT_ID,
+            ROLSubmit=submit
+        )
+
+        return {
+           "success": True,
+           "result": str(result)
+        }
+
+    except Exception as e:
+
+        return {
+
+            "success": False,
+
+            "error": str(e)
+
+        }
+
 
 @app.get("/poste/h2h/send-test")
 def poste_send_test():
