@@ -627,7 +627,7 @@ def poste_invio_test():
             "ResolutionY": "300",
             "BW": "true",
             "FronteRetro": "false",
-            "PageSize": "a4"
+            "PageSize": 1
         }
 
         submit = ROLSubmit(
