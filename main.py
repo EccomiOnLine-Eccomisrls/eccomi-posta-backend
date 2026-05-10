@@ -623,13 +623,13 @@ def poste_invio_test():
 
         )
 
-        stampa = OpzionidiStampa(
-            ResolutionX="300",
-            ResolutionY="300",
-            BW="true",
-            FronteRetro="false",
-            PageSize=AnySimpleType().xmlvalue("A4")
-        )
+        stampa = {
+            "ResolutionX: "300",
+            "ResolutionY: "300",
+            "BW: "true",
+            "FronteRetro: "false",
+            "PageSize": "A4"
+        }
 
         submit = ROLSubmit(
 
