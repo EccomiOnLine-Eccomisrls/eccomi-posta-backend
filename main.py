@@ -10,30 +10,36 @@ from reportlab.lib.units import cm
 from supabase import create_client
 from requests import Session
 from requests.auth import HTTPBasicAuth
-from zeep import Client
+from zeep import Client, Plugin
 from zeep.transports import Transport
-from lxml import etree
 from zeep.wsa import WsAddressingPlugin
+from lxml import etree
 import datetime
 import os
 import hashlib
 import base64
+
 
 app = FastAPI()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "eccomi-posta")
+
 POSTE_H2H_USERID = os.getenv("POSTE_H2H_USERID")
 POSTE_H2H_PASSWORD = os.getenv("POSTE_H2H_PASSWORD")
 POSTE_H2H_CONTRACT_ID = os.getenv("POSTE_H2H_CONTRACT_ID")
 
 POSTE_H2H_ROL_WSDL = os.getenv(
     "POSTE_H2H_ROL_WSDL",
-    "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc?wsdl"
+    "https://cewebservices.posteitaliane.it/ROLGC/RolService.WSDL"
 )
 
+POSTE_H2H_SERVICE_URL = "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
+POSTE_H2H_BINDING = "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_ROLServiceSoap"
+
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -44,9 +50,17 @@ app.add_middleware(
 )
 
 
-@app.get("/")
-def home():
-    return {"status": "Eccomi Posta Backend OK 🚀"}
+class ForcePosteAddressPlugin(Plugin):
+    def egress(self, envelope, http_headers, operation, binding_options):
+        fix_wsa_to(envelope)
+        return envelope, http_headers
+
+
+def fix_wsa_to(envelope):
+    for el in envelope.xpath("//*[local-name()='To']"):
+        el.text = POSTE_H2H_SERVICE_URL
+    return envelope
+
 
 def poste_client(timeout=60):
     session = Session()
@@ -58,17 +72,25 @@ def poste_client(timeout=60):
     client = Client(
         wsdl=POSTE_H2H_ROL_WSDL,
         transport=transport,
-        plugins=[WsAddressingPlugin()]
+        plugins=[
+            WsAddressingPlugin(),
+            ForcePosteAddressPlugin()
+        ]
     )
 
     service = client.create_service(
-        "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_ROLServiceSoap",
-        "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
+        POSTE_H2H_BINDING,
+        POSTE_H2H_SERVICE_URL
     )
 
-    service._binding_options["address"] = "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
+    service._binding_options["address"] = POSTE_H2H_SERVICE_URL
 
     return client, service
+
+
+@app.get("/")
+def home():
+    return {"status": "Eccomi Posta Backend OK 🚀"}
 
 
 @app.get("/poste/h2h/test")
@@ -86,6 +108,8 @@ def test_poste_h2h():
             "service": "Poste H2H Raccomandata Online",
             "userid": POSTE_H2H_USERID,
             "contract_id": POSTE_H2H_CONTRACT_ID,
+            "wsdl": POSTE_H2H_ROL_WSDL,
+            "service_url": POSTE_H2H_SERVICE_URL,
             "operations": operations
         }
 
@@ -136,6 +160,46 @@ def poste_types():
         return {"success": False, "error": str(e)}
 
 
+@app.get("/poste/h2h/debug-xml")
+def poste_debug_xml():
+    try:
+        client, service = poste_client(timeout=60)
+
+        richiesta = {
+            "IDRichiesta": "TEST-001",
+            "GuidUtente": POSTE_H2H_CONTRACT_ID
+        }
+
+        documento = {
+            "Immagine": "TEST",
+            "MD5": "TEST",
+            "Firmatari": [],
+            "TipoDocumento": "PDF"
+        }
+
+        message = client.create_message(
+            service,
+            "InvioDoc",
+            Richiesta=richiesta,
+            Documento=documento
+        )
+
+        fix_wsa_to(message)
+
+        xml_string = etree.tostring(
+            message,
+            pretty_print=True
+        ).decode()
+
+        return {
+            "success": True,
+            "xml": xml_string
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.get("/poste/h2h/send-test")
 def poste_send_test():
     try:
@@ -175,44 +239,6 @@ def poste_send_test():
         return {
             "success": True,
             "result": str(result)
-        }
-
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-@app.get("/poste/h2h/debug-xml")
-def poste_debug_xml():
-    try:
-        client, service = poste_client(timeout=60)
-
-        richiesta = {
-            "IDRichiesta": "TEST-001",
-            "GuidUtente": POSTE_H2H_CONTRACT_ID
-        }
-
-        documento = {
-            "Immagine": "TEST",
-            "MD5": "TEST",
-            "Firmatari": [],
-            "TipoDocumento": "PDF"
-        }
-
-        message = client.create_message(
-            service,
-            "InvioDoc",
-            Richiesta=richiesta,
-            Documento=documento
-        )
-
-        xml_string = etree.tostring(
-            message,
-            pretty_print=True
-        ).decode()
-
-        return {
-            "success": True,
-            "xml": xml_string
         }
 
     except Exception as e:
@@ -289,20 +315,16 @@ def genera_pdf_da_testo(pdf_path, mittente, destinatario, oggetto, testo, firma)
 
         return y
 
-    # MITTENTE
     y = draw_lines(format_indirizzo_blocco(mittente), left, y, size=10.5)
     y -= 1.0 * cm
 
-    # DATA
     c.setFont("Times-Roman", 10.5)
     c.drawRightString(right, y, f"Roma, {datetime.datetime.now().strftime('%d/%m/%Y')}")
     y -= 1.5 * cm
 
-    # DESTINATARIO
     y = draw_lines(format_indirizzo_blocco(destinatario), left, y, size=10.5)
     y -= 1.0 * cm
 
-    # OGGETTO
     if oggetto:
         c.setFont("Times-Bold", 11)
         c.drawString(left, y, "OGGETTO:")
@@ -310,7 +332,6 @@ def genera_pdf_da_testo(pdf_path, mittente, destinatario, oggetto, testo, firma)
         c.drawString(left + 2.5 * cm, y, oggetto.upper())
         y -= 1.2 * cm
 
-    # TESTO
     y = draw_wrapped(
         testo or "",
         left,
@@ -320,7 +341,6 @@ def genera_pdf_da_testo(pdf_path, mittente, destinatario, oggetto, testo, firma)
         line_height=0.68 * cm
     )
 
-    # FIRMA
     y -= 1.2 * cm
 
     if y < 5 * cm:
