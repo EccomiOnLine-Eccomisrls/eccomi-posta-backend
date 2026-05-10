@@ -676,6 +676,29 @@ def poste_invio_test():
 
         }
 
+@app.get("/poste/h2h/find-pagesize")
+def poste_find_pagesize():
+    try:
+        client, service = poste_client(timeout=30)
+
+        found = []
+
+        for t in client.wsdl.types.types:
+            text = str(t)
+            if "PageSize" in text or "page" in text.lower() or "a4" in text.lower():
+                found.append(text)
+
+        return {
+            "success": True,
+            "found": found
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 @app.get("/poste/h2h/pagesize-type")
 def poste_pagesize_type():
     try:
