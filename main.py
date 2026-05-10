@@ -627,7 +627,7 @@ def poste_invio_test():
             ResolutionX="300",
             ResolutionY="300",
             BW="true",
-            FronteRetro="false"
+            FronteRetro="false",
             PageSize="A4"
         )
 
