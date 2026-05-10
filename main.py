@@ -431,7 +431,7 @@ def poste_test_submit():
 
             Nominativo=nom_mitt,
 
-            InvioStampa=False
+            InviaStampa=False
 
         )
 
