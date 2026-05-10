@@ -272,6 +272,40 @@ def poste_rolsubmit_type():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/rol-types-detail")
+def poste_rol_types_detail():
+    try:
+        client, service = poste_client(timeout=30)
+
+        types_to_check = [
+            "ns0:Mittente",
+            "ns0:Destinatario",
+            "ns0:Documento",
+            "ns0:Opzioni",
+            "ns0:DatiRicevuta",
+            "ns0:OpzioniDiStampa",
+            "ns0:OpzioniAggiuntive",
+        ]
+
+        result = {}
+
+        for t in types_to_check:
+            try:
+                result[t] = str(client.get_type(t))
+            except Exception as e:
+                result[t] = f"ERRORE: {str(e)}"
+
+        return {
+            "success": True,
+            "types": result
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/send-test")
 def poste_send_test():
