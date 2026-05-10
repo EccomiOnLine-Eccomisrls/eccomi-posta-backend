@@ -483,10 +483,11 @@ def poste_test_submit():
 
         stampa = OpzionidiStampa(
 
-            Resolution="300",
-
+            ResolutionX="300",
+            ResolutionY="300",
+            BW="true",
             FronteRetro="false"
-
+            
         )
 
         submit = ROLSubmit(
