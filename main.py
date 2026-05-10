@@ -168,105 +168,70 @@ def poste_types():
         }
 
 @app.get("/poste/h2h/send-test")
-
 def poste_send_test():
-
     try:
-
         pdf_path = "data/test.pdf"
 
         if not os.path.exists(pdf_path):
-
             return {
-
                 "success": False,
-
                 "error": "File data/test.pdf non trovato"
-
             }
 
         with open(pdf_path, "rb") as f:
-
             pdf_bytes = f.read()
 
         md5_hash = hashlib.md5(pdf_bytes).hexdigest()
-
         pdf_base64 = base64.b64encode(pdf_bytes).decode()
 
         session = Session()
-
         session.auth = HTTPBasicAuth(
-
             POSTE_H2H_USERID,
-
             POSTE_H2H_PASSWORD
-
         )
-
         session.verify = False
 
         transport = Transport(
-
             session=session,
-
             timeout=60
-
         )
 
         client = Client(
-
             wsdl=POSTE_H2H_ROL_WSDL,
-
             transport=transport
-
         )
 
         richiesta = {
-
             "IDRichiesta": "TEST-001",
-
             "GuidUtente": POSTE_H2H_CONTRACT_ID
-
         }
 
         documento = {
-
             "Immagine": pdf_base64,
-
             "MD5": md5_hash,
-
             "Firmatari": [],
-
             "TipoDocumento": "PDF"
-
         }
 
         service = client.create_service(
-    "{http://tempuri.org/}BasicHttpBinding_IRolService",
-    "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
-)
+            "{http://tempuri.org/}BasicHttpBinding_IRolService",
+            "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
+        )
 
-result = service.InvioDoc(
-    Richiesta=richiesta,
-    Documento=documento
-)
+        result = service.InvioDoc(
+            Richiesta=richiesta,
+            Documento=documento
+        )
 
         return {
-
             "success": True,
-
             "result": str(result)
-
         }
 
     except Exception as e:
-
         return {
-
             "success": False,
-
             "error": str(e)
-
         }
 
 
