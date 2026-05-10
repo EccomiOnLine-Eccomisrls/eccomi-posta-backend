@@ -568,6 +568,7 @@ def poste_invio_test():
             TipoIndirizzo="NORMAL",
             ForzaDestinazione=False,
             InesitateDigitali=False,
+            CodiceFiscaleResult=0,
         )
 
         mittente = Mittente(
@@ -598,6 +599,7 @@ def poste_invio_test():
             TipoIndirizzo="NORMAL",
             ForzaDestinazione=False,
             InesitateDigitali=False,
+            CodiceFiscaleResult=0,
         )
 
         destinatario = Destinatario(
