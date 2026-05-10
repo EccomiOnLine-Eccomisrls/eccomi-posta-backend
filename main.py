@@ -47,32 +47,37 @@ app.add_middleware(
 def home():
     return {"status": "Eccomi Posta Backend OK 🚀"}
 
+def poste_client(timeout=60):
+    session = Session()
+    session.auth = HTTPBasicAuth(POSTE_H2H_USERID, POSTE_H2H_PASSWORD)
+    session.verify = False
+
+    transport = Transport(session=session, timeout=timeout)
+
+    client = Client(
+        wsdl=POSTE_H2H_ROL_WSDL,
+        transport=transport,
+        plugins=[WsAddressingPlugin()]
+    )
+
+    service = client.create_service(
+        "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_ROLServiceSoap",
+        "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
+    )
+
+    service._binding_options["address"] = "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
+
+    return client, service
+
+
 @app.get("/poste/h2h/test")
 def test_poste_h2h():
     try:
-        session = Session()
-
-        session.auth = HTTPBasicAuth(
-            POSTE_H2H_USERID,
-            POSTE_H2H_PASSWORD
-        )
-
-        session.verify = False
-
-        transport = Transport(
-            session=session,
-            timeout=30
-        )
-
-        client = Client(
-            wsdl=POSTE_H2H_ROL_WSDL,
-            transport=transport
-        )
+        client, service = poste_client(timeout=30)
 
         operations = []
-
-        for service in client.wsdl.services.values():
-            for port in service.ports.values():
+        for s in client.wsdl.services.values():
+            for port in s.ports.values():
                 operations.extend(list(port.binding._operations.keys()))
 
         return {
@@ -84,32 +89,13 @@ def test_poste_h2h():
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
+
 
 @app.get("/poste/h2h/operations")
 def poste_operations():
     try:
-        session = Session()
-
-        session.auth = HTTPBasicAuth(
-            POSTE_H2H_USERID,
-            POSTE_H2H_PASSWORD
-        )
-
-        session.verify = False
-
-        transport = Transport(
-            session=session,
-            timeout=30
-        )
-
-        client = Client(
-            wsdl=POSTE_H2H_ROL_WSDL,
-            transport=transport
-        )
+        client, service = poste_client(timeout=30)
 
         operation = client.service._binding._operations.get("InvioDoc")
 
@@ -126,30 +112,13 @@ def poste_operations():
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
+
 
 @app.get("/poste/h2h/types")
 def poste_types():
     try:
-        session = Session()
-        session.auth = HTTPBasicAuth(
-            POSTE_H2H_USERID,
-            POSTE_H2H_PASSWORD
-        )
-        session.verify = False
-
-        transport = Transport(
-            session=session,
-            timeout=30
-        )
-
-        client = Client(
-            wsdl=POSTE_H2H_ROL_WSDL,
-            transport=transport
-        )
+        client, service = poste_client(timeout=30)
 
         richiesta_type = client.get_type("ns1:Richiesta")
         documento_type = client.get_type("ns1:Documento")
@@ -163,10 +132,8 @@ def poste_types():
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
+
 
 @app.get("/poste/h2h/send-test")
 def poste_send_test():
@@ -185,22 +152,7 @@ def poste_send_test():
         md5_hash = hashlib.md5(pdf_bytes).hexdigest()
         pdf_base64 = base64.b64encode(pdf_bytes).decode()
 
-        session = Session()
-        session.auth = HTTPBasicAuth(
-            POSTE_H2H_USERID,
-            POSTE_H2H_PASSWORD
-        )
-        session.verify = False
-
-        transport = Transport(
-            session=session,
-            timeout=60
-        )
-
-        client = Client(
-            wsdl=POSTE_H2H_ROL_WSDL,
-            transport=transport
-        )
+        client, service = poste_client(timeout=60)
 
         richiesta = {
             "IDRichiesta": "TEST-001",
@@ -214,11 +166,6 @@ def poste_send_test():
             "TipoDocumento": "PDF"
         }
 
-        service = client.create_service(
-            "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_ROLServiceSoap",
-            "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
-        )
-
         result = service.InvioDoc(
             Richiesta=richiesta,
             Documento=documento
@@ -230,110 +177,45 @@ def poste_send_test():
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
+
 
 @app.get("/poste/h2h/debug-xml")
-
 def poste_debug_xml():
-
     try:
-
-        session = Session()
-
-        session.auth = HTTPBasicAuth(
-
-            POSTE_H2H_USERID,
-
-            POSTE_H2H_PASSWORD
-
-        )
-
-        session.verify = False
-
-        transport = Transport(
-
-            session=session,
-
-            timeout=60
-
-        )
-
-        client = Client(
-
-            wsdl=POSTE_H2H_ROL_WSDL,
-
-            transport=transport
-
-        )
-
-        service = client.create_service(
-
-            "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_ROLServiceSoap",
-
-            "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
-
-        )
+        client, service = poste_client(timeout=60)
 
         richiesta = {
-
             "IDRichiesta": "TEST-001",
-
             "GuidUtente": POSTE_H2H_CONTRACT_ID
-
         }
 
         documento = {
-
             "Immagine": "TEST",
-
             "MD5": "TEST",
-
             "Firmatari": [],
-
             "TipoDocumento": "PDF"
-
         }
 
         message = client.create_message(
-
             service,
-
             "InvioDoc",
-
             Richiesta=richiesta,
-
             Documento=documento
-
         )
 
         xml_string = etree.tostring(
-
             message,
-
             pretty_print=True
-
         ).decode()
 
         return {
-
             "success": True,
-
             "xml": xml_string
-
         }
 
     except Exception as e:
-
-        return {
-
-            "success": False,
-
-            "error": str(e)
-
-        }
+        return {"success": False, "error": str(e)}
 
 
 def format_indirizzo_blocco(testo):
