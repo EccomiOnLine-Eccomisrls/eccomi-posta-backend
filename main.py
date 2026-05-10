@@ -311,12 +311,9 @@ def poste_xol_types():
     try:
         client, service = poste_client(timeout=30)
 
-        result = {}
-
-        for prefix, namespace in client.namespaces:
-            if "XOL" in namespace or "ComunicazioniElettroniche.XOL" in namespace:
-                result["prefix"] = prefix
-                result["namespace"] = namespace
+        namespaces = {}
+        for item in client.namespaces:
+            namespaces[str(item)] = str(client.namespaces[item])
 
         xol_types = [
             "ns1:Nominativo",
@@ -339,7 +336,7 @@ def poste_xol_types():
 
         return {
             "success": True,
-            "namespace_info": result,
+            "namespaces": namespaces,
             "types": details
         }
 
