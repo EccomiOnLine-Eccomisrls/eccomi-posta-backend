@@ -641,6 +641,7 @@ def poste_invio_test():
                 "OpzionidiStampa": stampa,
                 "SecurPaper": False,
                 "DPM": False,
+                "DataStampa": datetime.datetime.now(),
                 "InserisciMittente": True,
                 "Archiviazione": False,
                 "FirmaElettronica": False
