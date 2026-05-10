@@ -241,13 +241,15 @@ def poste_send_test():
 
         }
 
-        result = client.service.InvioDoc(
+        service = client.create_service(
+    "{http://tempuri.org/}BasicHttpBinding_IRolService",
+    "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
+)
 
-            Richiesta=richiesta,
-
-            Documento=documento
-
-        )
+result = service.InvioDoc(
+    Richiesta=richiesta,
+    Documento=documento
+)
 
         return {
 
