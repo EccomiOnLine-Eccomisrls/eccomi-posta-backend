@@ -379,6 +379,147 @@ def poste_xol_more_types():
         }
 
 
+@app.get("/poste/h2h/test-submit")
+
+def poste_test_submit():
+
+    try:
+
+        client, service = poste_client(timeout=60)
+
+        Mittente = client.get_type("ns1:Mittente")
+
+        Nominativo = client.get_type("ns1:Nominativo")
+
+        Indirizzo = client.get_type("ns1:Indirizzo")
+
+        Destinatario = client.get_type("ns1:Destinatario")
+
+        Documento = client.get_type("ns1:Documento")
+
+        OpzionidiStampa = client.get_type("ns1:OpzionidiStampa")
+
+        ROLSubmit = client.get_type("ns0:ROLSubmit")
+
+        indirizzo_mitt = Indirizzo(
+
+            DUG="VIA",
+
+            Toponimo="ROMA",
+
+            NumeroCivico="1"
+
+        )
+
+        nom_mitt = Nominativo(
+
+            Nome="TEST",
+
+            Cognome="MITTENTE",
+
+            CAP="00100",
+
+            Citta="ROMA",
+
+            Provincia="RM",
+
+            Indirizzo=indirizzo_mitt
+
+        )
+
+        mittente = Mittente(
+
+            Nominativo=nom_mitt,
+
+            InvioStampa=False
+
+        )
+
+        indirizzo_dest = Indirizzo(
+
+            DUG="VIA",
+
+            Toponimo="MILANO",
+
+            NumeroCivico="10"
+
+        )
+
+        nom_dest = Nominativo(
+
+            Nome="TEST",
+
+            Cognome="DESTINATARIO",
+
+            CAP="20100",
+
+            Citta="MILANO",
+
+            Provincia="MI",
+
+            Indirizzo=indirizzo_dest
+
+        )
+
+        destinatario = Destinatario(
+
+            Nominativo=nom_dest
+
+        )
+
+        pdf_fake = base64.b64encode(
+
+            b"%PDF-1.4 TEST PDF"
+
+        ).decode()
+
+        documento = Documento(
+
+            Immagine=pdf_fake,
+
+            TipoDocumento="PDF"
+
+        )
+
+        stampa = OpzionidiStampa(
+
+            Resolution="300",
+
+            FronteRetro="false"
+
+        )
+
+        submit = ROLSubmit(
+
+            Mittente=mittente,
+
+            Destinatari={"Destinatario": [destinatario]},
+
+            Documento=[documento],
+
+            OpzioniDiStampa=stampa
+
+        )
+
+        return {
+
+            "success": True,
+
+            "submit_preview": str(submit)
+
+        }
+
+    except Exception as e:
+
+        return {
+
+            "success": False,
+
+            "error": str(e)
+
+        }
+
+
 @app.get("/poste/h2h/send-test")
 def poste_send_test():
     try:
