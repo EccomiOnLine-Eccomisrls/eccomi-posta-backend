@@ -624,10 +624,10 @@ def poste_invio_test():
         )
 
         stampa = {
-            "ResolutionX: "300",
-            "ResolutionY: "300",
-            "BW: "true",
-            "FronteRetro: "false",
+            "ResolutionX": "300",
+            "ResolutionY": "300",
+            "BW": "true",
+            "FronteRetro": "false",
             "PageSize": "A4"
         }
 
