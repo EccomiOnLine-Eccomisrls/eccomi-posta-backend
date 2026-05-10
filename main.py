@@ -13,6 +13,7 @@ from requests.auth import HTTPBasicAuth
 from zeep import Client, Plugin
 from zeep.transports import Transport
 from zeep.wsa import WsAddressingPlugin
+from zeep.xsd import AnySimpleType
 from lxml import etree
 import datetime
 import os
@@ -627,7 +628,7 @@ def poste_invio_test():
             ResolutionY="300",
             BW="true",
             FronteRetro="false",
-            PageSize=0
+            PageSize=AnySimpleType().xmlvalue("A4")
         )
 
         submit = ROLSubmit(
