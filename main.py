@@ -306,6 +306,49 @@ def poste_rol_types_detail():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/xol-types")
+def poste_xol_types():
+    try:
+        client, service = poste_client(timeout=30)
+
+        result = {}
+
+        for prefix, namespace in client.namespaces:
+            if "XOL" in namespace or "ComunicazioniElettroniche.XOL" in namespace:
+                result["prefix"] = prefix
+                result["namespace"] = namespace
+
+        xol_types = [
+            "ns1:Nominativo",
+            "ns1:Documento",
+            "ns1:Destinatario",
+            "ns1:OpzioniDiStampa",
+            "ns1:OpzioniAggiuntive",
+            "ns1:ArrayOfServizioAggiuntivo",
+            "ns1:OpzioniAvanzate",
+            "ns1:PagineBollettini",
+        ]
+
+        details = {}
+
+        for t in xol_types:
+            try:
+                details[t] = str(client.get_type(t))
+            except Exception as e:
+                details[t] = f"ERRORE: {str(e)}"
+
+        return {
+            "success": True,
+            "namespace_info": result,
+            "types": details
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/send-test")
 def poste_send_test():
