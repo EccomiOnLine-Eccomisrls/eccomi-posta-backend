@@ -547,6 +547,10 @@ def poste_invio_test():
         OpzionidiStampa = client.get_type("ns1:OpzionidiStampa")
 
         ROLSubmit = client.get_type("ns0:ROLSubmit")
+        
+        PageSizeType = client.get_type("{http://ComunicazioniElettroniche.XOL}PageSize")
+        
+        page_size = PageSizeType("A4")
 
         indirizzo_mitt = Indirizzo(
 
@@ -623,14 +627,11 @@ def poste_invio_test():
         )
 
         stampa = OpzionidiStampa(
-
             ResolutionX="300",
             ResolutionY="300",
             BW="true",
             FronteRetro="false",
-            PageSize={
-                "_value_1": "A4"
-            }
+            PageSize=page_size
         )
 
         submit = ROLSubmit(
