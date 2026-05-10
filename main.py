@@ -559,20 +559,14 @@ def poste_invio_test():
         )
 
         nom_mitt = Nominativo(
-
             Nome="TEST",
-
             Cognome="MITTENTE",
-
             CAP="00100",
-
             Citta="ROMA",
-
             Provincia="RM",
-
             Indirizzo=indirizzo_mitt,
+            TipoIndirizzo="NORMAL",
             ForzaDestinazione=False,
-
         )
 
         mittente = Mittente(
@@ -594,20 +588,14 @@ def poste_invio_test():
         )
 
         nom_dest = Nominativo(
-
             Nome="TEST",
-
             Cognome="DESTINATARIO",
-
             CAP="20100",
-
             Citta="MILANO",
-
             Provincia="MI",
-
             Indirizzo=indirizzo_dest,
+            TipoIndirizzo="NORMAL",
             ForzaDestinazione=False,
-
         )
 
         destinatario = Destinatario(
