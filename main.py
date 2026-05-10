@@ -252,6 +252,26 @@ def poste_invio_signature():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/rolsubmit-type")
+def poste_rolsubmit_type():
+    try:
+        client, service = poste_client(timeout=30)
+
+        rolsubmit_type = client.get_type("ns0:ROLSubmit")
+        invio_result_type = client.get_type("ns0:InvioResult")
+
+        return {
+            "success": True,
+            "ROLSubmit": str(rolsubmit_type),
+            "InvioResult": str(invio_result_type)
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/send-test")
 def poste_send_test():
