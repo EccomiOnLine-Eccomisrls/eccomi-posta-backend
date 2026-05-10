@@ -199,6 +199,34 @@ def poste_debug_xml():
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+@app.get("/poste/h2h/all-operations")
+def poste_all_operations():
+    try:
+        client, service = poste_client(timeout=30)
+
+        data = {}
+
+        for service_name, srv in client.wsdl.services.items():
+
+            data[service_name] = {}
+
+            for port_name, port in srv.ports.items():
+
+                ops = list(port.binding._operations.keys())
+
+                data[service_name][port_name] = ops
+
+        return {
+            "success": True,
+            "services": data
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/send-test")
 def poste_send_test():
