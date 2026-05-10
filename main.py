@@ -673,6 +673,36 @@ def poste_invio_test():
 
         }
 
+@app.get("/poste/h2h/pagesize-type")
+def poste_pagesize_type():
+    try:
+        client, service = poste_client(timeout=30)
+
+        checks = [
+            "ns1:PageSize",
+            "ns1:FormatoPagina",
+            "ns1:TipoFormato",
+        ]
+
+        result = {}
+
+        for item in checks:
+            try:
+                result[item] = str(client.get_type(item))
+            except Exception as e:
+                result[item] = f"ERRORE: {str(e)}"
+
+        return {
+            "success": True,
+            "result": result
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/send-test")
 def poste_send_test():
