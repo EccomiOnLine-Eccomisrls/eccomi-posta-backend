@@ -13,6 +13,7 @@ from requests.auth import HTTPBasicAuth
 from zeep import Client
 from zeep.transports import Transport
 from lxml import etree
+from zeep.wsa import WsAddressingPlugin
 import datetime
 import os
 import hashlib
