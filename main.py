@@ -12,6 +12,7 @@ from requests import Session
 from requests.auth import HTTPBasicAuth
 from zeep import Client
 from zeep.transports import Transport
+from lxml import etree
 import datetime
 import os
 import hashlib
@@ -232,6 +233,106 @@ def poste_send_test():
         return {
             "success": False,
             "error": str(e)
+        }
+
+@app.get("/poste/h2h/debug-xml")
+
+def poste_debug_xml():
+
+    try:
+
+        session = Session()
+
+        session.auth = HTTPBasicAuth(
+
+            POSTE_H2H_USERID,
+
+            POSTE_H2H_PASSWORD
+
+        )
+
+        session.verify = False
+
+        transport = Transport(
+
+            session=session,
+
+            timeout=60
+
+        )
+
+        client = Client(
+
+            wsdl=POSTE_H2H_ROL_WSDL,
+
+            transport=transport
+
+        )
+
+        service = client.create_service(
+
+            "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_ROLServiceSoap",
+
+            "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
+
+        )
+
+        richiesta = {
+
+            "IDRichiesta": "TEST-001",
+
+            "GuidUtente": POSTE_H2H_CONTRACT_ID
+
+        }
+
+        documento = {
+
+            "Immagine": "TEST",
+
+            "MD5": "TEST",
+
+            "Firmatari": [],
+
+            "TipoDocumento": "PDF"
+
+        }
+
+        message = client.create_message(
+
+            service,
+
+            "InvioDoc",
+
+            Richiesta=richiesta,
+
+            Documento=documento
+
+        )
+
+        xml_string = etree.tostring(
+
+            message,
+
+            pretty_print=True
+
+        ).decode()
+
+        return {
+
+            "success": True,
+
+            "xml": xml_string
+
+        }
+
+    except Exception as e:
+
+        return {
+
+            "success": False,
+
+            "error": str(e)
+
         }
 
 
