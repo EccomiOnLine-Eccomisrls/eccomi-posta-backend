@@ -346,6 +346,38 @@ def poste_xol_types():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/xol-more-types")
+def poste_xol_more_types():
+    try:
+        client, service = poste_client(timeout=30)
+
+        xol_types = [
+            "ns1:Mittente",
+            "ns1:Indirizzo",
+            "ns1:OpzionidiStampa",
+            "ns1:ServizioAggiuntivo",
+            "ns1:ArrayOfString",
+        ]
+
+        details = {}
+
+        for t in xol_types:
+            try:
+                details[t] = str(client.get_type(t))
+            except Exception as e:
+                details[t] = f"ERRORE: {str(e)}"
+
+        return {
+            "success": True,
+            "types": details
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/send-test")
 def poste_send_test():
