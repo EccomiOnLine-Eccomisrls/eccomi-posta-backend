@@ -567,6 +567,7 @@ def poste_invio_test():
             Indirizzo=indirizzo_mitt,
             TipoIndirizzo="NORMAL",
             ForzaDestinazione=False,
+            InesitateDigitali=False,
         )
 
         mittente = Mittente(
@@ -596,6 +597,7 @@ def poste_invio_test():
             Indirizzo=indirizzo_dest,
             TipoIndirizzo="NORMAL",
             ForzaDestinazione=False,
+            InesitateDigitali=False,
         )
 
         destinatario = Destinatario(
