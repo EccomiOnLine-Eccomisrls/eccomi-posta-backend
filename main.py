@@ -643,6 +643,7 @@ def poste_invio_test():
                 "DPM": False,
                 "DataStampa": datetime.datetime.now(),
                 "InserisciMittente": True,
+                "AnniArchiviazioneSpecified": False,
                 "Archiviazione": False,
                 "FirmaElettronica": False
             },
