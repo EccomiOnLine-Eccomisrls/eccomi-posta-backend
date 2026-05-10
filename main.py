@@ -571,6 +571,7 @@ def poste_invio_test():
             Provincia="RM",
 
             Indirizzo=indirizzo_mitt
+            ForzaDestinazione=False,
 
         )
 
@@ -605,6 +606,7 @@ def poste_invio_test():
             Provincia="MI",
 
             Indirizzo=indirizzo_dest
+            ForzaDestinazione=False,
 
         )
 
