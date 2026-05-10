@@ -214,7 +214,7 @@ def poste_send_test():
         }
 
         service = client.create_service(
-            "{http://tempuri.org/}BasicHttpBinding_IRolService",
+            "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_ROLServiceSoap",
             "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
         )
 
