@@ -227,6 +227,31 @@ def poste_all_operations():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/invio-signature")
+def poste_invio_signature():
+    try:
+        client, service = poste_client(timeout=30)
+
+        operation = client.service._binding._operations.get("Invio")
+
+        if not operation:
+            return {
+                "success": False,
+                "error": "Operazione Invio non trovata"
+            }
+
+        return {
+            "success": True,
+            "input": str(operation.input.signature()),
+            "output": str(operation.output.signature())
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/send-test")
 def poste_send_test():
