@@ -493,13 +493,20 @@ def poste_test_submit():
         submit = ROLSubmit(
 
             Mittente=mittente,
-
             Destinatari={"Destinatario": [destinatario]},
-
+            NumeroDestinatari=1,
             Documento=[documento],
-
-            OpzioniDiStampa=stampa
-
+            Opzioni={
+                "OpzionidiStampa": stampa,
+                "SecurPaper": False,
+                "DPM": False,
+                "InserisciMittente": True,
+                "Archiviazione": False,
+                "FirmaElettronica": False
+            },
+            PrezzaturaSincrona=True,
+            Nazionale="true",
+            ForzaInvioDestinazioniValide=True
         )
 
         return {
