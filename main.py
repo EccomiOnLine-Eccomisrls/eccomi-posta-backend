@@ -11,6 +11,7 @@ from supabase import create_client
 from requests import Session
 from requests.auth import HTTPBasicAuth
 from zeep import Client, Plugin
+from zeep.plugins import HistoryPlugin
 from zeep.transports import Transport
 from zeep.wsa import WsAddressingPlugin
 from zeep.xsd import AnySimpleType
