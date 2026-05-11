@@ -64,7 +64,35 @@ def fix_wsa_to(envelope):
     return envelope
 
 
-def poste_client(timeout=60):
+def poste_client(timeout=60, extra_plugins=None):
+    session = Session()
+    session.auth = HTTPBasicAuth(POSTE_H2H_USERID, POSTE_H2H_PASSWORD)
+    session.verify = False
+
+    transport = Transport(session=session, timeout=timeout)
+
+    plugins = [
+        WsAddressingPlugin(),
+        ForcePosteAddressPlugin()
+    ]
+
+    if extra_plugins:
+        plugins.extend(extra_plugins)
+
+    client = Client(
+        wsdl=POSTE_H2H_ROL_WSDL,
+        transport=transport,
+        plugins=plugins
+    )
+
+    service = client.create_service(
+        POSTE_H2H_BINDING,
+        POSTE_H2H_SERVICE_URL
+    )
+
+    service._binding_options["address"] = POSTE_H2H_SERVICE_URL
+
+    return client, service
 
 
 @app.get("/")
