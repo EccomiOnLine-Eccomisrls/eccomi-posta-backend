@@ -22,6 +22,7 @@ import os
 import hashlib
 import base64
 import requests
+import uuid
 
 app = FastAPI()
 
@@ -646,7 +647,7 @@ trailer
         )
 
         result = service.Invio(
-            IDRichiesta="TEST-INVIO-001",
+            IDRichiesta=str(uuid.uuid4()),
             Cliente=POSTE_H2H_USERID,
             CodiceContratto=POSTE_H2H_CONTRACT_ID,
             ROLSubmit=submit
