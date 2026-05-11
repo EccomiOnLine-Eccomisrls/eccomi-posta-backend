@@ -565,6 +565,7 @@ trailer
 %%EOF
 """
         pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        pdf_md5 = hashlib.md5(pdf_bytes).hexdigest()
 
         indirizzo_mitt = Indirizzo(
             DUG="VIA",
@@ -615,6 +616,7 @@ trailer
 
         documento = Documento(
             Immagine=pdf_base64,
+            MD5=pdf_md5,
             TipoDocumento="PDF"
         )
 
