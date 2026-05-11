@@ -735,10 +735,10 @@ def valida_destinatari_test():
         )
 
         result = service.ValidaDestinatari(
+            IDRichiesta=str(uuid.uuid4())
             Destinatari={
                 "Destinatario": [destinatario]
-            },
-            Nazionale=True
+            }
         )
 
         xml_sent = None
