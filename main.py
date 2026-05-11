@@ -843,6 +843,44 @@ def debug_invio_xml():
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+@app.get("/poste/h2h/tipo-indirizzo-values")
+def poste_tipo_indirizzo_values():
+    try:
+        client, service = poste_client(timeout=30)
+
+        result = {}
+
+        checks = [
+            "ns1:NominativoTipoIndirizzo",
+            "ns0:NominativoTipoIndirizzo",
+            "ns1:TipoIndirizzo",
+            "ns0:TipoIndirizzo",
+        ]
+
+        for item in checks:
+            try:
+                result[item] = str(client.get_type(item))
+            except Exception as e:
+                result[item] = f"ERRORE: {str(e)}"
+
+        found = []
+        for t in client.wsdl.types.types:
+            text = str(t)
+            if "NominativoTipoIndirizzo" in text or "TipoIndirizzo" in text:
+                found.append(text)
+
+        return {
+            "success": True,
+            "checks": result,
+            "found": found
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/send-test")
 def poste_send_test():
