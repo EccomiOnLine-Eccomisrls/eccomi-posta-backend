@@ -578,7 +578,7 @@ trailer
             Citta="ROMA",
             Provincia="RM",
             Indirizzo=indirizzo_mitt,
-            TipoIndirizzo="Strutturato",
+            TipoIndirizzo="NORMALE",
             ForzaDestinazione=False,
             InesitateDigitali=False,
             CodiceFiscaleResult=0
@@ -602,7 +602,7 @@ trailer
             Citta="MILANO",
             Provincia="MI",
             Indirizzo=indirizzo_dest,
-            TipoIndirizzo="Strutturato",
+            TipoIndirizzo="NORMALE",
             ForzaDestinazione=False,
             InesitateDigitali=False,
             CodiceFiscaleResult=0
