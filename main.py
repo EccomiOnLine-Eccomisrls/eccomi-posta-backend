@@ -633,6 +633,7 @@ trailer
                 },
                 "SecurPaper": False,
                 "DPM": False,
+                "DataStampa": datetime.datetime.now(),
                 "InserisciMittente": True,
                 "Archiviazione": False,
                 "FirmaElettronica": False
