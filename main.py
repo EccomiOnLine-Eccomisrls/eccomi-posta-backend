@@ -712,19 +712,19 @@ def valida_destinatari_test():
 
         indirizzo_dest = Indirizzo(
             DUG="VIA",
-            Toponimo="PRAGA",
-            NumeroCivico="7"
+            Toponimo="NAZIONALE",
+            NumeroCivico="1"
         )
 
         nom_dest = Nominativo(
-            Nome="PIETRO",
-            Cognome="DEL LIBANO",
-            CAP="88842",
-            Citta="CUTRO",
-            Provincia="KR",
+            Nome="MARIO",
+            Cognome="ROSSI",
+            CAP="00184",
+            Citta="ROMA",
+            Provincia="RM",
             Indirizzo=indirizzo_dest,
             TipoIndirizzo="NORMALE",
-            ForzaDestinazione=True,
+            ForzaDestinazione=False,
             InesitateDigitali=False,
             CodiceFiscaleResult=0
         )
