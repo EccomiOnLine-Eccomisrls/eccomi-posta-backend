@@ -581,7 +581,7 @@ trailer
             Provincia="RM",
             Indirizzo=indirizzo_mitt,
             TipoIndirizzo="NORMALE",
-            ForzaDestinazione=True,
+            ForzaDestinazione=False,
             InesitateDigitali=False,
             CodiceFiscaleResult=0
         )
@@ -605,7 +605,7 @@ trailer
             Provincia="KR",
             Indirizzo=indirizzo_dest,
             TipoIndirizzo="NORMALE",
-            ForzaDestinazione=True,
+            ForzaDestinazione=False,
             InesitateDigitali=False,
             CodiceFiscaleResult=0
         )
@@ -645,7 +645,7 @@ trailer
             },
             PrezzaturaSincrona=True,
             Nazionale=True,
-            ForzaInvioDestinazioniValide=True
+            ForzaInvioDestinazioniValide=False
         )
 
         result = service.Invio(
