@@ -568,15 +568,15 @@ trailer
         pdf_md5 = hashlib.md5(pdf_bytes).hexdigest()
 
         indirizzo_mitt = Indirizzo(
-            DUG="VIA",
-            Toponimo="ROMA",
-            NumeroCivico="1"
+            DUG="VIALE",
+            Toponimo="STEFANO D'ARRIGO",
+            NumeroCivico="321"
         )
 
         nom_mitt = Nominativo(
-            Nome="TEST",
-            Cognome="MITTENTE",
-            CAP="00100",
+            Nome="SALVATORE",
+            Cognome="DEL LIBANO",
+            CAP="00131",
             Citta="ROMA",
             Provincia="RM",
             Indirizzo=indirizzo_mitt,
@@ -593,16 +593,16 @@ trailer
 
         indirizzo_dest = Indirizzo(
             DUG="VIA",
-            Toponimo="MILANO",
-            NumeroCivico="10"
+            Toponimo="PRAGA",
+            NumeroCivico="7"
         )
 
         nom_dest = Nominativo(
-            Nome="TEST",
-            Cognome="DESTINATARIO",
-            CAP="20100",
-            Citta="MILANO",
-            Provincia="MI",
+            Nome="PIETRO",
+            Cognome="DEL LIBANO",
+            CAP="88842",
+            Citta="CUTRO",
+            Provincia="KR",
             Indirizzo=indirizzo_dest,
             TipoIndirizzo="NORMALE",
             ForzaDestinazione=False,
