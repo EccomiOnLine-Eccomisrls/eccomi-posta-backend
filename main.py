@@ -604,7 +604,7 @@ trailer
             Provincia="KR",
             Indirizzo=indirizzo_dest,
             TipoIndirizzo="NORMALE",
-            ForzaDestinazione=False,
+            ForzaDestinazione=True,
             InesitateDigitali=False,
             CodiceFiscaleResult=0
         )
@@ -724,7 +724,7 @@ def valida_destinatari_test():
             Provincia="KR",
             Indirizzo=indirizzo_dest,
             TipoIndirizzo="NORMALE",
-            ForzaDestinazione=False,
+            ForzaDestinazione=True,
             InesitateDigitali=False,
             CodiceFiscaleResult=0
         )
