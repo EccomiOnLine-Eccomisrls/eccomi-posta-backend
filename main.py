@@ -635,6 +635,7 @@ trailer
                 "DPM": False,
                 "DataStampa": datetime.datetime.now(),
                 "InserisciMittente": True,
+                "AnniArchiviazioneSpecified": False,
                 "Archiviazione": False,
                 "FirmaElettronica": False
             },
