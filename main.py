@@ -581,7 +581,7 @@ trailer
             Provincia="RM",
             Indirizzo=indirizzo_mitt,
             TipoIndirizzo="NORMALE",
-            ForzaDestinazione=False,
+            ForzaDestinazione=True,
             InesitateDigitali=False,
             CodiceFiscaleResult=0
         )
@@ -605,7 +605,7 @@ trailer
             Provincia="KR",
             Indirizzo=indirizzo_dest,
             TipoIndirizzo="NORMALE",
-            ForzaDestinazione=False,
+            ForzaDestinazione=True,
             InesitateDigitali=False,
             CodiceFiscaleResult=0
         )
