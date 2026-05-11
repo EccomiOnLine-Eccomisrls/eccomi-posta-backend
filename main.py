@@ -65,28 +65,6 @@ def fix_wsa_to(envelope):
 
 
 def poste_client(timeout=60):
-    session = Session()
-    session.auth = HTTPBasicAuth(POSTE_H2H_USERID, POSTE_H2H_PASSWORD)
-    session.verify = False
-
-    transport = Transport(session=session, timeout=timeout)
-
-    client = Client(
-        wsdl=POSTE_H2H_ROL_WSDL,
-        transport=transport,
-        plugins=[
-            ForcePosteAddressPlugin()
-        ]
-    )
-
-    service = client.create_service(
-        POSTE_H2H_BINDING,
-        POSTE_H2H_SERVICE_URL
-    )
-
-    service._binding_options["address"] = POSTE_H2H_SERVICE_URL
-
-    return client, service
 
 
 @app.get("/")
@@ -530,33 +508,38 @@ def poste_test_submit():
 
 @app.get("/poste/h2h/invio-test")
 def poste_invio_test():
+    history = HistoryPlugin()
 
     try:
-
-        client, service = poste_client(timeout=60)
+        client, service = poste_client(timeout=60, extra_plugins=[history])
 
         Mittente = client.get_type("ns1:Mittente")
-
         Nominativo = client.get_type("ns1:Nominativo")
-
         Indirizzo = client.get_type("ns1:Indirizzo")
-
         Destinatario = client.get_type("ns1:Destinatario")
-
         Documento = client.get_type("ns1:Documento")
-
-        OpzionidiStampa = client.get_type("ns1:OpzionidiStampa")
-
         ROLSubmit = client.get_type("ns0:ROLSubmit")
 
+        pdf_bytes = b"""%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>
+endobj
+trailer
+<< /Root 1 0 R >>
+%%EOF
+"""
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
         indirizzo_mitt = Indirizzo(
-
             DUG="VIA",
-
             Toponimo="ROMA",
-
             NumeroCivico="1"
-
         )
 
         nom_mitt = Nominativo(
@@ -569,25 +552,18 @@ def poste_invio_test():
             TipoIndirizzo="NORMAL",
             ForzaDestinazione=False,
             InesitateDigitali=False,
-            CodiceFiscaleResult=0,
+            CodiceFiscaleResult=0
         )
 
         mittente = Mittente(
-
             Nominativo=nom_mitt,
-
             InviaStampa=False
-
         )
 
         indirizzo_dest = Indirizzo(
-
             DUG="VIA",
-
             Toponimo="MILANO",
-
             NumeroCivico="10"
-
         )
 
         nom_dest = Nominativo(
@@ -600,55 +576,41 @@ def poste_invio_test():
             TipoIndirizzo="NORMAL",
             ForzaDestinazione=False,
             InesitateDigitali=False,
-            CodiceFiscaleResult=0,
+            CodiceFiscaleResult=0
         )
 
         destinatario = Destinatario(
-
             Nominativo=nom_dest
-
         )
-
-        pdf_fake = base64.b64encode(
-
-            b"%PDF-1.4 TEST PDF"
-
-        ).decode()
 
         documento = Documento(
-
-            Immagine=pdf_fake,
-
+            Immagine=pdf_base64,
             TipoDocumento="PDF"
-
         )
 
-        stampa = {
-            "ResolutionX": "300",
-            "ResolutionY": "300",
-            "BW": "true",
-            "FronteRetro": "false",
-            "PageSize": 0
-        }
-
         submit = ROLSubmit(
-
             Mittente=mittente,
-            Destinatari={"Destinatario": [destinatario]},
+            Destinatari={
+                "Destinatario": [destinatario]
+            },
             NumeroDestinatari=1,
             Documento=[documento],
             Opzioni={
-                "OpzionidiStampa": stampa,
+                "OpzionidiStampa": {
+                    "ResolutionX": 300,
+                    "ResolutionY": 300,
+                    "BW": True,
+                    "FronteRetro": False,
+                    "PageSize": "A4"
+                },
                 "SecurPaper": False,
                 "DPM": False,
-                "DataStampa": datetime.datetime.now(),
                 "InserisciMittente": True,
-                "AnniArchiviazioneSpecified": False,
                 "Archiviazione": False,
                 "FirmaElettronica": False
             },
             PrezzaturaSincrona=True,
-            Nazionale="true",
+            Nazionale=True,
             ForzaInvioDestinazioniValide=True
         )
 
@@ -659,19 +621,49 @@ def poste_invio_test():
             ROLSubmit=submit
         )
 
+        xml_sent = None
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
         return {
-           "success": True,
-           "result": str(result)
+            "success": True,
+            "result": str(result),
+            "xml_sent": xml_sent
         }
 
     except Exception as e:
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
 
         return {
-
             "success": False,
-
-            "error": str(e)
-
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
         }
 
 @app.get("/poste/h2h/find-pagesize")
