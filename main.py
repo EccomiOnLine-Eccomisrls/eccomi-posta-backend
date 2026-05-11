@@ -16,11 +16,12 @@ from zeep.transports import Transport
 from zeep.wsa import WsAddressingPlugin
 from zeep.xsd import AnySimpleType
 from lxml import etree
+from urllib.parse import urljoin
 import datetime
 import os
 import hashlib
 import base64
-
+import requests
 
 app = FastAPI()
 
@@ -694,6 +695,51 @@ trailer
             "error": str(e),
             "xml_sent": xml_sent,
             "xml_received": xml_received
+        }
+
+@app.get("/poste/h2h/find-tipo-indirizzo-raw")
+def find_tipo_indirizzo_raw():
+    try:
+        session = Session()
+        session.auth = HTTPBasicAuth(POSTE_H2H_USERID, POSTE_H2H_PASSWORD)
+        session.verify = False
+
+        visited = set()
+        found = []
+
+        def fetch_and_scan(url):
+            if url in visited:
+                return
+            visited.add(url)
+
+            r = session.get(url, timeout=30, verify=False)
+            text = r.text
+
+            if "TipoIndirizzo" in text or "NominativoTipoIndirizzo" in text:
+                found.append({
+                    "url": url,
+                    "snippet": text[max(0, text.find("TipoIndirizzo") - 1000): text.find("TipoIndirizzo") + 2000]
+                })
+
+            root = etree.fromstring(r.content)
+            for el in root.xpath("//*[@schemaLocation]"):
+                loc = el.attrib.get("schemaLocation")
+                if loc:
+                    next_url = urljoin(url, loc)
+                    fetch_and_scan(next_url)
+
+        fetch_and_scan(POSTE_H2H_ROL_WSDL)
+
+        return {
+            "success": True,
+            "visited": list(visited),
+            "found": found
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
         }
 
 @app.get("/poste/h2h/find-pagesize")
