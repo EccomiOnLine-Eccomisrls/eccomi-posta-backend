@@ -700,6 +700,104 @@ trailer
             "xml_received": xml_received
         }
 
+@app.get("/poste/h2h/valida-destinatari-test")
+def valida_destinatari_test():
+    history = HistoryPlugin()
+
+    try:
+        client, service = poste_client(timeout=60, extra_plugins=[history])
+
+        Nominativo = client.get_type("ns1:Nominativo")
+        Indirizzo = client.get_type("ns1:Indirizzo")
+        Destinatario = client.get_type("ns1:Destinatario")
+
+        indirizzo_dest = Indirizzo(
+            DUG="VIA",
+            Toponimo="PRAGA",
+            NumeroCivico="7"
+        )
+
+        nom_dest = Nominativo(
+            Nome="PIETRO",
+            Cognome="DEL LIBANO",
+            CAP="88842",
+            Citta="CUTRO",
+            Provincia="KR",
+            Indirizzo=indirizzo_dest,
+            TipoIndirizzo="NORMALE",
+            ForzaDestinazione=False,
+            InesitateDigitali=False,
+            CodiceFiscaleResult=0
+        )
+
+        destinatario = Destinatario(
+            Nominativo=nom_dest
+        )
+
+        result = service.ValidaDestinatari(
+            Destinatari={
+                "Destinatario": [destinatario]
+            },
+            Nazionale=True
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "result": str(result),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+    except Exception as e:
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        return {
+            "success": False,
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
 @app.get("/poste/h2h/find-tipo-indirizzo-raw")
 def find_tipo_indirizzo_raw():
     try:
