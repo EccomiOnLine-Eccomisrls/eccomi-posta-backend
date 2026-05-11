@@ -74,7 +74,6 @@ def poste_client(timeout=60, extra_plugins=None):
     transport = Transport(session=session, timeout=timeout)
 
     plugins = [
-        WsAddressingPlugin(),
         ForcePosteAddressPlugin()
     ]
 
