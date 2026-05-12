@@ -787,9 +787,9 @@ def poste_invio_test_v2():
                 "AnniArchiviazione": 0,
                 "ArchiviazioneDocumenti": ""
             },
-            PrezzaturaSincrona=False,
+            PrezzaturaSincrona=True,
             Nazionale=True,
-            ForzaInvioDestinazioniValide=True
+            ForzaInvioDestinazioniValide=False
         )
 
         id_richiesta = str(uuid.uuid4())
