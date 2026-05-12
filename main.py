@@ -733,7 +733,7 @@ def poste_invio_test_v2():
             )
 
         nom_mitt = crea_nominativo("MARIO", "ROSSI", "00184", "ROMA", "RM", "NAZIONALE", "1")
-        nom_dest = crea_nominativo("TEST", "DESTINATARIO", "20121", "MILANO", "MI", "DUOMO", "10")
+        nom_dest = crea_nominativo("LUCA", "BIANCHI", "00138", "ROMA", "RM", "APPIA NUOVA", "1")
 
         pdf_bytes = b"""%PDF-1.4
 1 0 obj
