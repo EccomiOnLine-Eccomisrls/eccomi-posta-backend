@@ -6,3 +6,4 @@ supabase
 zeep
 requests
 lxml
+reportlab
