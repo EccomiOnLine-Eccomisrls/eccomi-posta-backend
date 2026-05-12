@@ -768,7 +768,7 @@ trailer
                 "Destinatario": [
                     DestinatarioType(
                         Nominativo=nom_dest,
-                        IdDestinatario="1"
+                        IdRicevuta="1"
                     )
                 ]
             },
@@ -792,7 +792,7 @@ trailer
                 "AnniArchiviazione": 0,
                 "ArchiviazioneDocumenti": ""
             },
-            PrezzaturaSincrona=False,
+            PrezzaturaSincrona=True,
             Nazionale=True,
             ForzaInvioDestinazioniValide=False
         )
