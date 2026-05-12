@@ -779,11 +779,12 @@ trailer
                 "SecurPaper": False,
                 "DPM": False,
                 "DataStampa": datetime.datetime.now().replace(microsecond=0),
-                "DataStampaSpecified": True,
                 "InserisciMittente": True,
                 "Archiviazione": False,
                 "AnniArchiviazioneSpecified": False,
-                "FirmaElettronica": False
+                "FirmaElettronica": False,
+                "AnniArchiviazione": 0,
+                "ArchiviazioneDocumenti": ""
             },
             PrezzaturaSincrona=True,
             Nazionale=True,
