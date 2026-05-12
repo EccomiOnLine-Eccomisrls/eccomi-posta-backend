@@ -17,6 +17,9 @@ from zeep.wsa import WsAddressingPlugin
 from zeep.xsd import AnySimpleType
 from lxml import etree
 from urllib.parse import urljoin
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from io import BytesIO
 import datetime
 import os
 import hashlib
@@ -735,24 +738,19 @@ def poste_invio_test_v2():
         nom_mitt = crea_nominativo("MARIO", "ROSSI", "00184", "ROMA", "RM", "NAZIONALE", "1")
         nom_dest = crea_nominativo("LUCA", "BIANCHI", "00138", "ROMA", "RM", "APPIA NUOVA", "1")
 
-        pdf_bytes = b"""%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>
-endobj
-trailer
-<< /Root 1 0 R >>
-%%EOF
-"""
-        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
-        
-        md5_pdf = hashlib.md5(pdf_bytes).hexdigest()
+        buffer = BytesIO()
+        c = canvas.Canvas(buffer, pagesize=A4)
+        c.drawString(100, 750, "Test invio Poste H2H Eccomi Posta")
+        c.drawString(100, 720, "Destinatario: LUCA BIANCHI")
+        c.drawString(100, 700, "VIA APPIA NUOVA 1")
+        c.drawString(100, 680, "00138 ROMA RM")
+        c.showPage()
+        c.save()
 
+        pdf_bytes = buffer.getvalue()
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        md5_pdf = hashlib.md5(pdf_bytes).hexdigest()
+ 
         documento = DocumentoType(
             Immagine=pdf_base64,
             TipoDocumento="PDF",
