@@ -750,10 +750,13 @@ trailer
 %%EOF
 """
         pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        
+        md5_pdf = hashlib.md5(pdf_bytes).hexdigest(
 
         documento = DocumentoType(
             Immagine=pdf_base64,
-            TipoDocumento="PDF"
+            TipoDocumento="PDF",
+            MD5=md5_pdf
         )
 
         submit = ROLSubmitType(
