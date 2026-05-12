@@ -727,7 +727,7 @@ def poste_invio_test_v2():
                 Provincia=prov,
                 Indirizzo=indirizzo,
                 TipoIndirizzo="NORMALE",
-                ForzaDestinazione=False,
+                ForzaDestinazione=True,
                 InesitateDigitali=False,
                 CodiceFiscaleResult=0
             )
@@ -791,7 +791,7 @@ trailer
             },
             PrezzaturaSincrona=True,
             Nazionale=True,
-            ForzaInvioDestinazioniValide=True
+            ForzaInvioDestinazioniValide=False
         )
 
         id_richiesta = str(uuid.uuid4())
