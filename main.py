@@ -735,9 +735,6 @@ def valida_destinatari_test():
 
         result = service.ValidaDestinatari(
             IDRichiesta=str(uuid.uuid4()),
-            Cliente=POSTE_H2H_USERID,
-            CodiceContratto=POSTE_H2H_CONTRACT_ID,
-            trackingverify=0,
             Destinatari={
                 "Destinatario": [destinatario]
             }
