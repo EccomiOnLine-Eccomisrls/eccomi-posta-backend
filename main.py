@@ -766,10 +766,7 @@ trailer
             ),
             Destinatari={
                 "Destinatario": [
-                    DestinatarioType(
-                        Nominativo=nom_dest,
-                        IdRicevuta="1"
-                    )
+                    DestinatarioType(Nominativo=nom_dest)                
                 ]
             },
             NumeroDestinatari=1,
@@ -792,9 +789,9 @@ trailer
                 "AnniArchiviazione": 0,
                 "ArchiviazioneDocumenti": ""
             },
-            PrezzaturaSincrona=True,
+            PrezzaturaSincrona=False,
             Nazionale=True,
-            ForzaInvioDestinazioniValide=False
+            ForzaInvioDestinazioniValide=True
         )
 
         id_richiesta = str(uuid.uuid4())
