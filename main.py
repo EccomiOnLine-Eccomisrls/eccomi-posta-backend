@@ -766,7 +766,10 @@ trailer
             ),
             Destinatari={
                 "Destinatario": [
-                    DestinatarioType(Nominativo=nom_dest)
+                    DestinatarioType(
+                        Nominativo=nom_dest,
+                        IdDestinatario="1"
+                    )
                 ]
             },
             NumeroDestinatari=1,
