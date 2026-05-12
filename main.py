@@ -791,7 +791,7 @@ trailer
             ForzaInvioDestinazioniValide=True
         )
 
-        id_richiesta = f"REQ_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+        id_richiesta = str(uuid.uuid4())
 
         result = service.Invio(
             IDRichiesta=id_richiesta,
