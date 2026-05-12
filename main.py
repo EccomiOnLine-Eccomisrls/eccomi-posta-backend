@@ -760,7 +760,7 @@ def poste_invio_test_v2():
         submit = ROLSubmitType(
             Mittente=MittenteType(
                 Nominativo=nom_mitt,
-                InviaStampa=False
+                InviaStampa=True
             ),
             Destinatari={
                 "Destinatario": [
