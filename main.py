@@ -792,7 +792,7 @@ trailer
                 "AnniArchiviazione": 0,
                 "ArchiviazioneDocumenti": ""
             },
-            PrezzaturaSincrona=True,
+            PrezzaturaSincrona=False,
             Nazionale=True,
             ForzaInvioDestinazioniValide=False
         )
