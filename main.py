@@ -859,6 +859,164 @@ def poste_invio_test_v2():
             "xml_received": xml_received
         }
 
+@app.get("/poste/h2h/invio-test-v3")
+def poste_invio_test_v3():
+    history = HistoryPlugin()
+
+    try:
+        client, service = poste_client(timeout=60, extra_plugins=[history])
+
+        NominativoType = client.get_type("ns1:Nominativo")
+        IndirizzoType = client.get_type("ns1:Indirizzo")
+        MittenteType = client.get_type("ns1:Mittente")
+        DestinatarioType = client.get_type("ns1:Destinatario")
+        DocumentoType = client.get_type("ns1:Documento")
+
+        def crea_nominativo(nome, cognome, cap, citta, prov, via, civico):
+            indirizzo = IndirizzoType(
+                DUG="VIA",
+                Toponimo=via,
+                NumeroCivico=civico
+            )
+            return NominativoType(
+                Nome=nome,
+                Cognome=cognome,
+                CAP=cap,
+                Citta=citta,
+                Provincia=prov,
+                Indirizzo=indirizzo,
+                TipoIndirizzo="NORMALE",
+                ForzaDestinazione=True,
+                InesitateDigitali=False,
+                CodiceFiscaleResult=0
+            )
+
+        nom_mitt = crea_nominativo("MARIO", "ROSSI", "00184", "ROMA", "RM", "NAZIONALE", "1")
+        nom_dest = crea_nominativo("LUCA", "BIANCHI", "00138", "ROMA", "RM", "APPIA NUOVA", "1")
+
+        mittente = MittenteType(
+            Nominativo=nom_mitt,
+            InviaStampa=False
+        )
+
+        destinatario = DestinatarioType(
+            Nominativo=nom_dest
+        )
+
+        buffer = BytesIO()
+        c = canvas.Canvas(buffer, pagesize=A4)
+        c.drawString(100, 750, "Test invio Poste H2H Eccomi Posta")
+        c.drawString(100, 720, "Destinatario: LUCA BIANCHI")
+        c.drawString(100, 700, "VIA APPIA NUOVA 1")
+        c.drawString(100, 680, "00138 ROMA RM")
+        c.showPage()
+        c.save()
+
+        pdf_bytes = buffer.getvalue()
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        md5_pdf = hashlib.md5(pdf_bytes).hexdigest()
+
+        documento = DocumentoType(
+            Immagine=pdf_base64,
+            TipoDocumento="PDF",
+            MD5=md5_pdf
+        )
+
+        id_richiesta = str(uuid.uuid4())
+
+        result = service.Invio(
+            IDRichiesta=id_richiesta,
+            Cliente=POSTE_H2H_USERID,
+            CodiceContratto=POSTE_H2H_CONTRACT_ID,
+            ROLSubmit={
+                "Mittente": mittente,
+                "Destinatari": {
+                    "Destinatario": [destinatario]
+                },
+                "NumeroDestinatari": 1,
+                "Documento": [documento],
+                "Opzioni": {
+                    "OpzionidiStampa": {
+                        "ResolutionX": 300,
+                        "ResolutionY": 300,
+                        "BW": True,
+                        "FronteRetro": False,
+                        "PageSize": "A4"
+                    },
+                    "SecurPaper": False,
+                    "DPM": False,
+                    "DataStampa": datetime.datetime.now().replace(microsecond=0),
+                    "InserisciMittente": True,
+                    "Archiviazione": False,
+                    "AnniArchiviazioneSpecified": False,
+                    "FirmaElettronica": False,
+                    "AnniArchiviazione": 0,
+                    "ArchiviazioneDocumenti": ""
+                },
+                "PrezzaturaSincrona": False,
+                "Nazionale": True,
+                "ForzaInvioDestinazioniValide": True
+            }
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        return {
+            "success": True,
+            "id_richiesta": id_richiesta,
+            "poste_response": str(result),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+    except Exception as e:
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        return {
+            "success": False,
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
 @app.get("/poste/h2h/valida-destinatari-test")
 def valida_destinatari_test():
     history = HistoryPlugin()
