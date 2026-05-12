@@ -725,8 +725,7 @@ def valida_destinatari_test():
             Indirizzo=indirizzo_dest,
             TipoIndirizzo="NORMALE",
             ForzaDestinazione=False,
-            InesitateDigitali=False,
-            CodiceFiscaleResult=0
+            InesitateDigitali=False
         )
 
         destinatario = Destinatario(
