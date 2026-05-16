@@ -1912,6 +1912,73 @@ async def scarica_pdf(token: str):
         filename=f"{token}.pdf",
     )
 
+def genera_pdf_telegramma(pdf_path, telegramma):
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    width, height = A4
+
+    mitt = telegramma.get("mittente", {})
+    dest = telegramma.get("destinatario", {})
+    testo = telegramma.get("testo", "")
+
+    y = height - 2.5 * cm
+
+    c.setFont("Times-Bold", 12)
+    c.drawCentredString(width / 2, y, "TELEGRAMMA")
+    y -= 1.5 * cm
+
+    c.setFont("Times-Bold", 10)
+    c.drawCentredString(width / 2, y, "DESTINATARIO")
+    y -= 0.6 * cm
+
+    c.setFont("Times-Roman", 10)
+    c.drawCentredString(width / 2, y, dest.get("nome", ""))
+    y -= 0.5 * cm
+    c.drawCentredString(width / 2, y, f'{dest.get("via", "")} {dest.get("civico", "")}')
+    y -= 0.5 * cm
+    c.drawCentredString(width / 2, y, f'{dest.get("cap", "")} {dest.get("comune", "")} ({dest.get("provincia", "")})')
+    y -= 1.2 * cm
+
+    c.line(2 * cm, y, width - 2 * cm, y)
+    y -= 0.9 * cm
+
+    c.setFont("Times-Bold", 11)
+    text_obj = c.beginText(2.5 * cm, y)
+    text_obj.setFont("Times-Bold", 11)
+
+    words = testo.upper().split()
+    line = ""
+    max_chars = 72
+
+    for word in words:
+        test_line = f"{line} {word}".strip()
+        if len(test_line) <= max_chars:
+            line = test_line
+        else:
+            text_obj.textLine(line)
+            line = word
+
+    if line:
+        text_obj.textLine(line)
+
+    c.drawText(text_obj)
+
+    y = text_obj.getY() - 1 * cm
+    c.line(2 * cm, y, width - 2 * cm, y)
+    y -= 1 * cm
+
+    c.setFont("Times-Bold", 10)
+    c.drawCentredString(width / 2, y, "MITTENTE")
+    y -= 0.6 * cm
+
+    c.setFont("Times-Roman", 10)
+    c.drawCentredString(width / 2, y, mitt.get("nome", ""))
+    y -= 0.5 * cm
+    c.drawCentredString(width / 2, y, f'{mitt.get("via", "")} {mitt.get("civico", "")}')
+    y -= 0.5 * cm
+    c.drawCentredString(width / 2, y, f'{mitt.get("cap", "")} {mitt.get("comune", "")} ({mitt.get("provincia", "")})')
+
+    c.save()
+
 @app.get("/shopify/telegramma/order")
 def shopify_telegramma_order_info():
     return {
@@ -2034,3 +2101,48 @@ def shopify_telegramma_last():
             "success": False,
             "error": str(e)
         }
+
+
+@app.get("/shopify/telegramma/test-pdf-last")
+def shopify_telegramma_test_pdf_last():
+    try:
+        folder = "data/webhooks"
+
+        if not os.path.exists(folder):
+            return {"success": False, "error": "Nessun webhook ricevuto"}
+
+        files = sorted(
+            [f for f in os.listdir(folder) if f.endswith(".json")],
+            reverse=True
+        )
+
+        if not files:
+            return {"success": False, "error": "Nessun file webhook trovato"}
+
+        latest_file = files[0]
+
+        with open(os.path.join(folder, latest_file), "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        telegrammi = data.get("telegrammi", [])
+
+        if not telegrammi:
+            return {"success": False, "error": "Nessun telegramma trovato"}
+
+        telegramma = telegrammi[0]
+
+        os.makedirs("data/telegrammi_pdf", exist_ok=True)
+
+        order_name = str(data.get("order_name", "TEST")).replace("#", "")
+        pdf_path = f"data/telegrammi_pdf/telegramma_{order_name}.pdf"
+
+        genera_pdf_telegramma(pdf_path, telegramma)
+
+        return FileResponse(
+            pdf_path,
+            media_type="application/pdf",
+            filename=f"telegramma_{order_name}.pdf"
+        )
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
