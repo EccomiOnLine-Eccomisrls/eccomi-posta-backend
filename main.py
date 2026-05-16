@@ -1696,6 +1696,16 @@ def poste_send_test():
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+def clean_h2h_text(value):
+    return (value or "") \
+        .replace("’", "'") \
+        .replace("‘", "'") \
+        .replace("“", '"') \
+        .replace("”", '"') \
+        .replace("–", "-") \
+        .replace("—", "-") \
+        .strip()
+
 
 def format_indirizzo_blocco(testo):
     testo = testo or ""
@@ -1989,6 +1999,7 @@ def split_nome_cognome(full_name):
 
 
 def parse_indirizzo_h2h(via):
+    via = clean_h2h_text(via)
     via = (via or "").strip()
     parts = via.split()
 
@@ -2375,12 +2386,12 @@ def shopify_telegramma_send_last():
             Nome=mitt_nome,
             Cognome=mitt_cognome,
             CAP=mitt.get("cap", ""),
-            Citta=mitt.get("comune", "").upper(),
-            Provincia=mitt.get("provincia", "").upper(),
+            Citta=clean_h2h_text(mitt.get("comune", "")).upper(),
+            Provincia=clean_h2h_text(mitt.get("provincia", "")).upper(),
             Indirizzo=IndirizzoType(
                 DUG=mitt_dug,
-                Toponimo=mitt_toponimo,
-                NumeroCivico=mitt.get("civico", "")
+                Toponimo=clean_h2h_text(mitt_toponimo),
+                NumeroCivico=clean_h2h_text(mitt.get("civico", ""))
             ),
             TipoIndirizzo="NORMALE",
             ForzaDestinazione=True,
@@ -2392,12 +2403,12 @@ def shopify_telegramma_send_last():
             Nome=dest_nome,
             Cognome=dest_cognome,
             CAP=dest.get("cap", ""),
-            Citta=dest.get("comune", "").upper(),
-            Provincia=dest.get("provincia", "").upper(),
+            Citta=clean_h2h_text(dest.get("comune", "")).upper(),
+            Provincia=clean_h2h_text(dest.get("provincia", "")).upper(),
             Indirizzo=IndirizzoType(
                 DUG=dest_dug,
-                Toponimo=dest_toponimo,
-                NumeroCivico=dest.get("civico", "")
+                Toponimo=clean_h2h_text(dest_toponimo),
+                NumeroCivico=clean_h2h_text(dest.get("civico", ""))
             ),
             TipoIndirizzo="NORMALE",
             ForzaDestinazione=True,
