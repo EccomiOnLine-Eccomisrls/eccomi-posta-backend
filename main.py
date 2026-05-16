@@ -1,7 +1,7 @@
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from reportlab.lib.pagesizes import A4
@@ -1910,3 +1910,67 @@ async def scarica_pdf(token: str):
         media_type="application/pdf",
         filename=f"{token}.pdf",
     )
+
+@app.post("/shopify/telegramma/order")
+async def shopify_telegramma_order(request: Request):
+    try:
+        order = await request.json()
+
+        order_id = order.get("id")
+        order_name = order.get("name")
+        email = order.get("email")
+
+        telegrammi = []
+
+        for item in order.get("line_items", []):
+            title = item.get("title", "")
+
+            if "TELEGRAMMA" not in title.upper():
+                continue
+
+            props = {}
+
+            for p in item.get("properties", []):
+                name = p.get("name")
+                value = p.get("value")
+                props[name] = value
+
+            telegrammi.append({
+                "order_id": order_id,
+                "order_name": order_name,
+                "email": email,
+                "testo": props.get("📨 Testo telegramma"),
+                "parole": props.get("🔢 Parole telegramma"),
+                "mittente": {
+                    "nome": props.get("_mittente_nome"),
+                    "via": props.get("_mittente_via"),
+                    "civico": props.get("_mittente_civico"),
+                    "cap": props.get("_mittente_cap"),
+                    "comune": props.get("_mittente_comune"),
+                    "provincia": props.get("_mittente_provincia"),
+                    "contatto": props.get("_mittente_contatto"),
+                },
+                "destinatario": {
+                    "nome": props.get("_destinatario_nome"),
+                    "via": props.get("_destinatario_via"),
+                    "civico": props.get("_destinatario_civico"),
+                    "cap": props.get("_destinatario_cap"),
+                    "comune": props.get("_destinatario_comune"),
+                    "provincia": props.get("_destinatario_provincia"),
+                    "contatto": props.get("_destinatario_contatto"),
+                }
+            })
+
+        return {
+            "success": True,
+            "order_id": order_id,
+            "order_name": order_name,
+            "telegrammi_trovati": len(telegrammi),
+            "telegrammi": telegrammi
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
