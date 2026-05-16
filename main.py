@@ -2323,3 +2323,218 @@ def shopify_telegramma_test_h2h_xml_last():
 
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+@app.get("/shopify/telegramma/send-last")
+def shopify_telegramma_send_last():
+    history = HistoryPlugin()
+
+    try:
+        folder = "data/webhooks"
+
+        if not os.path.exists(folder):
+            return {"success": False, "error": "Nessun webhook ricevuto"}
+
+        files = sorted(
+            [f for f in os.listdir(folder) if f.endswith(".json")],
+            reverse=True
+        )
+
+        if not files:
+            return {"success": False, "error": "Nessun webhook trovato"}
+
+        latest_file = files[0]
+
+        with open(os.path.join(folder, latest_file), "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        telegrammi = data.get("telegrammi", [])
+
+        if not telegrammi:
+            return {"success": False, "error": "Nessun telegramma trovato"}
+
+        telegramma = telegrammi[0]
+
+        client, service = poste_client(timeout=90, extra_plugins=[history])
+
+        NominativoType = client.get_type("ns1:Nominativo")
+        IndirizzoType = client.get_type("ns1:Indirizzo")
+        MittenteType = client.get_type("ns1:Mittente")
+        DestinatarioType = client.get_type("ns1:Destinatario")
+        DocumentoType = client.get_type("ns1:Documento")
+
+        mitt = telegramma.get("mittente", {})
+        dest = telegramma.get("destinatario", {})
+
+        mitt_nome, mitt_cognome = split_nome_cognome(mitt.get("nome", ""))
+        dest_nome, dest_cognome = split_nome_cognome(dest.get("nome", ""))
+
+        mitt_dug, mitt_toponimo = parse_indirizzo_h2h(mitt.get("via", ""))
+        dest_dug, dest_toponimo = parse_indirizzo_h2h(dest.get("via", ""))
+
+        nom_mitt = NominativoType(
+            Nome=mitt_nome,
+            Cognome=mitt_cognome,
+            CAP=mitt.get("cap", ""),
+            Citta=mitt.get("comune", "").upper(),
+            Provincia=mitt.get("provincia", "").upper(),
+            Indirizzo=IndirizzoType(
+                DUG=mitt_dug,
+                Toponimo=mitt_toponimo,
+                NumeroCivico=mitt.get("civico", "")
+            ),
+            TipoIndirizzo="NORMALE",
+            ForzaDestinazione=True,
+            InesitateDigitali=False,
+            CodiceFiscaleResult=0
+        )
+
+        nom_dest = NominativoType(
+            Nome=dest_nome,
+            Cognome=dest_cognome,
+            CAP=dest.get("cap", ""),
+            Citta=dest.get("comune", "").upper(),
+            Provincia=dest.get("provincia", "").upper(),
+            Indirizzo=IndirizzoType(
+                DUG=dest_dug,
+                Toponimo=dest_toponimo,
+                NumeroCivico=dest.get("civico", "")
+            ),
+            TipoIndirizzo="NORMALE",
+            ForzaDestinazione=True,
+            InesitateDigitali=False,
+            CodiceFiscaleResult=0
+        )
+
+        os.makedirs("data/telegrammi_pdf", exist_ok=True)
+
+        order_name = str(data.get("order_name", "TEST")).replace("#", "")
+        pdf_path = f"data/telegrammi_pdf/telegramma_{order_name}.pdf"
+
+        genera_pdf_telegramma(pdf_path, telegramma)
+
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        md5_pdf = hashlib.md5(pdf_bytes).hexdigest()
+
+        documento = DocumentoType(
+            Immagine=pdf_base64,
+            TipoDocumento="PDF",
+            MD5=md5_pdf
+        )
+
+        id_richiesta = str(uuid.uuid4())
+
+        result = service.Invio(
+            IDRichiesta=id_richiesta,
+            Cliente=POSTE_H2H_USERID,
+            CodiceContratto=POSTE_H2H_CONTRACT_ID,
+            ROLSubmit={
+                "Mittente": MittenteType(
+                    Nominativo=nom_mitt,
+                    InviaStampa=False
+                ),
+                "Destinatari": {
+                    "Destinatario": [
+                        DestinatarioType(Nominativo=nom_dest)
+                    ]
+                },
+                "NumeroDestinatari": 1,
+                "Documento": [documento],
+                "Opzioni": {
+                    "OpzionidiStampa": {
+                        "ResolutionX": 300,
+                        "ResolutionY": 300,
+                        "BW": True,
+                        "FronteRetro": False,
+                        "PageSize": "A4"
+                    },
+                    "SecurPaper": False,
+                    "DPM": False,
+                    "DataStampa": datetime.datetime.now().replace(microsecond=0),
+                    "InserisciMittente": True,
+                    "Archiviazione": False,
+                    "AnniArchiviazioneSpecified": False,
+                    "FirmaElettronica": False,
+                    "AnniArchiviazione": 0,
+                    "ArchiviazioneDocumenti": ""
+                },
+                "PrezzaturaSincrona": False,
+                "Nazionale": True,
+                "ForzaInvioDestinazioniValide": True
+            }
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        os.makedirs("data/h2h_results", exist_ok=True)
+
+        result_path = f"data/h2h_results/send_{order_name}.json"
+
+        with open(result_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "success": True,
+                "order_name": data.get("order_name"),
+                "id_richiesta": id_richiesta,
+                "poste_response": str(result),
+                "xml_sent": xml_sent,
+                "xml_received": xml_received
+            }, f, ensure_ascii=False, indent=2)
+
+        return {
+            "success": True,
+            "order_name": data.get("order_name"),
+            "id_richiesta": id_richiesta,
+            "poste_response": str(result),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+    except Exception as e:
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        return {
+            "success": False,
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
