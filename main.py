@@ -1911,6 +1911,13 @@ async def scarica_pdf(token: str):
         filename=f"{token}.pdf",
     )
 
+@app.get("/shopify/telegramma/order")
+def shopify_telegramma_order_info():
+    return {
+        "success": True,
+        "message": "Endpoint attivo. Usa POST per inviare un ordine Shopify."
+    }
+
 @app.post("/shopify/telegramma/order")
 async def shopify_telegramma_order(request: Request):
     try:
