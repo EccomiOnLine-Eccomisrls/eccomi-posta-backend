@@ -1968,7 +1968,8 @@ async def shopify_telegramma_order(request: Request):
                     "contatto": props.get("_destinatario_contatto"),
                 }
             })
-                    os.makedirs("data/webhooks", exist_ok=True)
+
+        os.makedirs("data/webhooks", exist_ok=True)
 
         log_path = f"data/webhooks/order_{order_id}.json"
 
@@ -1993,6 +1994,7 @@ async def shopify_telegramma_order(request: Request):
             "success": False,
             "error": str(e)
         }
+
 
 @app.get("/shopify/telegramma/last")
 def shopify_telegramma_last():
