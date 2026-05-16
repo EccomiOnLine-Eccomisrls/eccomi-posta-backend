@@ -2383,8 +2383,8 @@ def shopify_telegramma_send_last():
         dest_dug, dest_toponimo = parse_indirizzo_h2h(dest.get("via", ""))
 
         nom_mitt = NominativoType(
-            Nome=mitt_nome,
-            Cognome=mitt_cognome,
+            Nome=clean_h2h_text(mitt_nome),
+            Cognome=clean_h2h_text(mitt_cognome),
             CAP=mitt.get("cap", ""),
             Citta=clean_h2h_text(mitt.get("comune", "")).upper(),
             Provincia=clean_h2h_text(mitt.get("provincia", "")).upper(),
@@ -2400,8 +2400,8 @@ def shopify_telegramma_send_last():
         )
 
         nom_dest = NominativoType(
-            Nome=dest_nome,
-            Cognome=dest_cognome,
+            Nome=clean_h2h_text(dest_nome),
+            Cognome=clean_h2h_text(dest_cognome),
             CAP=dest.get("cap", ""),
             Citta=clean_h2h_text(dest.get("comune", "")).upper(),
             Provincia=clean_h2h_text(dest.get("provincia", "")).upper(),
