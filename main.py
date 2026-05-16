@@ -1968,6 +1968,17 @@ async def shopify_telegramma_order(request: Request):
                     "contatto": props.get("_destinatario_contatto"),
                 }
             })
+                    os.makedirs("data/webhooks", exist_ok=True)
+
+        log_path = f"data/webhooks/order_{order_id}.json"
+
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "order_id": order_id,
+                "order_name": order_name,
+                "email": email,
+                "telegrammi": telegrammi
+            }, f, ensure_ascii=False, indent=2)
 
         return {
             "success": True,
@@ -1975,6 +1986,45 @@ async def shopify_telegramma_order(request: Request):
             "order_name": order_name,
             "telegrammi_trovati": len(telegrammi),
             "telegrammi": telegrammi
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@app.get("/shopify/telegramma/last")
+def shopify_telegramma_last():
+    try:
+        folder = "data/webhooks"
+
+        if not os.path.exists(folder):
+            return {
+                "success": False,
+                "error": "Nessun webhook ricevuto"
+            }
+
+        files = sorted(
+            [f for f in os.listdir(folder) if f.endswith(".json")],
+            reverse=True
+        )
+
+        if not files:
+            return {
+                "success": False,
+                "error": "Nessun file webhook trovato"
+            }
+
+        latest_file = files[0]
+
+        with open(os.path.join(folder, latest_file), "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        return {
+            "success": True,
+            "file": latest_file,
+            "data": data
         }
 
     except Exception as e:
