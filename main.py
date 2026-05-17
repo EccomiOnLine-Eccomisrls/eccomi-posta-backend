@@ -3122,8 +3122,8 @@ def dashboard_pratiche():
             </tbody>
         </table>
 
-        <div class="legend-box">
-            <h3>📌 Legenda Stati</h3>
+        <div class="legend-box" style="margin-top:80px;">
+        <h3>📌 Legenda Stati</h3>
             <div class="legend-line">
                 <span style="background:#3498db;">RICEVUTO</span>
                 <span style="background:#27ae60;">INVIATO_POSTE</span>
