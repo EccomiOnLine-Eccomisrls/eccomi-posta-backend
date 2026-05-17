@@ -2935,6 +2935,8 @@ def dashboard_pratiche():
                 <a href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">MANUALE</a>
                 <span>|</span>
                 <a href="/dashboard/pratiche/completa/{p.get('id')}" target="_blank">COMPLETA</a>
+                <span>|</span>
+                <a href="/dashboard/pratiche/pdf/{p.get('id')}" target="_blank">PDF</a>
             </td>
         </tr>
         """
@@ -3266,3 +3268,39 @@ def dashboard_pratica_completa(pratica_id: str):
         "pratica_id": pratica_id,
         "nuovo_stato": "COMPLETATO"
     }
+
+@app.get("/dashboard/pratiche/pdf/{pratica_id}")
+def dashboard_pratica_pdf(pratica_id: str):
+
+    result = supabase.table("pratiche") \
+        .select("*") \
+        .eq("id", pratica_id) \
+        .single() \
+        .execute()
+
+    if not result.data:
+        return {"success": False, "error": "Pratica non trovata"}
+
+    pratica = result.data
+
+    telegramma = {
+        "testo": pratica.get("testo"),
+        "mittente": pratica.get("mittente") or {},
+        "destinatario": pratica.get("destinatario") or {}
+    }
+
+    os.makedirs("data/telegrammi_pdf", exist_ok=True)
+
+    order_name_clean = str(
+        pratica.get("order_name", "TEST")
+    ).replace("#", "")
+
+    pdf_path = f"data/telegrammi_pdf/telegramma_{order_name_clean}.pdf"
+
+    genera_pdf_telegramma(pdf_path, telegramma)
+
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=f"telegramma_{order_name_clean}.pdf"
+    )
