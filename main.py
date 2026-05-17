@@ -2930,15 +2930,11 @@ def dashboard_pratiche():
             </td>
             <td>{data_breve}</td>
             <td class="actions">
-                <a href="/dashboard/pratiche/{p.get('id')}" target="_blank">DETTAGLIO</a>
-                <span>|</span>
-                <a href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">REINVIA</a>
-                <span>|</span>
-                <a href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">MANUALE</a>
-                <span>|</span>
-                <a href="/dashboard/pratiche/completa/{p.get('id')}" target="_blank">COMPLETA</a>
-                <span>|</span>
-                <a href="/dashboard/pratiche/pdf/{p.get('id')}" target="_blank">PDF</a>
+                <a class="btn-action" href="/dashboard/pratiche/{p.get('id')}" target="_blank">Dettaglio</a>
+                <a class="btn-action" href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">Reinvia</a>
+                <a class="btn-action" href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">Manuale</a>
+                <a class="btn-action" href="/dashboard/pratiche/completa/{p.get('id')}" target="_blank">Completa</a>
+                <a class="btn-action" href="/dashboard/pratiche/pdf/{p.get('id')}" target="_blank">PDF</a>
             </td>
         </tr>
         """
@@ -3001,6 +2997,17 @@ def dashboard_pratiche():
             .actions {{
                 white-space:normal;
             }}
+            .btn-action {{
+                display:inline-block;
+                background:#eef3ff;
+                color:#2563eb;
+                padding:6px 9px;
+                border-radius:8px;
+                font-size:13px;
+                margin:3px;
+                text-decoration:none;
+                font-weight:bold;
+             }}
 
             .tools-box,
             .legend-box {{
