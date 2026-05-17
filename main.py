@@ -2933,7 +2933,7 @@ def dashboard_pratiche():
                 <a class="btn-action" href="/dashboard/pratiche/{p.get('id')}" target="_blank">Dettaglio</a>
                 <a class="btn-action" href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">Reinvia</a>
                 <a class="btn-action" href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">Manuale</a>
-                <a class="btn-action" href="/dashboard/pratiche/completa/{p.get('id')}" target="_blank">Completa</a>
+                <a class="btn-action" href="/dashboard/pratiche/completa/{p.get('id')}" target="_blank" onclick="return confirm('Confermi di voler COMPLETARE questa pratica?')">Completa</a>
                 <a class="btn-action" href="/dashboard/pratiche/pdf/{p.get('id')}" target="_blank">PDF</a>
             </td>
         </tr>
