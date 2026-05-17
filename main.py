@@ -3015,7 +3015,24 @@ def dashboard_pratiche():
                 {rows}
             </tbody>
 
-        </table>
+            </table>
+
+        <div style="margin-top:30px;padding:18px;background:#fff;border-radius:14px;">
+            <h3>⚙️ Strumenti Dashboard</h3>
+            <strong>📄 Dettaglio pratica</strong> |
+            <strong>📥 Download PDF</strong> |
+            <strong>🛠️ Lavorazione manuale</strong> |
+            <strong>🔎 Filtri stato</strong>
+        </div>
+
+        <div style="margin-top:22px;padding:18px;background:#fff;border-radius:14px;">
+            <h3>📌 Legenda Stati</h3>
+            <span style="background:#3498db;color:white;padding:8px 12px;border-radius:20px;">RICEVUTO</span>
+            <span style="background:#27ae60;color:white;padding:8px 12px;border-radius:20px;">INVIATO_POSTE</span>
+            <span style="background:#e74c3c;color:white;padding:8px 12px;border-radius:20px;">ERRORE_POSTE</span>
+            <span style="background:#f39c12;color:white;padding:8px 12px;border-radius:20px;">LAVORAZIONE_MANUALE</span>
+            <span style="background:#8e44ad;color:white;padding:8px 12px;border-radius:20px;">COMPLETATO</span>
+        </div>
 
     </body>
     </html>
