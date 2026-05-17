@@ -2,7 +2,7 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from fastapi import FastAPI, UploadFile, File, Form, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -2886,3 +2886,137 @@ def process_pending_telegrammi():
             "success": False,
             "error": str(e)
         }
+
+@app.get("/dashboard/pratiche", response_class=HTMLResponse)
+def dashboard_pratiche():
+
+    result = supabase.table("pratiche") \
+        .select("*") \
+        .order("created_at", desc=True) \
+        .limit(100) \
+        .execute()
+
+    pratiche = result.data or []
+
+    rows = ""
+
+    for p in pratiche:
+
+        stato = p.get("stato", "-")
+
+        colore = "#999"
+
+        if stato == "RICEVUTO":
+            colore = "#3498db"
+
+        elif stato == "INVIATO_POSTE":
+            colore = "#27ae60"
+
+        elif stato == "ERRORE_POSTE":
+            colore = "#e74c3c"
+
+        elif stato == "LAVORAZIONE_MANUALE":
+            colore = "#f39c12"
+
+        rows += f"""
+        <tr>
+            <td>{p.get('order_name')}</td>
+            <td>{p.get('tipo_servizio')}</td>
+            <td>{p.get('cliente_email')}</td>
+            <td>
+                <span style="
+                    background:{colore};
+                    color:white;
+                    padding:4px 8px;
+                    border-radius:8px;
+                    font-size:12px;
+                    font-weight:bold;
+                ">
+                    {stato}
+                </span>
+            </td>
+            <td>{p.get('created_at')}</td>
+            <td>
+                <a href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">
+                    REINVIA
+                </a>
+            </td>
+        </tr>
+        """
+
+    return f"""
+    <html>
+    <head>
+        <title>Eccomi Posta Dashboard</title>
+
+        <style>
+
+            body {{
+                font-family: Arial;
+                background:#f4f6f9;
+                padding:30px;
+            }}
+
+            h1 {{
+                color:#222;
+            }}
+
+            table {{
+                width:100%;
+                border-collapse:collapse;
+                background:white;
+                border-radius:12px;
+                overflow:hidden;
+            }}
+
+            th {{
+                background:#111827;
+                color:white;
+                padding:14px;
+                text-align:left;
+            }}
+
+            td {{
+                padding:12px;
+                border-bottom:1px solid #eee;
+            }}
+
+            tr:hover {{
+                background:#fafafa;
+            }}
+
+            a {{
+                color:#2563eb;
+                text-decoration:none;
+                font-weight:bold;
+            }}
+
+        </style>
+    </head>
+
+    <body>
+
+        <h1>📬 Eccomi Posta — Dashboard Pratiche</h1>
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Ordine</th>
+                    <th>Servizio</th>
+                    <th>Email</th>
+                    <th>Stato</th>
+                    <th>Data</th>
+                    <th>Azione</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {rows}
+            </tbody>
+
+        </table>
+
+    </body>
+    </html>
+    """
