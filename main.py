@@ -2888,13 +2888,17 @@ def process_pending_telegrammi():
         }
 
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
-def dashboard_pratiche():
+def dashboard_pratiche(stato: str = None):
 
-    result = supabase.table("pratiche") \
+    query = supabase.table("pratiche") \
         .select("*") \
         .order("created_at", desc=True) \
-        .limit(100) \
-        .execute()
+        .limit(100)
+
+    if stato:
+        query = query.eq("stato", stato)
+
+    result = query.execute()
 
     pratiche = result.data or []
 
@@ -2948,6 +2952,7 @@ def dashboard_pratiche():
     <html>
     <head>
         <title>Eccomi Posta Dashboard</title>
+        <meta http-equiv="refresh" content="15">
 
         <style>
             body {{
@@ -3159,7 +3164,14 @@ def dashboard_pratiche():
     ">
         🟣 Completati: {tot_completati}
     </div>
+</div>
 
+<div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
+    <a class="btn-action" href="/dashboard/pratiche">Tutti</a>
+    <a class="btn-action" href="/dashboard/pratiche?stato=ERRORE_POSTE">Errori</a>
+    <a class="btn-action" href="/dashboard/pratiche?stato=INVIATO_POSTE">Inviati</a>
+    <a class="btn-action" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
+    <a class="btn-action" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
 </div>
 
         <table>
