@@ -2933,6 +2933,8 @@ def dashboard_pratiche():
                 <a href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">REINVIA</a>
                 <span>|</span>
                 <a href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">MANUALE</a>
+                <span>|</span>
+                <a href="/dashboard/pratiche/completa/{p.get('id')}" target="_blank">COMPLETA</a>
             </td>
         </tr>
         """
@@ -3249,4 +3251,18 @@ def dashboard_pratica_manuale(pratica_id: str):
         "success": True,
         "pratica_id": pratica_id,
         "nuovo_stato": "LAVORAZIONE_MANUALE"
+    }
+
+@app.get("/dashboard/pratiche/completa/{pratica_id}")
+def dashboard_pratica_completa(pratica_id: str):
+
+    supabase.table("pratiche").update({
+        "stato": "COMPLETATO",
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }).eq("id", pratica_id).execute()
+
+    return {
+        "success": True,
+        "pratica_id": pratica_id,
+        "nuovo_stato": "COMPLETATO"
     }
