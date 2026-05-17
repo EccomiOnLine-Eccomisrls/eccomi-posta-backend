@@ -2605,3 +2605,33 @@ def shopify_telegramma_send_last():
             "xml_sent": xml_sent,
             "xml_received": xml_received
         }
+
+@app.get("/shopify/telegramma/send-last-pratica")
+def shopify_telegramma_send_last_pratica():
+    try:
+        result = supabase.table("pratiche") \
+            .select("*") \
+            .eq("tipo_servizio", "TELEGRAMMA") \
+            .order("created_at", desc=True) \
+            .limit(1) \
+            .execute()
+
+        if not result.data:
+            return {
+                "success": False,
+                "error": "Nessuna pratica Telegramma trovata su Supabase"
+            }
+
+        pratica = result.data[0]
+
+        return {
+            "success": True,
+            "message": "Pratica trovata correttamente da Supabase",
+            "pratica": pratica
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
