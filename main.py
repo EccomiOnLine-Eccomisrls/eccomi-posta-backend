@@ -2903,20 +2903,18 @@ def dashboard_pratiche():
     for p in pratiche:
 
         stato = p.get("stato", "-")
-
         colore = "#999"
 
         if stato == "RICEVUTO":
             colore = "#3498db"
-
         elif stato == "INVIATO_POSTE":
             colore = "#27ae60"
-
         elif stato == "ERRORE_POSTE":
             colore = "#e74c3c"
-
         elif stato == "LAVORAZIONE_MANUALE":
             colore = "#f39c12"
+        elif stato == "COMPLETATO":
+            colore = "#8e44ad"
 
         rows += f"""
         <tr>
@@ -2924,30 +2922,17 @@ def dashboard_pratiche():
             <td>{p.get('tipo_servizio')}</td>
             <td>{p.get('cliente_email')}</td>
             <td>
-                <span style="
-                    background:{colore};
-                    color:white;
-                    padding:4px 8px;
-                    border-radius:8px;
-                    font-size:12px;
-                    font-weight:bold;
-                ">
+                <span class="badge" style="background:{colore};">
                     {stato}
                 </span>
             </td>
             <td>{p.get('created_at')}</td>
-            <td>
-               <a href="/dashboard/pratiche/{p.get('id')}" target="_blank">
-                  DETTAGLIO
-               </a>
-               &nbsp;|&nbsp;
-               <a href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">
-                  REINVIA
-               </a>
-               &nbsp;|&nbsp;
-               <a href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">
-                  MANUALE
-               </a>
+            <td class="actions">
+                <a href="/dashboard/pratiche/{p.get('id')}" target="_blank">DETTAGLIO</a>
+                <span>|</span>
+                <a href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">REINVIA</a>
+                <span>|</span>
+                <a href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">MANUALE</a>
             </td>
         </tr>
         """
@@ -2958,7 +2943,6 @@ def dashboard_pratiche():
         <title>Eccomi Posta Dashboard</title>
 
         <style>
-
             body {{
                 font-family: Arial;
                 background:#f4f6f9;
@@ -2998,72 +2982,109 @@ def dashboard_pratiche():
                 text-decoration:none;
                 font-weight:bold;
             }}
+
+            .badge {{
+                color:white;
+                padding:4px 8px;
+                border-radius:8px;
+                font-size:12px;
+                font-weight:bold;
+                display:inline-block;
+            }}
+
+            .actions {{
+                white-space:normal;
+            }}
+
+            .tools-box,
+            .legend-box {{
+                margin-top:24px;
+                padding:18px;
+                background:#fff;
+                border-radius:14px;
+            }}
+
+            .tools-line {{
+                display:flex;
+                flex-wrap:wrap;
+                gap:12px;
+            }}
+
+            .legend-line {{
+                display:flex;
+                flex-wrap:wrap;
+                gap:10px;
+            }}
+
+            .legend-line span {{
+                color:white;
+                padding:8px 12px;
+                border-radius:20px;
+                display:inline-block;
+                font-weight:bold;
+            }}
+
             @media (max-width: 700px) {{
-    body {{
-        padding:16px !important;
-    }}
+                body {{
+                    padding:14px !important;
+                }}
 
-    h1 {{
-        font-size:26px !important;
-        line-height:1.2 !important;
-    }}
+                h1 {{
+                    font-size:24px !important;
+                    line-height:1.2 !important;
+                }}
 
-    table, thead, tbody, th, td, tr {{
-        display:block !important;
-        width:100% !important;
-    }}
+                table, thead, tbody, th, td, tr {{
+                    display:block !important;
+                    width:100% !important;
+                }}
 
-    thead {{
-        display:none !important;
-    }}
+                thead {{
+                    display:none !important;
+                }}
 
-    tr {{
-        background:white !important;
-        margin-bottom:18px !important;
-        border-radius:16px !important;
-        padding:14px !important;
-        box-shadow:0 2px 10px rgba(0,0,0,.06) !important;
-    }}
+                tr {{
+                    background:white !important;
+                    margin-bottom:18px !important;
+                    border-radius:16px !important;
+                    padding:14px !important;
+                    box-shadow:0 2px 10px rgba(0,0,0,.06) !important;
+                }}
 
-    td {{
-        border:none !important;
-        padding:8px 0 !important;
-        font-size:15px !important;
-        word-break:break-word !important;
-    }}
+                td {{
+                    border:none !important;
+                    padding:8px 0 !important;
+                    font-size:15px !important;
+                    word-break:break-word !important;
+                }}
 
-    td:nth-child(1)::before {{ content:"Ordine: "; font-weight:bold; }}
-    td:nth-child(2)::before {{ content:"Servizio: "; font-weight:bold; }}
-    td:nth-child(3)::before {{ content:"Email: "; font-weight:bold; }}
-    td:nth-child(4)::before {{ content:"Stato: "; font-weight:bold; }}
-    td:nth-child(5)::before {{ content:"Data: "; font-weight:bold; }}
-    td:nth-child(6)::before {{ content:"Azioni: "; font-weight:bold; }}
+                td:nth-child(1)::before {{ content:"Ordine: "; font-weight:bold; }}
+                td:nth-child(2)::before {{ content:"Servizio: "; font-weight:bold; }}
+                td:nth-child(3)::before {{ content:"Email: "; font-weight:bold; }}
+                td:nth-child(4)::before {{ content:"Stato: "; font-weight:bold; }}
+                td:nth-child(5)::before {{ content:"Data: "; font-weight:bold; }}
+                td:nth-child(6)::before {{ content:"Azioni: "; font-weight:bold; }}
 
-    .tools-box,
-    .legend-box {{
-        padding:16px !important;
-        overflow-x:auto !important;
-    }}
+                .actions a {{
+                    display:inline-block;
+                    margin:4px 6px 4px 0;
+                }}
 
-    .tools-line {{
-        display:flex !important;
-        flex-direction:column !important;
-        gap:10px !important;
-        font-size:18px !important;
-    }}
+                .tools-line {{
+                    flex-direction:column !important;
+                    gap:10px !important;
+                    font-size:17px !important;
+                }}
 
-    .legend-line {{
-        display:flex !important;
-        flex-wrap:wrap !important;
-        gap:8px !important;
-    }}
+                .legend-line {{
+                    gap:8px !important;
+                }}
 
-    .legend-line span {{
-        font-size:14px !important;
-        padding:8px 10px !important;
-    }}
-}}
-
+                .legend-line span {{
+                    font-size:13px !important;
+                    padding:7px 10px !important;
+                }}
+            }}
         </style>
     </head>
 
@@ -3072,7 +3093,6 @@ def dashboard_pratiche():
         <h1>📬 Eccomi Posta — Dashboard Pratiche</h1>
 
         <table>
-
             <thead>
                 <tr>
                     <th>Ordine</th>
@@ -3087,27 +3107,28 @@ def dashboard_pratiche():
             <tbody>
                 {rows}
             </tbody>
+        </table>
 
-            </table>
-
-        <div class="tools-box" style="margin-top:30px;padding:18px;background:#fff;border-radius:14px;">
-        <h3>⚙️ Strumenti Dashboard</h3>
-        <div class="tools-line">
-            <strong>📄 Dettaglio pratica</strong> |
-            <strong>📥 Download PDF</strong> |
-            <strong>🛠️ Lavorazione manuale</strong> |
-            <strong>🔎 Filtri stato</strong>
+        <div class="tools-box">
+            <h3>⚙️ Strumenti Dashboard</h3>
+            <div class="tools-line">
+                <strong>📄 Dettaglio pratica</strong>
+                <strong>📥 Download PDF</strong>
+                <strong>🛠️ Lavorazione manuale</strong>
+                <strong>🔎 Filtri stato</strong>
+            </div>
         </div>
 
-        <div class="legend-box" style="margin-top:22px;padding:18px;background:#fff;border-radius:14px;">
+        <div class="legend-box">
             <h3>📌 Legenda Stati</h3>
             <div class="legend-line">
-                <span style="background:#3498db;color:white;padding:8px 12px;border-radius:20px;">RICEVUTO</span>
-                <span style="background:#27ae60;color:white;padding:8px 12px;border-radius:20px;">INVIATO_POSTE</span>
-                <span style="background:#e74c3c;color:white;padding:8px 12px;border-radius:20px;">ERRORE_POSTE</span>
-                <span style="background:#f39c12;color:white;padding:8px 12px;border-radius:20px;">LAVORAZIONE_MANUALE</span>
-                <span style="background:#8e44ad;color:white;padding:8px 12px;border-radius:20px;">COMPLETATO</span>
+                <span style="background:#3498db;">RICEVUTO</span>
+                <span style="background:#27ae60;">INVIATO_POSTE</span>
+                <span style="background:#e74c3c;">ERRORE_POSTE</span>
+                <span style="background:#f39c12;">LAVORAZIONE_MANUALE</span>
+                <span style="background:#8e44ad;">COMPLETATO</span>
             </div>
+        </div>
 
     </body>
     </html>
