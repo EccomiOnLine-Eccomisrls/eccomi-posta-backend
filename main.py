@@ -2419,11 +2419,11 @@ def shopify_telegramma_send_last():
         nom_mitt = NominativoType(
             Nome=clean_h2h_text(mitt_nome),
             Cognome=clean_h2h_text(mitt_cognome),
-            CAP=mitt.get("cap", ""),
+            CAP=clean_h2h_text(mitt.get("cap", "")),
             Citta=clean_h2h_text(mitt.get("comune", "")).upper(),
             Provincia=clean_h2h_text(mitt.get("provincia", "")).upper(),
             Indirizzo=IndirizzoType(
-                DUG=mitt_dug,
+                DUG=clean_h2h_text(mitt_dug),
                 Toponimo=clean_h2h_text(mitt_toponimo),
                 NumeroCivico=clean_h2h_text(mitt.get("civico", ""))
             ),
@@ -2436,11 +2436,11 @@ def shopify_telegramma_send_last():
         nom_dest = NominativoType(
             Nome=clean_h2h_text(dest_nome),
             Cognome=clean_h2h_text(dest_cognome),
-            CAP=dest.get("cap", ""),
+            CAP=clean_h2h_text(dest.get("cap", "")),
             Citta=clean_h2h_text(dest.get("comune", "")).upper(),
             Provincia=clean_h2h_text(dest.get("provincia", "")).upper(),
             Indirizzo=IndirizzoType(
-                DUG=dest_dug,
+                DUG=clean_h2h_text(dest_dug),
                 Toponimo=clean_h2h_text(dest_toponimo),
                 NumeroCivico=clean_h2h_text(dest.get("civico", ""))
             ),
@@ -2452,8 +2452,8 @@ def shopify_telegramma_send_last():
 
         os.makedirs("data/telegrammi_pdf", exist_ok=True)
 
-        order_name = str(data.get("order_name", "TEST")).replace("#", "")
-        pdf_path = f"data/telegrammi_pdf/telegramma_{order_name}.pdf"
+        order_name_clean = str(data.get("order_name", "TEST")).replace("#", "")
+        pdf_path = f"data/telegrammi_pdf/telegramma_{order_name_clean}.pdf"
 
         genera_pdf_telegramma(pdf_path, telegramma)
 
@@ -2534,7 +2534,7 @@ def shopify_telegramma_send_last():
 
         os.makedirs("data/h2h_results", exist_ok=True)
 
-        result_path = f"data/h2h_results/send_{order_name}.json"
+        result_path = f"data/h2h_results/send_{order_name_clean}.json"
 
         with open(result_path, "w", encoding="utf-8") as f:
             json.dump({
@@ -2545,6 +2545,28 @@ def shopify_telegramma_send_last():
                 "xml_sent": xml_sent,
                 "xml_received": xml_received
             }, f, ensure_ascii=False, indent=2)
+
+        try:
+            poste_result_text = str(result)
+
+            stato_pratica = "INVIATO_POSTE"
+
+            if "Type': 'E'" in poste_result_text or '"Type": "E"' in poste_result_text:
+                stato_pratica = "ERRORE_POSTE"
+
+            supabase.table("pratiche").update({
+                "stato": stato_pratica,
+                "poste_response": {
+                    "raw": poste_result_text
+                },
+                "xml_sent": xml_sent,
+                "xml_received": xml_received,
+                "id_richiesta": id_richiesta,
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }).eq("order_name", data.get("order_name")).execute()
+
+        except Exception as db_error:
+            print("ERRORE AGGIORNAMENTO PRATICA H2H:", str(db_error))
 
         return {
             "success": True,
