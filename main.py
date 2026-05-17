@@ -2835,3 +2835,54 @@ def shopify_telegramma_invia_pratica(pratica_id: str):
             "pratica_id": pratica_id,
             "error": str(e)
         }
+
+@app.get("/shopify/telegramma/process-pending")
+def process_pending_telegrammi():
+
+    try:
+        result = supabase.table("pratiche") \
+            .select("*") \
+            .eq("tipo_servizio", "TELEGRAMMA") \
+            .eq("stato", "RICEVUTO") \
+            .order("created_at") \
+            .limit(10) \
+            .execute()
+
+        pratiche = result.data or []
+
+        lavorate = []
+
+        for pratica in pratiche:
+
+            pratica_id = pratica.get("id")
+
+            try:
+                invio = invia_telegramma_pratica_h2h(pratica_id)
+
+                lavorate.append({
+                    "pratica_id": pratica_id,
+                    "order_name": pratica.get("order_name"),
+                    "success": invio.get("success"),
+                    "stato": invio.get("stato")
+                })
+
+            except Exception as pratica_error:
+
+                lavorate.append({
+                    "pratica_id": pratica_id,
+                    "order_name": pratica.get("order_name"),
+                    "success": False,
+                    "error": str(pratica_error)
+                })
+
+        return {
+            "success": True,
+            "totali": len(lavorate),
+            "pratiche": lavorate
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
