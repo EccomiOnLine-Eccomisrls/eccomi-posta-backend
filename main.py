@@ -2937,10 +2937,18 @@ def dashboard_pratiche():
             </td>
             <td>{p.get('created_at')}</td>
             <td>
-               <a href="/dashboard/pratiche/{p.get('id')}" target="_blank">DETTAGLIO</a>
+               <a href="/dashboard/pratiche/{p.get('id')}" target="_blank">
+                  DETTAGLIO
+               </a>
                &nbsp;|&nbsp;
-               <a href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">REINVIA</a>
-             </td>
+               <a href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">
+                  REINVIA
+               </a>
+               &nbsp;|&nbsp;
+               <a href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">
+                  MANUALE
+               </a>
+            </td>
         </tr>
         """
 
@@ -3140,3 +3148,17 @@ def dashboard_pratica_dettaglio(pratica_id: str):
     </body>
     </html>
     """
+
+@app.get("/dashboard/pratiche/manuale/{pratica_id}")
+def dashboard_pratica_manuale(pratica_id: str):
+
+    supabase.table("pratiche").update({
+        "stato": "LAVORAZIONE_MANUALE",
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }).eq("id", pratica_id).execute()
+
+    return {
+        "success": True,
+        "pratica_id": pratica_id,
+        "nuovo_stato": "LAVORAZIONE_MANUALE"
+    }
