@@ -2665,3 +2665,189 @@ def shopify_telegramma_send_pratica(pratica_id: str):
             "success": False,
             "error": str(e)
         }
+
+@app.get("/shopify/telegramma/invia-pratica/{pratica_id}")
+def shopify_telegramma_invia_pratica(pratica_id: str):
+    history = HistoryPlugin()
+
+    try:
+        pratica_result = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_result.data:
+            return {"success": False, "error": "Pratica non trovata"}
+
+        pratica = pratica_result.data
+
+        telegramma = {
+            "testo": pratica.get("testo"),
+            "mittente": pratica.get("mittente") or {},
+            "destinatario": pratica.get("destinatario") or {}
+        }
+
+        client, service = poste_client(timeout=90, extra_plugins=[history])
+
+        NominativoType = client.get_type("ns1:Nominativo")
+        IndirizzoType = client.get_type("ns1:Indirizzo")
+        MittenteType = client.get_type("ns1:Mittente")
+        DestinatarioType = client.get_type("ns1:Destinatario")
+        DocumentoType = client.get_type("ns1:Documento")
+
+        mitt = telegramma["mittente"]
+        dest = telegramma["destinatario"]
+
+        mitt_nome, mitt_cognome = split_nome_cognome(mitt.get("nome", ""))
+        dest_nome, dest_cognome = split_nome_cognome(dest.get("nome", ""))
+
+        mitt_dug, mitt_toponimo = parse_indirizzo_h2h(mitt.get("via", ""))
+        dest_dug, dest_toponimo = parse_indirizzo_h2h(dest.get("via", ""))
+
+        nom_mitt = NominativoType(
+            Nome=clean_h2h_text(mitt_nome),
+            Cognome=clean_h2h_text(mitt_cognome),
+            CAP=clean_h2h_text(mitt.get("cap", "")),
+            Citta=clean_h2h_text(mitt.get("comune", "")).upper(),
+            Provincia=clean_h2h_text(mitt.get("provincia", "")).upper(),
+            Indirizzo=IndirizzoType(
+                DUG=clean_h2h_text(mitt_dug),
+                Toponimo=clean_h2h_text(mitt_toponimo),
+                NumeroCivico=clean_h2h_text(mitt.get("civico", ""))
+            ),
+            TipoIndirizzo="NORMALE",
+            ForzaDestinazione=True,
+            InesitateDigitali=False,
+            CodiceFiscaleResult=0
+        )
+
+        nom_dest = NominativoType(
+            Nome=clean_h2h_text(dest_nome),
+            Cognome=clean_h2h_text(dest_cognome),
+            CAP=clean_h2h_text(dest.get("cap", "")),
+            Citta=clean_h2h_text(dest.get("comune", "")).upper(),
+            Provincia=clean_h2h_text(dest.get("provincia", "")).upper(),
+            Indirizzo=IndirizzoType(
+                DUG=clean_h2h_text(dest_dug),
+                Toponimo=clean_h2h_text(dest_toponimo),
+                NumeroCivico=clean_h2h_text(dest.get("civico", ""))
+            ),
+            TipoIndirizzo="NORMALE",
+            ForzaDestinazione=True,
+            InesitateDigitali=False,
+            CodiceFiscaleResult=0
+        )
+
+        os.makedirs("data/telegrammi_pdf", exist_ok=True)
+
+        order_name_clean = str(pratica.get("order_name", "TEST")).replace("#", "")
+        pdf_path = f"data/telegrammi_pdf/telegramma_{order_name_clean}.pdf"
+
+        genera_pdf_telegramma(pdf_path, telegramma)
+
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        md5_pdf = hashlib.md5(pdf_bytes).hexdigest()
+
+        documento = DocumentoType(
+            Immagine=pdf_base64,
+            TipoDocumento="PDF",
+            MD5=md5_pdf
+        )
+
+        id_richiesta = str(uuid.uuid4())
+
+        result = service.Invio(
+            IDRichiesta=id_richiesta,
+            Cliente=POSTE_H2H_USERID,
+            CodiceContratto=POSTE_H2H_CONTRACT_ID,
+            ROLSubmit={
+                "Mittente": MittenteType(
+                    Nominativo=nom_mitt,
+                    InviaStampa=False
+                ),
+                "Destinatari": {
+                    "Destinatario": [
+                        DestinatarioType(Nominativo=nom_dest)
+                    ]
+                },
+                "NumeroDestinatari": 1,
+                "Documento": [documento],
+                "Opzioni": {
+                    "OpzionidiStampa": {
+                        "ResolutionX": 300,
+                        "ResolutionY": 300,
+                        "BW": True,
+                        "FronteRetro": False,
+                        "PageSize": "A4"
+                    },
+                    "SecurPaper": False,
+                    "DPM": False,
+                    "DataStampa": datetime.datetime.now().replace(microsecond=0),
+                    "InserisciMittente": True,
+                    "Archiviazione": False,
+                    "AnniArchiviazioneSpecified": False,
+                    "FirmaElettronica": False,
+                    "AnniArchiviazione": 0,
+                    "ArchiviazioneDocumenti": ""
+                },
+                "PrezzaturaSincrona": False,
+                "Nazionale": True,
+                "ForzaInvioDestinazioniValide": True
+            }
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        poste_result_text = str(result)
+        stato_pratica = "INVIATO_POSTE"
+
+        if "Type': 'E'" in poste_result_text or '"Type": "E"' in poste_result_text:
+            stato_pratica = "ERRORE_POSTE"
+
+        supabase.table("pratiche").update({
+            "stato": stato_pratica,
+            "poste_response": {"raw": poste_result_text},
+            "xml_sent": xml_sent,
+            "xml_received": xml_received,
+            "id_richiesta": id_richiesta,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }).eq("id", pratica_id).execute()
+
+        return {
+            "success": True,
+            "pratica_id": pratica_id,
+            "order_name": pratica.get("order_name"),
+            "stato": stato_pratica,
+            "id_richiesta": id_richiesta,
+            "poste_response": poste_result_text
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
