@@ -2022,6 +2022,7 @@ def shopify_telegramma_order_info():
         "message": "Endpoint attivo. Usa POST per inviare un ordine Shopify."
     }
 
+
 @app.post("/shopify/telegramma/order")
 async def shopify_telegramma_order(request: Request):
     try:
@@ -2083,6 +2084,22 @@ async def shopify_telegramma_order(request: Request):
                 "email": email,
                 "telegrammi": telegrammi
             }, f, ensure_ascii=False, indent=2)
+
+        for tg in telegrammi:
+            try:
+                supabase.table("pratiche").insert({
+                    "order_id": str(order_id),
+                    "order_name": order_name,
+                    "tipo_servizio": "TELEGRAMMA",
+                    "cliente_email": email,
+                    "mittente": tg.get("mittente"),
+                    "destinatario": tg.get("destinatario"),
+                    "testo": tg.get("testo"),
+                    "parole": int(tg.get("parole") or 0),
+                    "stato": "RICEVUTO"
+                }).execute()
+            except Exception as db_error:
+                print("ERRORE SALVATAGGIO PRATICA:", str(db_error))
 
         return {
             "success": True,
