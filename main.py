@@ -3018,6 +3018,10 @@ def dashboard_pratiche(stato: str = None):
                 text-decoration:none;
                 font-weight:bold;
              }}
+             .btn-filter-active {{
+                 background:#111827 !important;
+                 color:white !important;
+             }}
 
             .tools-box,
             .legend-box {{
@@ -3167,11 +3171,11 @@ def dashboard_pratiche(stato: str = None):
 </div>
 
 <div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
-    <a class="btn-action" href="/dashboard/pratiche">Tutti</a>
-    <a class="btn-action" href="/dashboard/pratiche?stato=ERRORE_POSTE">Errori</a>
-    <a class="btn-action" href="/dashboard/pratiche?stato=INVIATO_POSTE">Inviati</a>
-    <a class="btn-action" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
-    <a class="btn-action" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
+    <a class="btn-action {'btn-filter-active' if not stato else ''}" href="/dashboard/pratiche">Tutti</a>
+    <a class="btn-action {'btn-filter-active' if stato == 'ERRORE_POSTE' else ''}" href="/dashboard/pratiche?stato=ERRORE_POSTE">Errori</a>
+    <a class="btn-action {'btn-filter-active' if stato == 'INVIATO_POSTE' else ''}" href="/dashboard/pratiche?stato=INVIATO_POSTE">Inviati</a>
+    <a class="btn-action {'btn-filter-active' if stato == 'LAVORAZIONE_MANUALE' else ''}" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
+    <a class="btn-action {'btn-filter-active' if stato == 'COMPLETATO' else ''}" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
 </div>
 
         <table>
