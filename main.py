@@ -2471,7 +2471,7 @@ def shopify_telegramma_send_last():
                     "AnniArchiviazione": 0,
                     "ArchiviazioneDocumenti": ""
                 },
-                "PrezzaturaSincrona": True,
+                "PrezzaturaSincrona": False,
                 "Nazionale": True,
                 "ForzaInvioDestinazioniValide": True
             }
