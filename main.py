@@ -3313,3 +3313,18 @@ def dashboard_pratica_pdf(pratica_id: str):
         media_type="application/pdf",
         filename=f"telegramma_{order_name_clean}.pdf"
     )
+
+
+@app.get("/dashboard/pratiche/errore/{pratica_id}")
+def dashboard_pratica_errore(pratica_id: str):
+
+    supabase.table("pratiche").update({
+        "stato": "ERRORE_POSTE",
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }).eq("id", pratica_id).execute()
+
+    return {
+        "success": True,
+        "pratica_id": pratica_id,
+        "nuovo_stato": "ERRORE_POSTE"
+    }
