@@ -2937,10 +2937,10 @@ def dashboard_pratiche():
             </td>
             <td>{p.get('created_at')}</td>
             <td>
-                <a href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">
-                    REINVIA
-                </a>
-            </td>
+               <a href="/dashboard/pratiche/{p.get('id')}" target="_blank">DETTAGLIO</a>
+               &nbsp;|&nbsp;
+               <a href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">REINVIA</a>
+             </td>
         </tr>
         """
 
