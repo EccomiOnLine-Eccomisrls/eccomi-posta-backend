@@ -2998,6 +2998,71 @@ def dashboard_pratiche():
                 text-decoration:none;
                 font-weight:bold;
             }}
+            @media (max-width: 700px) {{
+    body {{
+        padding:16px !important;
+    }}
+
+    h1 {{
+        font-size:26px !important;
+        line-height:1.2 !important;
+    }}
+
+    table, thead, tbody, th, td, tr {{
+        display:block !important;
+        width:100% !important;
+    }}
+
+    thead {{
+        display:none !important;
+    }}
+
+    tr {{
+        background:white !important;
+        margin-bottom:18px !important;
+        border-radius:16px !important;
+        padding:14px !important;
+        box-shadow:0 2px 10px rgba(0,0,0,.06) !important;
+    }}
+
+    td {{
+        border:none !important;
+        padding:8px 0 !important;
+        font-size:15px !important;
+        word-break:break-word !important;
+    }}
+
+    td:nth-child(1)::before {{ content:"Ordine: "; font-weight:bold; }}
+    td:nth-child(2)::before {{ content:"Servizio: "; font-weight:bold; }}
+    td:nth-child(3)::before {{ content:"Email: "; font-weight:bold; }}
+    td:nth-child(4)::before {{ content:"Stato: "; font-weight:bold; }}
+    td:nth-child(5)::before {{ content:"Data: "; font-weight:bold; }}
+    td:nth-child(6)::before {{ content:"Azioni: "; font-weight:bold; }}
+
+    .tools-box,
+    .legend-box {{
+        padding:16px !important;
+        overflow-x:auto !important;
+    }}
+
+    .tools-line {{
+        display:flex !important;
+        flex-direction:column !important;
+        gap:10px !important;
+        font-size:18px !important;
+    }}
+
+    .legend-line {{
+        display:flex !important;
+        flex-wrap:wrap !important;
+        gap:8px !important;
+    }}
+
+    .legend-line span {{
+        font-size:14px !important;
+        padding:8px 10px !important;
+    }}
+}}
 
         </style>
     </head>
@@ -3025,15 +3090,16 @@ def dashboard_pratiche():
 
             </table>
 
-        <div style="margin-top:30px;padding:18px;background:#fff;border-radius:14px;">
-            <h3>⚙️ Strumenti Dashboard</h3>
+        <div class="tools-box" style="margin-top:30px;padding:18px;background:#fff;border-radius:14px;">
+        <h3>⚙️ Strumenti Dashboard</h3>
+        <div class="tools-line">
             <strong>📄 Dettaglio pratica</strong> |
             <strong>📥 Download PDF</strong> |
             <strong>🛠️ Lavorazione manuale</strong> |
             <strong>🔎 Filtri stato</strong>
         </div>
 
-        <div style="margin-top:22px;padding:18px;background:#fff;border-radius:14px;">
+        <div class="legend-box" style="margin-top:22px;padding:18px;background:#fff;border-radius:14px;">
             <h3>📌 Legenda Stati</h3>
             <span style="background:#3498db;color:white;padding:8px 12px;border-radius:20px;">RICEVUTO</span>
             <span style="background:#27ae60;color:white;padding:8px 12px;border-radius:20px;">INVIATO_POSTE</span>
