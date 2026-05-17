@@ -2898,6 +2898,11 @@ def dashboard_pratiche():
 
     pratiche = result.data or []
 
+    tot_errori = len([p for p in pratiche if p.get("stato") == "ERRORE_POSTE"])
+    tot_inviati = len([p for p in pratiche if p.get("stato") == "INVIATO_POSTE"])
+    tot_manuali = len([p for p in pratiche if p.get("stato") == "LAVORAZIONE_MANUALE"])
+    tot_completati = len([p for p in pratiche if p.get("stato") == "COMPLETATO"])
+
     rows = ""
 
     for p in pratiche:
@@ -3104,6 +3109,58 @@ def dashboard_pratiche():
     <body>
 
         <h1>📬 Eccomi Posta — Dashboard Pratiche</h1>
+        <div style="
+    display:flex;
+    flex-wrap:wrap;
+    gap:14px;
+    margin:25px 0;
+">
+
+    <div style="
+        background:#e74c3c;
+        color:white;
+        padding:14px 20px;
+        border-radius:16px;
+        font-weight:bold;
+        font-size:18px;
+    ">
+        🔴 Errori: {tot_errori}
+    </div>
+
+    <div style="
+        background:#27ae60;
+        color:white;
+        padding:14px 20px;
+        border-radius:16px;
+        font-weight:bold;
+        font-size:18px;
+    ">
+        🟢 Inviati: {tot_inviati}
+    </div>
+
+    <div style="
+        background:#f39c12;
+        color:white;
+        padding:14px 20px;
+        border-radius:16px;
+        font-weight:bold;
+        font-size:18px;
+    ">
+        🟠 Manuali: {tot_manuali}
+    </div>
+
+    <div style="
+        background:#8e44ad;
+        color:white;
+        padding:14px 20px;
+        border-radius:16px;
+        font-weight:bold;
+        font-size:18px;
+    ">
+        🟣 Completati: {tot_completati}
+    </div>
+
+</div>
 
         <table>
             <thead>
@@ -3122,7 +3179,7 @@ def dashboard_pratiche():
             </tbody>
         </table>
 
-        <div class="legend-box" style="margin-top:150px;">
+        <div class="legend-box" style="margin-top:250px;">
         <h3>📌 Legenda Stati</h3>
             <div class="legend-line">
                 <span style="background:#3498db;">RICEVUTO</span>
