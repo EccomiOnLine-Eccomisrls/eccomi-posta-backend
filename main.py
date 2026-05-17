@@ -104,6 +104,23 @@ def poste_client(timeout=60, extra_plugins=None):
 def home():
     return {"status": "Eccomi Posta Backend OK 🚀"}
 
+@app.get("/supabase/test")
+def supabase_test():
+    try:
+        buckets = supabase.storage.list_buckets()
+
+        return {
+            "success": True,
+            "bucket_env": SUPABASE_BUCKET,
+            "buckets": [b.name for b in buckets]
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/test")
 def test_poste_h2h():
