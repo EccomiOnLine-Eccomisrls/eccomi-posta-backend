@@ -2903,6 +2903,8 @@ def dashboard_pratiche():
     for p in pratiche:
 
         stato = p.get("stato", "-")
+        created_raw = p.get("created_at") or ""
+        data_breve = created_raw.replace("T", " ")[:16]
         colore = "#999"
 
         if stato == "RICEVUTO":
@@ -2926,7 +2928,7 @@ def dashboard_pratiche():
                     {stato}
                 </span>
             </td>
-            <td>{p.get('created_at')}</td>
+            <td>{data_breve}</td>
             <td class="actions">
                 <a href="/dashboard/pratiche/{p.get('id')}" target="_blank">DETTAGLIO</a>
                 <span>|</span>
