@@ -3122,7 +3122,7 @@ def dashboard_pratiche():
             </tbody>
         </table>
 
-        <div class="legend-box" style="margin-top:80px;">
+        <div class="legend-box" style="margin-top:150px;">
         <h3>📌 Legenda Stati</h3>
             <div class="legend-line">
                 <span style="background:#3498db;">RICEVUTO</span>
