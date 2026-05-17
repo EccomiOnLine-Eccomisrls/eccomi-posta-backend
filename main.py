@@ -3037,3 +3037,106 @@ def dashboard_pratiche():
     </body>
     </html>
     """
+
+@app.get("/dashboard/pratiche/{pratica_id}", response_class=HTMLResponse)
+def dashboard_pratica_dettaglio(pratica_id: str):
+
+    result = supabase.table("pratiche") \
+        .select("*") \
+        .eq("id", pratica_id) \
+        .single() \
+        .execute()
+
+    if not result.data:
+        return """
+        <html>
+        <body style="font-family:Arial;padding:30px;">
+            <h1>Pratica non trovata</h1>
+            <a href="/dashboard/pratiche">Torna alla dashboard</a>
+        </body>
+        </html>
+        """
+
+    p = result.data
+
+    return f"""
+    <html>
+    <head>
+        <title>Dettaglio pratica {p.get('order_name')}</title>
+        <style>
+            body {{
+                font-family: Arial;
+                background:#f4f6f9;
+                padding:30px;
+            }}
+            .card {{
+                background:white;
+                border-radius:14px;
+                padding:22px;
+                margin-bottom:20px;
+                box-shadow:0 2px 10px rgba(0,0,0,.06);
+            }}
+            pre {{
+                background:#111827;
+                color:#d1d5db;
+                padding:16px;
+                border-radius:12px;
+                overflow:auto;
+                max-height:420px;
+            }}
+            a {{
+                color:#2563eb;
+                font-weight:bold;
+                text-decoration:none;
+            }}
+        </style>
+    </head>
+
+    <body>
+        <h1>📄 Dettaglio pratica {p.get('order_name')}</h1>
+
+        <p>
+            <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+        </p>
+
+        <div class="card">
+            <h2>Stato</h2>
+            <p><strong>{p.get('stato')}</strong></p>
+            <p><strong>ID richiesta:</strong> {p.get('id_richiesta') or '-'}</p>
+            <p><strong>Servizio:</strong> {p.get('tipo_servizio')}</p>
+            <p><strong>Email cliente:</strong> {p.get('cliente_email')}</p>
+        </div>
+
+        <div class="card">
+            <h2>Mittente</h2>
+            <pre>{json.dumps(p.get('mittente'), ensure_ascii=False, indent=2)}</pre>
+        </div>
+
+        <div class="card">
+            <h2>Destinatario</h2>
+            <pre>{json.dumps(p.get('destinatario'), ensure_ascii=False, indent=2)}</pre>
+        </div>
+
+        <div class="card">
+            <h2>Testo telegramma</h2>
+            <p>{p.get('testo') or '-'}</p>
+            <p><strong>Parole:</strong> {p.get('parole') or '-'}</p>
+        </div>
+
+        <div class="card">
+            <h2>Risposta Poste</h2>
+            <pre>{json.dumps(p.get('poste_response'), ensure_ascii=False, indent=2)}</pre>
+        </div>
+
+        <div class="card">
+            <h2>XML inviato</h2>
+            <pre>{p.get('xml_sent') or '-'}</pre>
+        </div>
+
+        <div class="card">
+            <h2>XML ricevuto</h2>
+            <pre>{p.get('xml_received') or '-'}</pre>
+        </div>
+    </body>
+    </html>
+    """
