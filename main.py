@@ -2635,3 +2635,33 @@ def shopify_telegramma_send_last_pratica():
             "success": False,
             "error": str(e)
         }
+
+@app.get("/shopify/telegramma/send-pratica/{pratica_id}")
+def shopify_telegramma_send_pratica(pratica_id: str):
+
+    try:
+        result = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not result.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata"
+            }
+
+        pratica = result.data
+
+        return {
+            "success": True,
+            "message": "Pratica caricata correttamente",
+            "pratica": pratica
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
