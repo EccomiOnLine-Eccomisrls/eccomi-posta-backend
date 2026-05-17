@@ -3122,16 +3122,6 @@ def dashboard_pratiche():
             </tbody>
         </table>
 
-        <div class="tools-box">
-            <h3>⚙️ Strumenti Dashboard</h3>
-            <div class="tools-line">
-                <strong>📄 Dettaglio pratica</strong>
-                <strong>📥 Download PDF</strong>
-                <strong>🛠️ Lavorazione manuale</strong>
-                <strong>🔎 Filtri stato</strong>
-            </div>
-        </div>
-
         <div class="legend-box">
             <h3>📌 Legenda Stati</h3>
             <div class="legend-line">
