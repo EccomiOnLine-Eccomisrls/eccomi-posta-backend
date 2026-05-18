@@ -3096,6 +3096,12 @@ def dashboard_pratiche(stato: str = None):
                     font-size:15px !important;
                     word-break:break-word !important;
                 }}
+                
+                .email-cell {{
+                    white-space:nowrap !important;
+                    word-break:normal !important;
+                    overflow-wrap:normal !important;
+                }}
 
                 td:nth-child(1)::before {{ content:"Ordine: "; font-weight:bold; }}
                 td:nth-child(2)::before {{ content:"Servizio: "; font-weight:bold; }}
