@@ -3174,6 +3174,17 @@ def dashboard_pratiche(stato: str = None):
     ">
         🟣 Completati: {tot_completati}
     </div>
+    
+    <div style="
+    background:#111827;
+    color:white;
+    padding:14px 20px;
+    border-radius:16px;
+    font-weight:bold;
+    font-size:18px;
+">
+    🔄 Auto-refresh: 15s
+</div>
 </div>
 
 <div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
