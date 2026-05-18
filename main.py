@@ -2896,16 +2896,17 @@ def process_pending_telegrammi():
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
 
+    filtro_stato = stato
+
     query = supabase.table("pratiche") \
         .select("*") \
         .order("created_at", desc=True) \
         .limit(100)
 
-    if stato:
-        query = query.eq("stato", stato)
+    if filtro_stato:
+        query = query.eq("stato", filtro_stato)
 
     result = query.execute()
-
     pratiche = result.data or []
 
     tot_errori = len([p for p in pratiche if p.get("stato") == "ERRORE_POSTE"])
@@ -2917,20 +2918,20 @@ def dashboard_pratiche(stato: str = None):
 
     for p in pratiche:
 
-        stato = p.get("stato", "-")
+        stato_pratica = p.get("stato", "-")
         created_raw = p.get("created_at") or ""
         data_breve = created_raw.replace("T", " ")[:16]
         colore = "#999"
 
-        if stato == "RICEVUTO":
+        if stato_pratica == "RICEVUTO":
             colore = "#3498db"
-        elif stato == "INVIATO_POSTE":
+        elif stato_pratica == "INVIATO_POSTE":
             colore = "#27ae60"
-        elif stato == "ERRORE_POSTE":
+        elif stato_pratica == "ERRORE_POSTE":
             colore = "#e74c3c"
-        elif stato == "LAVORAZIONE_MANUALE":
+        elif stato_pratica == "LAVORAZIONE_MANUALE":
             colore = "#f39c12"
-        elif stato == "COMPLETATO":
+        elif stato_pratica == "COMPLETATO":
             colore = "#8e44ad"
 
         rows += f"""
@@ -2940,7 +2941,7 @@ def dashboard_pratiche(stato: str = None):
             <td>{p.get('cliente_email')}</td>
             <td>
                 <span class="badge" style="background:{colore};">
-                    {stato}
+                    {stato_pratica}
                 </span>
             </td>
             <td>{data_breve}</td>
@@ -3013,6 +3014,7 @@ def dashboard_pratiche(stato: str = None):
             .actions {{
                 white-space:normal;
             }}
+
             .btn-action {{
                 display:inline-block;
                 background:#eef3ff;
@@ -3023,24 +3025,18 @@ def dashboard_pratiche(stato: str = None):
                 margin:3px;
                 text-decoration:none;
                 font-weight:bold;
-             }}
-             .btn-filter-active {{
-                 background:#111827 !important;
-                 color:white !important;
-             }}
+            }}
 
-            .tools-box,
+            .btn-filter-active {{
+                background:#111827 !important;
+                color:white !important;
+            }}
+
             .legend-box {{
-                margin-top:24px;
+                margin-top:250px;
                 padding:18px;
                 background:#fff;
                 border-radius:14px;
-            }}
-
-            .tools-line {{
-                display:flex;
-                flex-wrap:wrap;
-                gap:12px;
             }}
 
             .legend-line {{
@@ -3103,12 +3099,6 @@ def dashboard_pratiche(stato: str = None):
                     margin:4px 6px 4px 0;
                 }}
 
-                .tools-line {{
-                    flex-direction:column !important;
-                    gap:10px !important;
-                    font-size:17px !important;
-                }}
-
                 .legend-line {{
                     gap:8px !important;
                 }}
@@ -3124,76 +3114,36 @@ def dashboard_pratiche(stato: str = None):
     <body>
 
         <h1>📬 Eccomi Posta — Dashboard Pratiche</h1>
-        <div style="
-    display:flex;
-    flex-wrap:wrap;
-    gap:14px;
-    margin:25px 0;
-">
 
-    <div style="
-        background:#e74c3c;
-        color:white;
-        padding:14px 20px;
-        border-radius:16px;
-        font-weight:bold;
-        font-size:18px;
-    ">
-        🔴 Errori: {tot_errori}
-    </div>
+        <div style="display:flex;flex-wrap:wrap;gap:14px;margin:25px 0;">
+            <div style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;">
+                🔴 Errori: {tot_errori}
+            </div>
 
-    <div style="
-        background:#27ae60;
-        color:white;
-        padding:14px 20px;
-        border-radius:16px;
-        font-weight:bold;
-        font-size:18px;
-    ">
-        🟢 Inviati: {tot_inviati}
-    </div>
+            <div style="background:#27ae60;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;">
+                🟢 Inviati: {tot_inviati}
+            </div>
 
-    <div style="
-        background:#f39c12;
-        color:white;
-        padding:14px 20px;
-        border-radius:16px;
-        font-weight:bold;
-        font-size:18px;
-    ">
-        🟠 Manuali: {tot_manuali}
-    </div>
+            <div style="background:#f39c12;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;">
+                🟠 Manuali: {tot_manuali}
+            </div>
 
-    <div style="
-        background:#8e44ad;
-        color:white;
-        padding:14px 20px;
-        border-radius:16px;
-        font-weight:bold;
-        font-size:18px;
-    ">
-        🟣 Completati: {tot_completati}
-    </div>
-    
-    <div style="
-    background:#111827;
-    color:white;
-    padding:14px 20px;
-    border-radius:16px;
-    font-weight:bold;
-    font-size:18px;
-">
-    🔄 Auto-refresh: 15s
-</div>
-</div>
+            <div style="background:#8e44ad;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;">
+                🟣 Completati: {tot_completati}
+            </div>
 
-<div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
-    <a class="btn-action {'btn-filter-active' if not stato else ''}" href="/dashboard/pratiche">Tutti</a>
-    <a class="btn-action {'btn-filter-active' if stato == 'ERRORE_POSTE' else ''}" href="/dashboard/pratiche?stato=ERRORE_POSTE">Errori</a>
-    <a class="btn-action {'btn-filter-active' if stato == 'INVIATO_POSTE' else ''}" href="/dashboard/pratiche?stato=INVIATO_POSTE">Inviati</a>
-    <a class="btn-action {'btn-filter-active' if stato == 'LAVORAZIONE_MANUALE' else ''}" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
-    <a class="btn-action {'btn-filter-active' if stato == 'COMPLETATO' else ''}" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
-</div>
+            <div style="background:#111827;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;">
+                🔄 Auto-refresh: 15s
+            </div>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
+            <a class="btn-action {'btn-filter-active' if not filtro_stato else ''}" href="/dashboard/pratiche">Tutti</a>
+            <a class="btn-action {'btn-filter-active' if filtro_stato == 'ERRORE_POSTE' else ''}" href="/dashboard/pratiche?stato=ERRORE_POSTE">Errori</a>
+            <a class="btn-action {'btn-filter-active' if filtro_stato == 'INVIATO_POSTE' else ''}" href="/dashboard/pratiche?stato=INVIATO_POSTE">Inviati</a>
+            <a class="btn-action {'btn-filter-active' if filtro_stato == 'LAVORAZIONE_MANUALE' else ''}" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
+            <a class="btn-action {'btn-filter-active' if filtro_stato == 'COMPLETATO' else ''}" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
+        </div>
 
         <table>
             <thead>
@@ -3212,8 +3162,9 @@ def dashboard_pratiche(stato: str = None):
             </tbody>
         </table>
 
-        <div class="legend-box" style="margin-top:250px;">
-        <h3>📌 Legenda Stati</h3>
+        <div class="legend-box">
+            <h3>📌 Legenda Stati</h3>
+
             <div class="legend-line">
                 <span style="background:#3498db;">RICEVUTO</span>
                 <span style="background:#27ae60;">INVIATO_POSTE</span>
@@ -3222,12 +3173,6 @@ def dashboard_pratiche(stato: str = None):
                 <span style="background:#8e44ad;">COMPLETATO</span>
             </div>
         </div>
-
-        <script>
-            setTimeout(() => {
-            window.location.reload();
-            }}, 15000);
-        </script>
 
     </body>
     </html>
