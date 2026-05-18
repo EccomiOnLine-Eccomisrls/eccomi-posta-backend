@@ -3223,6 +3223,12 @@ def dashboard_pratiche(stato: str = None):
             </div>
         </div>
 
+        <script>
+            setTimeout(() => {
+            window.location.reload();
+            }, 15000);
+        </script>
+
     </body>
     </html>
     """
