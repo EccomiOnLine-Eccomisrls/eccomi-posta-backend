@@ -2922,7 +2922,7 @@ def dashboard_pratiche(stato: str = None):
         created_raw = p.get("created_at") or ""
         data_breve = created_raw.replace("T", " ")[:16]
         cliente_email = p.get("cliente_email") or "-"
-        email_breve = cliente_email if len(cliente_email) <= 18 else cliente_email[:15] + "..."
+        email_breve = cliente_email if len(cliente_email) <= 14 else cliente_email[:11] + "..."
         colore = "#999"
 
         if stato_pratica == "RICEVUTO":
