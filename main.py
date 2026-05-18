@@ -3033,7 +3033,8 @@ def dashboard_pratiche(stato: str = None):
             }}
             .email-cell {{
                 text-decoration:none !important;
-                word-break:break-word;
+                white-space:nowrap;
+                word-break:normal;
             }}
 
             .btn-filter-active {{
