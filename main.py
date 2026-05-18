@@ -2921,6 +2921,8 @@ def dashboard_pratiche(stato: str = None):
         stato_pratica = p.get("stato", "-")
         created_raw = p.get("created_at") or ""
         data_breve = created_raw.replace("T", " ")[:16]
+        cliente_email = p.get("cliente_email") or "-"
+        email_breve = cliente_email if len(cliente_email) <= 18 else cliente_email[:15] + "..."
         colore = "#999"
 
         if stato_pratica == "RICEVUTO":
@@ -2938,7 +2940,7 @@ def dashboard_pratiche(stato: str = None):
         <tr>
             <td>{p.get('order_name')}</td>
             <td>{p.get('tipo_servizio')}</td>
-            <td class="email-cell">{p.get('cliente_email')}</td>
+            <td class="email-cell" title="{cliente_email}">{email_breve}</td>
             <td>
                 <span class="badge" style="background:{colore};">
                     {stato_pratica}
@@ -3031,10 +3033,12 @@ def dashboard_pratiche(stato: str = None):
                 text-decoration:none;
                 font-weight:bold;
             }}
+            
             .email-cell {{
                 text-decoration:none !important;
-                white-space:nowrap;
-                word-break:normal;
+                white-space:nowrap !important;
+                word-break:normal !important;
+                min-width:140px;
             }}
 
             .btn-filter-active {{
