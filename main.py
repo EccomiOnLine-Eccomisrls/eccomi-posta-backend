@@ -1851,18 +1851,23 @@ async def crea_raccomandata(
     file: UploadFile = File(None),
 ):
     try:
+
         now = datetime.datetime.now()
         anno = now.year
         timestamp = now.strftime("%d/%m/%Y %H:%M:%S")
 
         token = f"RACC-{anno}-{order_id}"
+
         pratica_dir = f"data/{token}"
+
         os.makedirs(pratica_dir, exist_ok=True)
 
         pratica_path = f"{pratica_dir}/pratica.txt"
+
         pdf_path = f"{pratica_dir}/documento.pdf"
 
         with open(pratica_path, "w", encoding="utf-8") as f:
+
             f.write(f"TOKEN: {token}\n")
             f.write(f"DATA CREAZIONE: {timestamp}\n")
             f.write(f"ORDER ID: {order_id}\n")
@@ -1884,12 +1889,21 @@ async def crea_raccomandata(
                 f.write("TESTO RACCOMANDATA:\n")
                 f.write(testo)
 
+        # =========================
+        # PDF
+        # =========================
+
         if file:
+
             contents = await file.read()
+
             with open(pdf_path, "wb") as f:
                 f.write(contents)
+
             pdf_saved = True
+
         else:
+
             genera_pdf_da_testo(
                 pdf_path=pdf_path,
                 mittente=mittente,
@@ -1898,11 +1912,17 @@ async def crea_raccomandata(
                 testo=testo or "",
                 firma=firma or "",
             )
+
             pdf_saved = True
+
+        # =========================
+        # UPLOAD SUPABASE STORAGE
+        # =========================
 
         storage_path = f"raccomandate/{token}/documento.pdf"
 
         with open(pdf_path, "rb") as f:
+
             supabase.storage.from_(SUPABASE_BUCKET).upload(
                 path=storage_path,
                 file=f,
@@ -1912,18 +1932,73 @@ async def crea_raccomandata(
                 },
             )
 
-        pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(storage_path)
+        pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
+            storage_path
+        )
+
+        # =========================
+        # SALVATAGGIO PRATICA
+        # =========================
+
+        try:
+
+            supabase.table("pratiche").insert({
+
+                "order_id": str(order_id),
+
+                "order_name": str(order_id),
+
+                "tipo_servizio": "RACCOMANDATA",
+
+                "cliente_email": "",
+
+                "mittente": {
+                    "raw": mittente
+                },
+
+                "destinatario": {
+                    "raw": destinatario
+                },
+
+                "testo": testo or "",
+
+                "parole": 0,
+
+                "pdf_url": pdf_url,
+
+                "stato": "RICEVUTO"
+
+            }).execute()
+
+        except Exception as db_error:
+
+            print(
+                "ERRORE SALVATAGGIO PRATICA RACCOMANDATA:",
+                str(db_error)
+            )
 
         return {
+
             "success": True,
+
             "token": token,
+
             "pdf_saved": pdf_saved,
+
             "folder": pratica_dir,
+
             "pdf_url": pdf_url,
+
+            "stato": "RICEVUTO"
+
         }
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 
 @app.get("/raccomandata/{token}/pdf")
