@@ -2938,7 +2938,7 @@ def dashboard_pratiche(stato: str = None):
         <tr>
             <td>{p.get('order_name')}</td>
             <td>{p.get('tipo_servizio')}</td>
-            <td>{p.get('cliente_email')}</td>
+            <td class="email-cell">{p.get('cliente_email')}</td>
             <td>
                 <span class="badge" style="background:{colore};">
                     {stato_pratica}
@@ -2991,6 +2991,11 @@ def dashboard_pratiche(stato: str = None):
                 padding:12px;
                 border-bottom:1px solid #eee;
             }}
+            td a[href^="mailto"],
+            td a[x-apple-data-detectors] {{
+                color:inherit !important;
+                text-decoration:none !important;
+            }}
 
             tr:hover {{
                 background:#fafafa;
@@ -3025,6 +3030,10 @@ def dashboard_pratiche(stato: str = None):
                 margin:3px;
                 text-decoration:none;
                 font-weight:bold;
+            }}
+            .email-cell {{
+                text-decoration:none !important;
+                word-break:break-word;
             }}
 
             .btn-filter-active {{
