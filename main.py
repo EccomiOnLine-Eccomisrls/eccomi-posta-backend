@@ -1819,14 +1819,18 @@ def poste_ricevuta_test():
         except:
             pass
 
-        return {
-            "success": True,
-            "step": "RecuperaRicevutaAccettazione",
-            "id_richiesta": id_richiesta,
-            "poste_response": str(result),
-            "xml_sent": xml_sent,
-            "xml_received": xml_received
-        }
+        pdf_bytes = result["Contenuto"]
+
+        if isinstance(pdf_bytes, str):
+            pdf_bytes = pdf_bytes.encode("latin1")
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": "inline; filename=ricevuta_poste.pdf"
+            }
+        )
 
     except Exception as e:
 
