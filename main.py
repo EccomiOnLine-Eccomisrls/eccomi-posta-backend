@@ -1663,7 +1663,7 @@ def poste_preconferma_test():
 
         result = service.PreConferma(
             Richieste=[richiesta],
-            AutoConferma=True
+            autoConferma=True
         )
 
         # ==========================================
