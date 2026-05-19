@@ -1732,6 +1732,58 @@ def poste_preconferma_test():
             "xml_received": xml_received
         }
 
+@app.get("/poste/h2h/stato-test")
+def poste_stato_test():
+
+    history = HistoryPlugin()
+
+    try:
+        client, service = poste_client(timeout=60, extra_plugins=[history])
+
+        id_richiesta = "c4eb8836-f2e6-4e8f-ba2e-29b4e057d9b0"
+
+        result = service.RecuperaStatoIdRichiesta(
+            IdRichiesta=id_richiesta
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        return {
+            "success": True,
+            "step": "RecuperaStatoIdRichiesta",
+            "id_richiesta": id_richiesta,
+            "poste_response": str(result),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+    except Exception as e:
+
+        return {
+            "success": False,
+            "step": "RecuperaStatoIdRichiesta",
+            "error": str(e)
+        }
+
 @app.get("/poste/h2h/valida-destinatari-test")
 def valida_destinatari_test():
     history = HistoryPlugin()
