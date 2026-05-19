@@ -1631,6 +1631,107 @@ def poste_valorizza_test():
             "xml_received": xml_received
         }
 
+@app.get("/poste/h2h/preconferma-test")
+def poste_preconferma_test():
+
+    history = HistoryPlugin()
+
+    try:
+        client, service = poste_client(timeout=60, extra_plugins=[history])
+
+        # ==========================================
+        # DATI DELLA RICHIESTA GIÀ PREZZATA
+        # ==========================================
+
+        id_richiesta = "c4eb8836-f2e6-4e8f-ba2e-29b4e057d9b0"
+        guid_utente = "ROL202605000210302"
+
+        # ==========================================
+        # TYPE SOAP
+        # ==========================================
+
+        RichiestaType = client.get_type("ns1:Richiesta")
+
+        richiesta = RichiestaType(
+            IDRichiesta=id_richiesta,
+            GuidUtente=guid_utente
+        )
+
+        # ==========================================
+        # PRECONFERMA
+        # ==========================================
+
+        result = service.PreConferma(
+            Richieste=[richiesta],
+            AutoConferma=True
+        )
+
+        # ==========================================
+        # XML DEBUG
+        # ==========================================
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        return {
+            "success": True,
+            "step": "PreConferma",
+            "id_richiesta": id_richiesta,
+            "guid_utente": guid_utente,
+            "poste_response": str(result),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+    except Exception as e:
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        return {
+            "success": False,
+            "step": "PreConferma",
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
 @app.get("/poste/h2h/valida-destinatari-test")
 def valida_destinatari_test():
     history = HistoryPlugin()
