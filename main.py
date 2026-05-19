@@ -2402,7 +2402,7 @@ def process_poste_order(order_id: str):
             "xml_received": xml_received
         }
 
-@app.get("/poste/h2h/confirm-order/{order_id}")
+@app.get("/poste/h2h/finalizza/{order_id}")
 def confirm_poste_order(order_id: str):
 
     history = HistoryPlugin()
