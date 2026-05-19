@@ -3422,27 +3422,15 @@ def dashboard_pratica_pdf(pratica_id: str):
 
     pratica = result.data
 
-    telegramma = {
-        "testo": pratica.get("testo"),
-        "mittente": pratica.get("mittente") or {},
-        "destinatario": pratica.get("destinatario") or {}
+    pdf_url = pratica.get("pdf_url")
+
+    if pdf_url:
+        return RedirectResponse(url=pdf_url, status_code=302)
+
+    return {
+        "success": False,
+        "error": "PDF non disponibile per questa pratica"
     }
-
-    os.makedirs("data/telegrammi_pdf", exist_ok=True)
-
-    order_name_clean = str(
-        pratica.get("order_name", "TEST")
-    ).replace("#", "")
-
-    pdf_path = f"data/telegrammi_pdf/telegramma_{order_name_clean}.pdf"
-
-    genera_pdf_telegramma(pdf_path, telegramma)
-
-    return FileResponse(
-        pdf_path,
-        media_type="application/pdf",
-        filename=f"telegramma_{order_name_clean}.pdf"
-    )
 
 
 @app.get("/dashboard/pratiche/errore/{pratica_id}")
