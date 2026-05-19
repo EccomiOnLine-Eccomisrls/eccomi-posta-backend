@@ -2255,10 +2255,8 @@ def process_poste_order(order_id: str):
             }
 
         pdf_bytes = response_pdf.content
-
         pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
-
-        md5_pdf = hashlib.md5(pdf_bytes).hexdigest()
+        md5_pdf = hashlib.md5(pdf_bytes).hexdigest().upper()
 
         # =========================================================
         # TYPES SOAP
@@ -2269,9 +2267,11 @@ def process_poste_order(order_id: str):
         MittenteType = client.get_type("ns1:Mittente")
         DestinatarioType = client.get_type("ns1:Destinatario")
         DocumentoType = client.get_type("ns1:Documento")
+        RichiestaType = client.get_type("ns1:Richiesta")
 
         # =========================================================
-        # DATI TEST
+        # DATI RACCOMANDATA
+        # per ora mappati dai dati reali del test Shopify
         # =========================================================
 
         indirizzo_mitt = IndirizzoType(
@@ -2328,10 +2328,16 @@ def process_poste_order(order_id: str):
         )
 
         # =========================================================
-        # INVIO
+        # RECUPERA ID RICHIESTA DA POSTE
+        # FONDAMENTALE: non generare uuid manuale
         # =========================================================
 
-        id_richiesta = str(uuid.uuid4())
+        id_result = service.RecuperaIdRichiesta()
+        id_richiesta = id_result.IDRichiesta
+
+        # =========================================================
+        # INVIO
+        # =========================================================
 
         invio_result = service.Invio(
             IDRichiesta=id_richiesta,
@@ -2370,25 +2376,36 @@ def process_poste_order(order_id: str):
 
         guid_utente = invio_result.GuidUtente
 
-        # =========================================================
-        # VALORIZZA + PRECONFERMA
-        # =========================================================
-
-        RichiestaType = client.get_type("ns1:Richiesta")
-
         richiesta = RichiestaType(
             IDRichiesta=id_richiesta,
             GuidUtente=guid_utente
         )
 
+        # =========================================================
+        # VALORIZZA
+        # =========================================================
+
         valorizza_result = service.Valorizza(
             Richieste=[richiesta]
         )
+
+        # =========================================================
+        # PRECONFERMA
+        # =========================================================
 
         pre_result = service.PreConferma(
             Richieste=[richiesta],
             autoConferma=True
         )
+
+        if not pre_result.DestinatariRaccomandata:
+            return {
+                "success": False,
+                "error": "PreConferma senza DestinatariRaccomandata",
+                "id_richiesta": id_richiesta,
+                "guid_utente": guid_utente,
+                "preconferma_response": str(pre_result)
+            }
 
         numero_racc = str(
             pre_result.DestinatariRaccomandata
