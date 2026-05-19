@@ -2272,7 +2272,6 @@ def process_poste_order(order_id: str):
 
         # =========================================================
         # DATI TEST
-        # (poi li colleghiamo alle properties Shopify)
         # =========================================================
 
         indirizzo_mitt = IndirizzoType(
@@ -2372,14 +2371,22 @@ def process_poste_order(order_id: str):
         guid_utente = invio_result.GuidUtente
 
         # =========================================================
-        # PRECONFERMA
+        # VALORIZZA + PRECONFERMA
         # =========================================================
 
+        RichiestaType = client.get_type("ns1:Richiesta")
+
+        richiesta = RichiestaType(
+            IDRichiesta=id_richiesta,
+            GuidUtente=guid_utente
+        )
+
+        valorizza_result = service.Valorizza(
+            Richieste=[richiesta]
+        )
+
         pre_result = service.PreConferma(
-            Richieste={
-                "IDRichiesta": id_richiesta,
-                "GuidUtente": guid_utente
-            },
+            Richieste=[richiesta],
             autoConferma=True
         )
 
