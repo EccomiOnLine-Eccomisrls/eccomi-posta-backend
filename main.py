@@ -2402,6 +2402,131 @@ def process_poste_order(order_id: str):
             "xml_received": xml_received
         }
 
+@app.get("/poste/h2h/confirm-order/{order_id}")
+def confirm_poste_order(order_id: str):
+
+    history = HistoryPlugin()
+
+    try:
+        client, service = poste_client(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        ordine = supabase.table("poste_h2h_orders") \
+            .select("*") \
+            .eq("id", order_id) \
+            .single() \
+            .execute()
+
+        if not ordine.data:
+            return {
+                "success": False,
+                "error": "Ordine non trovato"
+            }
+
+        ordine = ordine.data
+
+        id_richiesta = ordine.get("id_richiesta")
+        guid_utente = ordine.get("guid_utente")
+
+        if not id_richiesta or not guid_utente:
+            return {
+                "success": False,
+                "error": "id_richiesta o guid_utente mancanti"
+            }
+
+        RichiestaType = client.get_type("ns1:Richiesta")
+
+        richiesta = RichiestaType(
+            IDRichiesta=id_richiesta,
+            GuidUtente=guid_utente
+        )
+
+        pre_result = service.PreConferma(
+            Richieste=[richiesta],
+            autoConferma=True
+        )
+
+        if not pre_result.DestinatariRaccomandata:
+            return {
+                "success": False,
+                "error": "PreConferma senza DestinatariRaccomandata",
+                "id_richiesta": id_richiesta,
+                "guid_utente": guid_utente,
+                "preconferma_response": str(pre_result)
+            }
+
+        numero_racc = str(
+            pre_result.DestinatariRaccomandata
+            .ArrayOfDestinatarioRaccomandata[0]
+            .NumeroRaccomandata
+        )
+
+        id_ricevuta = str(
+            pre_result.DestinatariRaccomandata
+            .ArrayOfDestinatarioRaccomandata[0]
+            .IdRicevuta
+        )
+
+        costo = float(
+            pre_result.Valorizzazione.Totale.ImportoTotale
+        )
+
+        supabase.table("poste_h2h_orders") \
+            .update({
+                "stato": "PRECONFERMATA",
+                "numero_raccomandata": numero_racc,
+                "id_ricevuta": id_ricevuta,
+                "id_ordine_poste": str(pre_result.IdOrdine),
+                "costo": costo,
+                "poste_response": str(pre_result)
+            }) \
+            .eq("id", order_id) \
+            .execute()
+
+        return {
+            "success": True,
+            "step": "PRECONFERMATA",
+            "order_id": order_id,
+            "id_richiesta": id_richiesta,
+            "guid_utente": guid_utente,
+            "numero_raccomandata": numero_racc,
+            "id_ricevuta": id_ricevuta,
+            "costo": costo,
+            "message": "Ordine confermato e raccomandata generata"
+        }
+
+    except Exception as e:
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        return {
+            "success": False,
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
 @app.get("/poste/h2h/valida-destinatari-test")
 def valida_destinatari_test():
     history = HistoryPlugin()
