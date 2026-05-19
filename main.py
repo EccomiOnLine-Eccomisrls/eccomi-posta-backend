@@ -1560,7 +1560,7 @@ def poste_valorizza_test():
         RichiestaType = client.get_type("ns1:Richiesta")
 
         richiesta = RichiestaType(
-            IdRichiesta=id_richiesta,
+            IDRichiesta=id_richiesta,
             GuidUtente=guid_utente
         )
 
