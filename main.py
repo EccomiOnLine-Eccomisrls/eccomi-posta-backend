@@ -2126,6 +2126,49 @@ async def shopify_order_created(request: Request):
 
     try:
         payload = await request.json()
+        order_id = payload.get("id")
+order_name = payload.get("name")
+email = payload.get("email") or payload.get("contact_email")
+
+line_items = payload.get("line_items", [])
+
+poste_items = []
+
+for item in line_items:
+    title = (item.get("title") or "").lower()
+    sku = (item.get("sku") or "").lower()
+    properties = item.get("properties", [])
+
+    if (
+        "raccomandata" in title
+        or "telegramma" in title
+        or "eccomi-posta" in sku
+        or "raccomandata" in sku
+    ):
+        poste_items.append({
+            "title": item.get("title"),
+            "sku": item.get("sku"),
+            "properties": properties
+        })
+
+if not poste_items:
+    return {
+        "success": True,
+        "message": "Ordine ricevuto ma nessun prodotto Eccomi Posta trovato",
+        "order": order_name
+    }
+
+print("POSTE ITEMS TROVATI:")
+print(poste_items)
+
+return {
+    "success": True,
+    "message": "Prodotto Eccomi Posta trovato",
+    "order_id": order_id,
+    "order_name": order_name,
+    "email": email,
+    "poste_items": poste_items
+}
 
         print("SHOPIFY ORDER:")
         print(payload)
