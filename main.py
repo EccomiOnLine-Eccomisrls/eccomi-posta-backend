@@ -1862,6 +1862,264 @@ def poste_ricevuta_test():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/full-cycle-v7")
+def poste_full_cycle_v7():
+
+    history = HistoryPlugin()
+
+    try:
+
+        client, service = poste_client(
+            timeout=60,
+            extra_plugins=[history]
+        )
+
+        # =========================
+        # TYPES
+        # =========================
+
+        NominativoType = client.get_type("ns1:Nominativo")
+        IndirizzoType = client.get_type("ns1:Indirizzo")
+        MittenteType = client.get_type("ns1:Mittente")
+        DestinatarioType = client.get_type("ns1:Destinatario")
+        DocumentoType = client.get_type("ns1:Documento")
+        RichiestaType = client.get_type("ns1:Richiesta")
+
+        # =========================
+        # MITTENTE
+        # =========================
+
+        indirizzo_mitt = IndirizzoType(
+            DUG="VIA",
+            Toponimo="PIOBESI",
+            NumeroCivico="5"
+        )
+
+        nom_mitt = NominativoType(
+            Nome="VERUSKA",
+            Cognome="SCAGLIONE",
+            CAP="10135",
+            Citta="TORINO",
+            Provincia="TO",
+            Indirizzo=indirizzo_mitt,
+            TipoIndirizzo="NORMALE",
+            ForzaDestinazione=True,
+            InesitateDigitali=False,
+            CodiceFiscaleResult=0,
+            ComplementoIndirizzo=""
+        )
+
+        mittente = MittenteType(
+            Nominativo=nom_mitt,
+            InviaStampa=False
+        )
+
+        # =========================
+        # DESTINATARIO
+        # =========================
+
+        indirizzo_dest = IndirizzoType(
+            DUG="VIA",
+            Toponimo="NEBRODI",
+            NumeroCivico="2/B"
+        )
+
+        nom_dest = NominativoType(
+            Nome="GIANNI",
+            Cognome="RANIOLO",
+            CAP="97017",
+            Citta="SANTA CROCE CAMERINA",
+            Provincia="RG",
+            Indirizzo=indirizzo_dest,
+            TipoIndirizzo="NORMALE",
+            ForzaDestinazione=True,
+            InesitateDigitali=False,
+            CodiceFiscaleResult=0,
+            ComplementoIndirizzo="FRAZIONE DI CASUZZE"
+        )
+
+        destinatario = DestinatarioType(
+            Nominativo=nom_dest
+        )
+
+        # =========================
+        # PDF
+        # =========================
+
+        buffer = BytesIO()
+
+        c = canvas.Canvas(buffer, pagesize=A4)
+
+        c.drawString(
+            100,
+            750,
+            "Eccomi Posta - Test FULL CYCLE V7"
+        )
+
+        c.drawString(
+            100,
+            720,
+            "Raccomandata online Poste H2H"
+        )
+
+        c.showPage()
+
+        c.save()
+
+        pdf_bytes = buffer.getvalue()
+
+        pdf_base64 = base64.b64encode(
+            pdf_bytes
+        ).decode("utf-8")
+
+        md5_pdf = hashlib.md5(
+            pdf_bytes
+        ).hexdigest()
+
+        documento = DocumentoType(
+            Immagine=pdf_base64,
+            TipoDocumento="pdf",
+            MD5=md5_pdf
+        )
+
+        # =========================
+        # INVIO
+        # =========================
+
+        id_richiesta = str(uuid.uuid4())
+
+        invio_result = service.Invio(
+            IDRichiesta=id_richiesta,
+            Cliente=POSTE_H2H_USERID,
+            CodiceContratto=POSTE_H2H_CONTRACT_ID,
+            ROLSubmit={
+                "Mittente": mittente,
+                "Destinatari": {
+                    "Destinatario": [destinatario]
+                },
+                "NumeroDestinatari": 1,
+                "Documento": [documento],
+                "Opzioni": {
+                    "OpzionidiStampa": {
+                        "ResolutionX": 300,
+                        "ResolutionY": 300,
+                        "BW": True,
+                        "FronteRetro": False,
+                        "PageSize": "A4"
+                    },
+                    "SecurPaper": False,
+                    "DPM": False,
+                    "DataStampa": datetime.datetime.now().replace(microsecond=0),
+                    "InserisciMittente": True,
+                    "Archiviazione": False,
+                    "AnniArchiviazioneSpecified": False,
+                    "FirmaElettronica": False,
+                    "AnniArchiviazione": 0,
+                    "ArchiviazioneDocumenti": "NESSUNA"
+                },
+                "PrezzaturaSincrona": False,
+                "Nazionale": True,
+                "ForzaInvioDestinazioniValide": True
+            }
+        )
+
+        guid_utente = invio_result.GuidUtente
+
+        # =========================
+        # VALORIZZA
+        # =========================
+
+        richiesta = RichiestaType(
+            IDRichiesta=id_richiesta,
+            GuidUtente=guid_utente
+        )
+
+        valorizza_result = service.Valorizza(
+            Richieste=[richiesta]
+        )
+
+        # =========================
+        # PRECONFERMA
+        # =========================
+
+        preconferma_result = service.PreConferma(
+            Richieste=[richiesta],
+            autoConferma=True
+        )
+
+        numero_racc = str(
+            preconferma_result
+            .DestinatariRaccomandata
+            .ArrayOfDestinatarioRaccomandata[0]
+            .NumeroRaccomandata
+        )
+
+        id_ricevuta = str(
+            preconferma_result
+            .DestinatariRaccomandata
+            .ArrayOfDestinatarioRaccomandata[0]
+            .IdRicevuta
+        )
+
+        costo = float(
+            preconferma_result
+            .Valorizzazione
+            .Totale
+            .ImportoTotale
+        )
+
+        # =========================
+        # SALVATAGGIO DB
+        # =========================
+
+        salva_poste_h2h_order({
+
+            "id_richiesta": id_richiesta,
+            "guid_utente": guid_utente,
+            "id_ordine_poste": str(preconferma_result.IdOrdine),
+            "numero_raccomandata": numero_racc,
+            "id_ricevuta": id_ricevuta,
+            "stato": "PreConfermata",
+            "costo": costo,
+
+            "mittente": {
+                "nome": "VERUSKA",
+                "cognome": "SCAGLIONE"
+            },
+
+            "destinatario": {
+                "nome": "GIANNI",
+                "cognome": "RANIOLO"
+            },
+
+            "poste_response": str(preconferma_result)
+
+        })
+
+        return {
+
+            "success": True,
+            "step": "FULL_CYCLE_COMPLETED",
+
+            "id_richiesta": id_richiesta,
+            "guid_utente": guid_utente,
+
+            "numero_raccomandata": numero_racc,
+            "id_ricevuta": id_ricevuta,
+
+            "costo": costo,
+
+            "message": "Raccomandata creata e salvata su Supabase"
+
+        }
+
+    except Exception as e:
+
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 @app.get("/poste/h2h/valida-destinatari-test")
 def valida_destinatari_test():
     history = HistoryPlugin()
