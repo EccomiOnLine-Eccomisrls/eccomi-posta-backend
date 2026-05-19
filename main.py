@@ -2138,12 +2138,12 @@ async def shopify_order_created(request: Request):
             sku = (item.get("sku") or "").lower()
             properties = item.get("properties", [])
 
-            if (
-                "raccomandata" in title
-                or "telegramma" in title
-                or "eccomi-posta" in sku
-                or "raccomandata" in sku
-            ):
+            is_raccomandata_principale = (
+                ("raccomandata" in title and "ricevuta di ritorno" not in title)
+                or "eolraccomandata" in sku
+            )
+
+            if is_raccomandata_principale:
                 poste_items.append({
                     "title": item.get("title"),
                     "sku": item.get("sku"),
@@ -2153,25 +2153,37 @@ async def shopify_order_created(request: Request):
         if not poste_items:
             return {
                 "success": True,
-                "message": "Ordine ricevuto ma nessun prodotto Eccomi Posta trovato",
+                "message": "Ordine ricevuto ma nessun prodotto Eccomi Posta principale trovato",
                 "order": order_name
             }
 
-        print("POSTE ITEMS TROVATI:")
-        print(poste_items)
+        saved_items = []
 
         for poste_item in poste_items:
-            supabase.table("poste_h2h_orders").insert({
+            props = {
+                p.get("name"): p.get("value")
+                for p in poste_item.get("properties", [])
+            }
+
+            insert_result = supabase.table("poste_h2h_orders").insert({
                 "stato": "RICEVUTO",
-                "mittente": {"raw": "DA ESTRARRE DA SHOPIFY"},
-                "destinatario": {"raw": "DA ESTRARRE DA SHOPIFY"},
+                "mittente": {
+                    "raw": props.get("Mittente")
+                },
+                "destinatario": {
+                    "raw": props.get("Destinatario")
+                },
+                "pdf_url": props.get("_PDF pratica"),
                 "poste_response": str({
                     "shopify_order_id": str(order_id),
                     "shopify_order_name": str(order_name),
                     "email": email,
-                    "item": poste_item
+                    "item": poste_item,
+                    "properties": props
                 })
             }).execute()
+
+            saved_items.append(insert_result.data)
 
         return {
             "success": True,
@@ -2179,7 +2191,7 @@ async def shopify_order_created(request: Request):
             "order_id": order_id,
             "order_name": order_name,
             "email": email,
-            "poste_items": poste_items
+            "saved_items": saved_items
         }
 
     except Exception as e:
