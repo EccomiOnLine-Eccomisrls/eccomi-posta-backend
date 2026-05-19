@@ -2527,6 +2527,73 @@ def confirm_poste_order(order_id: str):
             "xml_received": xml_received
         }
 
+
+@app.get("/poste/h2h/salva-ricevuta/{order_id}")
+def salva_ricevuta_poste(order_id: str):
+
+    try:
+        ordine = supabase.table("poste_h2h_orders") \
+            .select("*") \
+            .eq("id", order_id) \
+            .single() \
+            .execute()
+
+        if not ordine.data:
+            return {"success": False, "error": "Ordine non trovato"}
+
+        ordine = ordine.data
+        id_richiesta = ordine.get("id_richiesta")
+
+        if not id_richiesta:
+            return {"success": False, "error": "id_richiesta mancante"}
+
+        history = HistoryPlugin()
+        client, service = poste_client(timeout=120, extra_plugins=[history])
+
+        result = service.RecuperaRicevutaAccettazione(
+            IDRichiesta=id_richiesta
+        )
+
+        pdf_bytes = result["Contenuto"]
+
+        if isinstance(pdf_bytes, str):
+            pdf_bytes = pdf_bytes.encode("latin1")
+
+        file_path = f"ricevute/{order_id}/ricevuta_accettazione.pdf"
+
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            file_path,
+            pdf_bytes,
+            {
+                "content-type": "application/pdf",
+                "upsert": "true"
+            }
+        )
+
+        pdf_public_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(file_path)
+
+        supabase.table("poste_h2h_orders") \
+            .update({
+                "pdf_ricevuta_url": pdf_public_url,
+                "stato": "RICEVUTA_SALVATA"
+            }) \
+            .eq("id", order_id) \
+            .execute()
+
+        return {
+            "success": True,
+            "order_id": order_id,
+            "id_richiesta": id_richiesta,
+            "pdf_ricevuta_url": pdf_public_url,
+            "message": "Ricevuta Poste salvata correttamente"
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 @app.get("/poste/h2h/valida-destinatari-test")
 def valida_destinatari_test():
     history = HistoryPlugin()
