@@ -2196,7 +2196,7 @@ def process_poste_order(order_id: str):
         # RECUPERA ORDINE DA SUPABASE
         # =========================================================
 
-        ordine = supabase.table("poste_orders") \
+        ordine = supabase.table("poste_h2h_orders") \
             .select("*") \
             .eq("id", order_id) \
             .single() \
@@ -2379,7 +2379,7 @@ def process_poste_order(order_id: str):
         # UPDATE SUPABASE
         # =========================================================
 
-        supabase.table("poste_orders") \
+        supabase.table("poste_h2h_orders") \
             .update({
                 "stato": "PRECONFERMATA",
                 "id_richiesta": id_richiesta,
