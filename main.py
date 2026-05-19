@@ -1795,7 +1795,7 @@ def poste_ricevuta_test():
         id_richiesta = "c4eb8836-f2e6-4e8f-ba2e-29b4e057d9b0"
 
         result = service.RecuperaRicevutaAccettazione(
-            IdRichiesta=id_richiesta
+            IDRichiesta=id_richiesta
         )
 
         xml_sent = None
