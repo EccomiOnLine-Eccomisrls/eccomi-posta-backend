@@ -1566,9 +1566,7 @@ def poste_valorizza_test():
 
         # CHIAMATA VALORIZZA
         result = service.Valorizza(
-            Richieste={
-                "Richiesta": [richiesta]
-            }
+            Richieste=[richiesta]
         )
 
         xml_sent = None
