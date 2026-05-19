@@ -2159,16 +2159,33 @@ async def shopify_order_created(request: Request):
             }
 
         print("POSTE ITEMS TROVATI:")
-        print(poste_items)
+print(poste_items)
 
-        return {
-            "success": True,
-            "message": "Prodotto Eccomi Posta trovato",
-            "order_id": order_id,
-            "order_name": order_name,
+for poste_item in poste_items:
+    supabase.table("poste_h2h_orders").insert({
+        "stato": "RICEVUTO",
+        "mittente": {
+            "raw": "DA ESTRARRE DA SHOPIFY"
+        },
+        "destinatario": {
+            "raw": "DA ESTRARRE DA SHOPIFY"
+        },
+        "poste_response": {
+            "shopify_order_id": str(order_id),
+            "shopify_order_name": str(order_name),
             "email": email,
-            "poste_items": poste_items
+            "item": poste_item
         }
+    }).execute()
+
+return {
+    "success": True,
+    "message": "Ordine Eccomi Posta salvato in Supabase",
+    "order_id": order_id,
+    "order_name": order_name,
+    "email": email,
+    "poste_items": poste_items
+}
 
     except Exception as e:
         return {
