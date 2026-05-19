@@ -48,6 +48,14 @@ POSTE_H2H_BINDING = "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_R
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
+def salva_poste_h2h_order(data: dict):
+    try:
+        res = supabase.table("poste_h2h_orders").insert(data).execute()
+        return res.data
+    except Exception as e:
+        print("ERRORE SALVATAGGIO SUPABASE:", str(e))
+        return None
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -1665,6 +1673,20 @@ def poste_preconferma_test():
             Richieste=[richiesta],
             autoConferma=True
         )
+        salva_poste_h2h_order({
+            "id_richiesta": id_richiesta,
+            "guid_utente": guid_utente,
+            "id_ordine_poste": str(result.IdOrdine),
+            "numero_raccomandata": str(
+                result.DestinatariRaccomandata.ArrayOfDestinatarioRaccomandata[0].NumeroRaccomandata
+            ),
+            "id_ricevuta": str(
+                   result.DestinatariRaccomandata.ArrayOfDestinatarioRaccomandata[0].IdRicevuta
+            ),   
+            "stato": "PreConfermata",
+            "costo": float(result.Valorizzazione.Totale.ImportoTotale),
+            "poste_response": str(result)
+        })
 
         # ==========================================
         # XML DEBUG
