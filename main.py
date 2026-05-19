@@ -2206,19 +2206,10 @@ def process_poste_order(order_id: str):
     history = HistoryPlugin()
 
     try:
-
-        # =========================================================
-        # CLIENT SOAP
-        # =========================================================
-
         client, service = poste_client(
             timeout=120,
             extra_plugins=[history]
         )
-
-        # =========================================================
-        # RECUPERA ORDINE DA SUPABASE
-        # =========================================================
 
         ordine = supabase.table("poste_h2h_orders") \
             .select("*") \
@@ -2233,7 +2224,6 @@ def process_poste_order(order_id: str):
             }
 
         ordine = ordine.data
-
         pdf_url = ordine.get("pdf_url")
 
         if not pdf_url:
@@ -2241,10 +2231,6 @@ def process_poste_order(order_id: str):
                 "success": False,
                 "error": "PDF non presente"
             }
-
-        # =========================================================
-        # DOWNLOAD PDF
-        # =========================================================
 
         response_pdf = requests.get(pdf_url)
 
@@ -2258,21 +2244,12 @@ def process_poste_order(order_id: str):
         pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
         md5_pdf = hashlib.md5(pdf_bytes).hexdigest().upper()
 
-        # =========================================================
-        # TYPES SOAP
-        # =========================================================
-
         NominativoType = client.get_type("ns1:Nominativo")
         IndirizzoType = client.get_type("ns1:Indirizzo")
         MittenteType = client.get_type("ns1:Mittente")
         DestinatarioType = client.get_type("ns1:Destinatario")
         DocumentoType = client.get_type("ns1:Documento")
         RichiestaType = client.get_type("ns1:Richiesta")
-
-        # =========================================================
-        # DATI RACCOMANDATA
-        # per ora mappati dai dati reali del test Shopify
-        # =========================================================
 
         indirizzo_mitt = IndirizzoType(
             DUG="VIALE",
@@ -2327,17 +2304,8 @@ def process_poste_order(order_id: str):
             MD5=md5_pdf
         )
 
-        # =========================================================
-        # RECUPERA ID RICHIESTA DA POSTE
-        # FONDAMENTALE: non generare uuid manuale
-        # =========================================================
-
         id_result = service.RecuperaIdRichiesta()
         id_richiesta = id_result.IDRichiesta
-
-        # =========================================================
-        # INVIO
-        # =========================================================
 
         invio_result = service.Invio(
             IDRichiesta=id_richiesta,
@@ -2381,75 +2349,27 @@ def process_poste_order(order_id: str):
             GuidUtente=guid_utente
         )
 
-        # =========================================================
-        # VALORIZZA
-        # =========================================================
-
         valorizza_result = service.Valorizza(
             Richieste=[richiesta]
         )
 
-        # =========================================================
-        # PRECONFERMA
-        # =========================================================
-
-        pre_result = service.PreConferma(
-            Richieste=[richiesta],
-            autoConferma=True
-        )
-
-        if not pre_result.DestinatariRaccomandata:
-            return {
-                "success": False,
-                "error": "PreConferma senza DestinatariRaccomandata",
-                "id_richiesta": id_richiesta,
-                "guid_utente": guid_utente,
-                "preconferma_response": str(pre_result)
-            }
-
-        numero_racc = str(
-            pre_result.DestinatariRaccomandata
-            .ArrayOfDestinatarioRaccomandata[0]
-            .NumeroRaccomandata
-        )
-
-        id_ricevuta = str(
-            pre_result.DestinatariRaccomandata
-            .ArrayOfDestinatarioRaccomandata[0]
-            .IdRicevuta
-        )
-
-        costo = float(
-            pre_result.Valorizzazione.Totale.ImportoTotale
-        )
-
-        # =========================================================
-        # UPDATE SUPABASE
-        # =========================================================
-
         supabase.table("poste_h2h_orders") \
             .update({
-                "stato": "PRECONFERMATA",
+                "stato": "PREZZATA_DA_CONFERMARE",
                 "id_richiesta": id_richiesta,
                 "guid_utente": guid_utente,
-                "numero_raccomandata": numero_racc,
-                "id_ricevuta": id_ricevuta,
-                "id_ordine_poste": str(pre_result.IdOrdine),
-                "costo": costo,
-                "poste_response": str(pre_result)
+                "poste_response": str(valorizza_result)
             }) \
             .eq("id", order_id) \
             .execute()
 
         return {
             "success": True,
+            "step": "VALORIZZATA_DA_CONFERMARE",
             "order_id": order_id,
             "id_richiesta": id_richiesta,
             "guid_utente": guid_utente,
-            "numero_raccomandata": numero_racc,
-            "id_ricevuta": id_ricevuta,
-            "costo": costo,
-            "message": "Raccomandata processata correttamente"
+            "message": "Ordine valorizzato. Ora eseguire confirm-order."
         }
 
     except Exception as e:
