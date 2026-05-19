@@ -2038,8 +2038,6 @@ def poste_full_cycle_v7():
         valorizza_result = service.Valorizza(
             Richieste=[richiesta]
         )
-        
-        time.sleep(60)
 
         # =========================
         # PRECONFERMA
