@@ -2176,6 +2176,264 @@ async def shopify_order_created(request: Request):
             "error": str(e)
         }
 
+@app.get("/poste/h2h/process-order/{order_id}")
+def process_poste_order(order_id: str):
+
+    history = HistoryPlugin()
+
+    try:
+
+        # =========================================================
+        # CLIENT SOAP
+        # =========================================================
+
+        client, service = poste_client(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        # =========================================================
+        # RECUPERA ORDINE DA SUPABASE
+        # =========================================================
+
+        ordine = supabase.table("poste_orders") \
+            .select("*") \
+            .eq("id", order_id) \
+            .single() \
+            .execute()
+
+        if not ordine.data:
+            return {
+                "success": False,
+                "error": "Ordine non trovato"
+            }
+
+        ordine = ordine.data
+
+        pdf_url = ordine.get("pdf_url")
+
+        if not pdf_url:
+            return {
+                "success": False,
+                "error": "PDF non presente"
+            }
+
+        # =========================================================
+        # DOWNLOAD PDF
+        # =========================================================
+
+        response_pdf = requests.get(pdf_url)
+
+        if response_pdf.status_code != 200:
+            return {
+                "success": False,
+                "error": "Impossibile scaricare PDF"
+            }
+
+        pdf_bytes = response_pdf.content
+
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+        md5_pdf = hashlib.md5(pdf_bytes).hexdigest()
+
+        # =========================================================
+        # TYPES SOAP
+        # =========================================================
+
+        NominativoType = client.get_type("ns1:Nominativo")
+        IndirizzoType = client.get_type("ns1:Indirizzo")
+        MittenteType = client.get_type("ns1:Mittente")
+        DestinatarioType = client.get_type("ns1:Destinatario")
+        DocumentoType = client.get_type("ns1:Documento")
+
+        # =========================================================
+        # DATI TEST
+        # (poi li colleghiamo alle properties Shopify)
+        # =========================================================
+
+        indirizzo_mitt = IndirizzoType(
+            DUG="VIALE",
+            Toponimo="STEFANO D'ARRIGO",
+            NumeroCivico="321"
+        )
+
+        nom_mitt = NominativoType(
+            Nome="SALVATORE",
+            Cognome="DEL LIBANO",
+            CAP="00131",
+            Citta="ROMA",
+            Provincia="RM",
+            Indirizzo=indirizzo_mitt,
+            TipoIndirizzo="NORMALE",
+            ForzaDestinazione=True,
+            InesitateDigitali=False,
+            CodiceFiscaleResult=0
+        )
+
+        mittente = MittenteType(
+            Nominativo=nom_mitt,
+            InviaStampa=False
+        )
+
+        indirizzo_dest = IndirizzoType(
+            DUG="VIA",
+            Toponimo="PRAGA",
+            NumeroCivico="7"
+        )
+
+        nom_dest = NominativoType(
+            Nome="PIETRO",
+            Cognome="DEL LIBANO",
+            CAP="88842",
+            Citta="CUTRO",
+            Provincia="KR",
+            Indirizzo=indirizzo_dest,
+            TipoIndirizzo="NORMALE",
+            ForzaDestinazione=True,
+            InesitateDigitali=False,
+            CodiceFiscaleResult=0
+        )
+
+        destinatario = DestinatarioType(
+            Nominativo=nom_dest
+        )
+
+        documento = DocumentoType(
+            Immagine=pdf_base64,
+            TipoDocumento="pdf",
+            MD5=md5_pdf
+        )
+
+        # =========================================================
+        # INVIO
+        # =========================================================
+
+        id_richiesta = str(uuid.uuid4())
+
+        invio_result = service.Invio(
+            IDRichiesta=id_richiesta,
+            Cliente=POSTE_H2H_USERID,
+            CodiceContratto=POSTE_H2H_CONTRACT_ID,
+            ROLSubmit={
+                "Mittente": mittente,
+                "Destinatari": {
+                    "Destinatario": [destinatario]
+                },
+                "NumeroDestinatari": 1,
+                "Documento": [documento],
+                "Opzioni": {
+                    "OpzionidiStampa": {
+                        "ResolutionX": 300,
+                        "ResolutionY": 300,
+                        "BW": True,
+                        "FronteRetro": False,
+                        "PageSize": "A4"
+                    },
+                    "SecurPaper": False,
+                    "DPM": False,
+                    "DataStampa": datetime.datetime.now().replace(microsecond=0),
+                    "InserisciMittente": True,
+                    "Archiviazione": False,
+                    "AnniArchiviazioneSpecified": False,
+                    "FirmaElettronica": False,
+                    "AnniArchiviazione": 0,
+                    "ArchiviazioneDocumenti": "NESSUNA"
+                },
+                "PrezzaturaSincrona": False,
+                "Nazionale": True,
+                "ForzaInvioDestinazioniValide": True
+            }
+        )
+
+        guid_utente = invio_result.GuidUtente
+
+        # =========================================================
+        # PRECONFERMA
+        # =========================================================
+
+        pre_result = service.PreConferma(
+            Richieste={
+                "IDRichiesta": id_richiesta,
+                "GuidUtente": guid_utente
+            },
+            autoConferma=True
+        )
+
+        numero_racc = str(
+            pre_result.DestinatariRaccomandata
+            .ArrayOfDestinatarioRaccomandata[0]
+            .NumeroRaccomandata
+        )
+
+        id_ricevuta = str(
+            pre_result.DestinatariRaccomandata
+            .ArrayOfDestinatarioRaccomandata[0]
+            .IdRicevuta
+        )
+
+        costo = float(
+            pre_result.Valorizzazione.Totale.ImportoTotale
+        )
+
+        # =========================================================
+        # UPDATE SUPABASE
+        # =========================================================
+
+        supabase.table("poste_orders") \
+            .update({
+                "stato": "PRECONFERMATA",
+                "id_richiesta": id_richiesta,
+                "guid_utente": guid_utente,
+                "numero_raccomandata": numero_racc,
+                "id_ricevuta": id_ricevuta,
+                "id_ordine_poste": str(pre_result.IdOrdine),
+                "costo": costo,
+                "poste_response": str(pre_result)
+            }) \
+            .eq("id", order_id) \
+            .execute()
+
+        return {
+            "success": True,
+            "order_id": order_id,
+            "id_richiesta": id_richiesta,
+            "guid_utente": guid_utente,
+            "numero_raccomandata": numero_racc,
+            "id_ricevuta": id_ricevuta,
+            "costo": costo,
+            "message": "Raccomandata processata correttamente"
+        }
+
+    except Exception as e:
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except:
+            pass
+
+        return {
+            "success": False,
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
 @app.get("/poste/h2h/valida-destinatari-test")
 def valida_destinatari_test():
     history = HistoryPlugin()
