@@ -2121,6 +2121,26 @@ def poste_full_cycle_v7():
             "error": str(e)
         }
 
+@app.post("/shopify/webhook/order-created")
+async def shopify_order_created(request: Request):
+
+    try:
+        payload = await request.json()
+
+        print("SHOPIFY ORDER:")
+        print(payload)
+
+        return {
+            "success": True,
+            "message": "Webhook ricevuto"
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 @app.get("/poste/h2h/valida-destinatari-test")
 def valida_destinatari_test():
     history = HistoryPlugin()
