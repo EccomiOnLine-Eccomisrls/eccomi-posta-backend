@@ -3344,16 +3344,20 @@ def dashboard_pratica_dettaglio(pratica_id: str):
 
         <div class="card">
             <h2>Mittente</h2>
-            <pre>{json.dumps(p.get('mittente'), ensure_ascii=False, indent=2)}</pre>
+            <div class="detail-box">
+              {(p.get('mittente') or {}).get('raw', '-').replace(' - ', '<br>', 1).replace(', ', '<br>', 1)}
+            </div>
         </div>
 
         <div class="card">
             <h2>Destinatario</h2>
-            <pre>{json.dumps(p.get('destinatario'), ensure_ascii=False, indent=2)}</pre>
+            <div class="detail-box">
+              {(p.get('destinatario') or {}).get('raw', '-').replace(' - ', '<br>', 1).replace(', ', '<br>', 1)}
+            </div>
         </div>
 
         <div class="card">
-            <h2>Testo telegramma</h2>
+            <h2>Contenuto documento</h2>
             <p>{p.get('testo') or '-'}</p>
             <p><strong>Parole:</strong> {p.get('parole') or '-'}</p>
         </div>
