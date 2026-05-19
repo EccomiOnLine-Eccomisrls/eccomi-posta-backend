@@ -3359,12 +3359,12 @@ def dashboard_pratica_dettaglio(pratica_id: str):
         <div class="card">
             <h2>Contenuto documento</h2>
             <p>{p.get('testo') or '-'}</p>
-            <p><strong>Parole:</strong> {p.get('parole') or '-'}</p>
-        </div>
+            <p><strong>Servizio:</strong> {p.get('tipo_servizio') or '-'}</p>
+            </div>
 
         <div class="card">
             <h2>Risposta Poste</h2>
-            <pre>{json.dumps(p.get('poste_response'), ensure_ascii=False, indent=2)}</pre>
+            <pre>{json.dumps(p.get('poste_response'), ensure_ascii=False, indent=2) if p.get('poste_response') else '-'}</pre>
         </div>
 
         <div class="card">
