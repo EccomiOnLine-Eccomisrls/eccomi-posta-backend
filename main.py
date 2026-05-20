@@ -3517,8 +3517,10 @@ def dashboard_pratiche(stato: str = None):
                     {stato_pratica}
                 </span>
             </td>
-            <td>{p.get('numero_raccomandata') or '-'}</td>
-            <td>{data_breve}</td>
+            <td>
+                {f'<a href="https://www.poste.it/cerca/index.html#/risultati-spedizioni/{p.get("numero_raccomandata")}" target="_blank">{p.get("numero_raccomandata")}</a>' if p.get("numero_raccomandata") else '-'}
+            </td>            
+        <td>{data_breve}</td>
             <td class="actions">
                 <a class="btn-action" href="/dashboard/pratiche/{p.get('id')}" target="_blank">Dettaglio</a>
                 <a class="btn-action" href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">Reinvia</a>
