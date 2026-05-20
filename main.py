@@ -58,7 +58,55 @@ def salva_poste_h2h_order(data: dict):
     except Exception as e:
         print("ERRORE SALVATAGGIO SUPABASE:", str(e))
         return None
+def genera_pdf_cliente_eccomi_posta(
+    numero_raccomandata,
+    mittente,
+    destinatario,
+    stato="Accettata da Poste Italiane"
+):
+    buffer = BytesIO()
 
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=40,
+        bottomMargin=40
+    )
+
+    styles = getSampleStyleSheet()
+    elements = []
+
+    elements.append(Paragraph(
+        "<b>ECCOMI POSTA</b><br/>Ricevuta di Spedizione",
+        styles["Title"]
+    ))
+
+    elements.append(Spacer(1, 24))
+
+    testo = f"""
+    <b>Numero Raccomandata:</b> {numero_raccomandata}<br/><br/>
+    <b>Mittente:</b><br/>{mittente}<br/><br/>
+    <b>Destinatario:</b><br/>{destinatario}<br/><br/>
+    <b>Stato:</b><br/>{stato}<br/><br/>
+    <b>Data:</b><br/>{datetime.datetime.now().strftime("%d/%m/%Y %H:%M")}<br/><br/>
+    """
+
+    elements.append(Paragraph(testo, styles["BodyText"]))
+    elements.append(Spacer(1, 30))
+
+    elements.append(Paragraph(
+        "Grazie per aver utilizzato Eccomi Posta.",
+        styles["Italic"]
+    ))
+
+    doc.build(elements)
+
+    pdf = buffer.getvalue()
+    buffer.close()
+
+    return pdf
 
 app.add_middleware(
     CORSMiddleware,
