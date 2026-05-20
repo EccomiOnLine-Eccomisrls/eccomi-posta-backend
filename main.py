@@ -3522,7 +3522,7 @@ def dashboard_pratiche(stato: str = None):
 
         rows += f"""
         <tr>
-            <td>{p.get('order_name')}</td>
+            <td>{order_display}</td>
             <td>{p.get('tipo_servizio')}</td>
             <td class="email-cell" title="{cliente_email}">{email_breve}</td>
             <td>
