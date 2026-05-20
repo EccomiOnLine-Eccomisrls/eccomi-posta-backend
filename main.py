@@ -3374,7 +3374,7 @@ async def crea_raccomandata(
 
                 "parole": 0,
 
-                "pdf_url": pdf_url,
+                "_url": _url,
 
                 "stato": "RICEVUTO"
 
@@ -3393,11 +3393,11 @@ async def crea_raccomandata(
 
             "token": token,
 
-            "pdf_saved": pdf_saved,
+            "_saved": _saved,
 
             "folder": pratica_dir,
 
-            "pdf_url": pdf_url,
+            "_url": _url,
 
             "stato": "RICEVUTO"
 
