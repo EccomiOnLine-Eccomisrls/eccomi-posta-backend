@@ -3494,15 +3494,24 @@ def dashboard_pratiche(stato: str = None):
         order_display = p.get("order_name") or "-"
 
         try:
-            poste_response_raw = p.get("poste_response")
-            if isinstance(poste_response_raw, dict):
-                order_display = poste_response_raw.get("shopify_order_name") or order_display
-            elif isinstance(poste_response_raw, str) and "shopify_order_name" in poste_response_raw:
-                import ast
-                parsed = ast.literal_eval(poste_response_raw)
-                order_display = parsed.get("shopify_order_name") or order_display
+            h2h_match = supabase.table("poste_h2h_orders") \
+                .select("*") \
+                .eq("pdf_url", p.get("pdf_url")) \
+                .limit(1) \
+                .execute()
+
+           if h2h_match.data:
+              h2h_order = h2h_match.data[0]
+              poste_response_raw = h2h_order.get("poste_response")
+
+              if isinstance(poste_response_raw, str) and "shopify_order_name" in poste_response_raw:
+                  import ast
+                  parsed = ast.literal_eval(poste_response_raw)
+                  order_display = parsed.get("shopify_order_name") or order_display
+
         except Exception:
             pass
+    
         created_raw = p.get("created_at") or ""
         data_breve = created_raw.replace("T", " ")[:16]
         cliente_email = p.get("cliente_email") or "-"
