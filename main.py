@@ -66,42 +66,123 @@ def genera_pdf_cliente_eccomi_posta(
 ):
     buffer = BytesIO()
 
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=40,
-        bottomMargin=40
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    # HEADER
+    c.setFont("Helvetica-Bold", 22)
+    c.drawCentredString(width / 2, height - 70, "ECCOMI POSTA")
+
+    c.setFont("Helvetica", 12)
+    c.drawCentredString(width / 2, height - 92, "Servizi Postali Digitali")
+
+    c.setLineWidth(1)
+    c.line(50, height - 115, width - 50, height - 115)
+
+    # TITOLO
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(50, height - 155, "Ricevuta di spedizione")
+
+    # BOX TRACKING
+    c.roundRect(50, height - 250, width - 100, 75, 8, stroke=1, fill=0)
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(70, height - 200, "Numero Raccomandata")
+
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(70, height - 225, str(numero_raccomandata))
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(330, height - 200, "Stato")
+
+    c.setFont("Helvetica", 12)
+    c.drawString(330, height - 225, stato)
+
+    # DATI MITTENTE
+    y = height - 300
+
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(50, y, "Mittente")
+    y -= 22
+
+    c.setFont("Helvetica", 11)
+    for line in str(mittente).split(" - "):
+        c.drawString(50, y, line)
+        y -= 16
+
+    # DATI DESTINATARIO
+    y -= 20
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(50, y, "Destinatario")
+    y -= 22
+
+    c.setFont("Helvetica", 11)
+    for line in str(destinatario).split(" - "):
+        c.drawString(50, y, line)
+        y -= 16
+
+    # DATA
+    y -= 20
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(50, y, "Data operazione")
+
+    c.setFont("Helvetica", 11)
+    c.drawString(
+        160,
+        y,
+        datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
     )
 
-    styles = getSampleStyleSheet()
-    elements = []
+    # ALTRI SERVIZI
+    y -= 60
 
-    elements.append(Paragraph(
-        "<b>ECCOMI POSTA</b><br/>Ricevuta di Spedizione",
-        styles["Title"]
-    ))
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(
+        50,
+        y,
+        "Scopri anche gli altri servizi Eccomi Posta"
+    )
 
-    elements.append(Spacer(1, 24))
+    y -= 22
 
-    testo = f"""
-    <b>Numero Raccomandata:</b> {numero_raccomandata}<br/><br/>
-    <b>Mittente:</b><br/>{mittente}<br/><br/>
-    <b>Destinatario:</b><br/>{destinatario}<br/><br/>
-    <b>Stato:</b><br/>{stato}<br/><br/>
-    <b>Data:</b><br/>{datetime.datetime.now().strftime("%d/%m/%Y %H:%M")}<br/><br/>
-    """
+    c.setFont("Helvetica", 10)
 
-    elements.append(Paragraph(testo, styles["BodyText"]))
-    elements.append(Spacer(1, 30))
+    servizi = [
+        "Telegramma Online",
+        "Raccomandata con ricevuta di ritorno",
+        "Visure e certificati",
+        "Spedizione buste e pacchi",
+        "Servizi postali per aziende"
+    ]
 
-    elements.append(Paragraph(
-        "Grazie per aver utilizzato Eccomi Posta.",
-        styles["Italic"]
-    ))
+    for servizio in servizi:
+        c.drawString(65, y, f"• {servizio}")
+        y -= 15
 
-    doc.build(elements)
+    # FOOTER
+    c.line(50, 90, width - 50, 90)
+
+    c.setFont("Helvetica", 9)
+
+    c.drawString(
+        50,
+        70,
+        "Eccomi Posta è un servizio digitale di gestione spedizioni."
+    )
+
+    c.drawString(
+        50,
+        55,
+        "La presente ricevuta riepiloga la presa in carico della pratica."
+    )
+
+    c.drawString(
+        50,
+        40,
+        "www.eccomionline.com"
+    )
+
+    c.save()
 
     pdf = buffer.getvalue()
     buffer.close()
@@ -2525,8 +2606,8 @@ def confirm_poste_order(order_id: str):
 
         pdf_cliente = genera_pdf_cliente_eccomi_posta(
             numero_raccomandata=numero_racc,
-            mittente=str(ordine.get("mittente")),
-            destinatario=str(ordine.get("destinatario"))
+            mittente=ordine.get("mittente", {}).get("raw", ""),
+            destinatario=ordine.get("destinatario", {}).get("raw", "")
         )
 
         cliente_pdf_path = f"ricevute-clienti/{order_id}/ricevuta_cliente.pdf"
