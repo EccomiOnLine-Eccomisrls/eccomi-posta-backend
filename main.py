@@ -3510,6 +3510,7 @@ def dashboard_pratiche(stato: str = None):
                     {stato_pratica}
                 </span>
             </td>
+            <td>{p.get('numero_raccomandata') or '-'}</td>
             <td>{data_breve}</td>
             <td class="actions">
                 <a class="btn-action" href="/dashboard/pratiche/{p.get('id')}" target="_blank">Dettaglio</a>
@@ -3736,6 +3737,7 @@ def dashboard_pratiche(stato: str = None):
                     <th>Servizio</th>
                     <th>Email</th>
                     <th>Stato</th>
+                    <th>Tracking</th>
                     <th>Data</th>
                     <th>Azione</th>
                 </tr>
