@@ -3516,7 +3516,7 @@ def dashboard_pratiche(stato: str = None):
                 <a class="btn-action" href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">Reinvia</a>
                 <a class="btn-action" href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">Manuale</a>
                 <a class="btn-action" href="/dashboard/pratiche/completa/{p.get('id')}" target="_blank" onclick="return confirm('Confermi di voler COMPLETARE questa pratica?')">Completa</a>
-                <a class="btn-action" href="/dashboard/pratiche/pdf/{p.get('id')}" target="_blank">PDF Cliente</a>
+                <a class="btn-action" href="/dashboard/pratiche/pdf/{p.get('id_richiesta') or p.get('id')}" target="_blank">PDF Cliente</a>
             </td>
         </tr>
         """
@@ -3903,7 +3903,7 @@ def dashboard_pratica_pdf(pratica_id: str):
     # 1. Prima cerca nella tabella pratiche
     result = supabase.table("pratiche") \
         .select("*") \
-        .eq("id", pratica_id) \
+        .or_(f"id.eq.{pratica_id},id_richiesta.eq.{pratica_id}") \
         .execute()
 
     if result.data:
@@ -3921,7 +3921,7 @@ def dashboard_pratica_pdf(pratica_id: str):
     # 2. Poi cerca nella tabella poste_h2h_orders
     result_h2h = supabase.table("poste_h2h_orders") \
         .select("*") \
-        .eq("id", pratica_id) \
+        .or_(f"id.eq.{pratica_id},id_richiesta.eq.{pratica_id}") \
         .execute()
 
     if result_h2h.data:
