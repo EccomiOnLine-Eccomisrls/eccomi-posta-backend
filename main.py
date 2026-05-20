@@ -1475,6 +1475,7 @@ async def shopify_order_created(request: Request):
 
             insert_result = supabase.table("poste_h2h_orders").insert({
                 "stato": "RICEVUTO",
+                "shopify_order_name": order_name,
                 "mittente": {
                     "raw": props.get("Mittente")
                 },
@@ -2443,6 +2444,8 @@ async def crea_raccomandata(
                 "order_id": str(order_id),
 
                 "order_name": str(order_id),
+                
+                "shopify_order_name": order_name,
 
                 "tipo_servizio": "RACCOMANDATA",
 
@@ -3490,7 +3493,7 @@ def dashboard_pratiche(stato: str = None):
     for p in pratiche:
 
         stato_pratica = p.get("stato", "-")
-        order_display = p.get("order_name") or "-"
+        order_display = p.get("shopify_order_name") or p.get("order_name") or "-"
         created_raw = p.get("created_at") or ""
         data_breve = created_raw.replace("T", " ")[:16]
         cliente_email = p.get("cliente_email") or "-"
