@@ -3549,6 +3549,7 @@ def dashboard_pratiche(stato: str = None):
                 <a class="btn-action" href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">Manuale</a>
                 <a class="btn-action" href="/dashboard/pratiche/completa/{p.get('id')}" target="_blank" onclick="return confirm('Confermi di voler COMPLETARE questa pratica?')">Completa</a>
                 <a class="btn-action" href="/dashboard/pratiche/pdf/{p.get('id_richiesta') or p.get('id')}" target="_blank">PDF Cliente</a>
+                <a class="btn-action" href="/dashboard/pratiche/elimina/{p.get('id')}" target="_blank" onclick="return confirm('Confermi di voler eliminare questa pratica?')">Elimina</a>
             </td>
         </tr>
         """
@@ -3929,6 +3930,19 @@ def dashboard_pratica_completa(pratica_id: str):
         "pratica_id": pratica_id,
         "nuovo_stato": "COMPLETATO"
     }
+
+@app.get("/dashboard/pratiche/elimina/{pratica_id}")
+def dashboard_pratica_elimina(pratica_id: str):
+
+    supabase.table("pratiche") \
+        .delete() \
+        .eq("id", pratica_id) \
+        .execute()
+
+    return RedirectResponse(
+        url="/dashboard/pratiche",
+        status_code=302
+    )
 
 @app.get("/dashboard/pratiche/pdf/{pratica_id}")
 def dashboard_pratica_pdf(pratica_id: str):
