@@ -3748,9 +3748,9 @@ def dashboard_pratiche(stato: str = None):
                 🟣 Completati: {tot_completati}
             </div>
 
-            <div style="background:#111827;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;">
+            <a href="/dashboard/pratiche" style="background:#111827;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
                 🔄 Auto-refresh: 15s
-            </div>
+            </a>
         </div>
 
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
