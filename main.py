@@ -3482,6 +3482,18 @@ def dashboard_pratiche(stato: str = None):
 
     result = query.execute()
     pratiche = result.data or []
+    
+    h2h_result = supabase.table("poste_h2h_orders") \
+        .select("pdf_url,shopify_order_name") \
+        .execute()
+
+    h2h_rows = h2h_result.data or []
+
+    h2h_by_pdf = {
+        h.get("pdf_url"): h.get("shopify_order_name")
+        for h in h2h_rows
+        if h.get("pdf_url") and h.get("shopify_order_name")
+    }
 
     tot_errori = len([p for p in pratiche if p.get("stato") == "ERRORE_POSTE"])
     tot_inviati = len([p for p in pratiche if p.get("stato") == "INVIATO_POSTE"])
@@ -3493,7 +3505,13 @@ def dashboard_pratiche(stato: str = None):
     for p in pratiche:
 
         stato_pratica = p.get("stato", "-")
-        order_display = p.get("shopify_order_name") or p.get("order_name") or "-"
+        order_display = (
+            p.get("shopify_order_name")
+            or h2h_by_pdf.get(p.get("pdf_url"))
+            or p.get("order_name")
+            or "-"
+        )       
+        
         created_raw = p.get("created_at") or ""
         data_breve = created_raw.replace("T", " ")[:16]
         cliente_email = p.get("cliente_email") or "-"
