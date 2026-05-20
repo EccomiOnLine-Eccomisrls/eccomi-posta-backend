@@ -3900,7 +3900,7 @@ def dashboard_pratica_completa(pratica_id: str):
 @app.get("/dashboard/pratiche/pdf/{pratica_id}")
 def dashboard_pratica_pdf(pratica_id: str):
 
-    # 1. Prima cerca nella tabella reale H2H
+    # 1. Cerca direttamente in poste_h2h_orders
     result_h2h = supabase.table("poste_h2h_orders") \
         .select("*") \
         .or_(f"id.eq.{pratica_id},id_richiesta.eq.{pratica_id}") \
@@ -3908,17 +3908,15 @@ def dashboard_pratica_pdf(pratica_id: str):
 
     if result_h2h.data:
         ordine = result_h2h.data[0]
-
         pdf_url = (
             ordine.get("pdf_ricevuta_cliente_url")
             or ordine.get("pdf_ricevuta_url")
             or ordine.get("pdf_url")
         )
-
         if pdf_url:
             return RedirectResponse(url=pdf_url, status_code=302)
 
-    # 2. Solo dopo cerca nella tabella pratiche
+    # 2. Cerca nella tabella pratiche
     result = supabase.table("pratiche") \
         .select("*") \
         .or_(f"id.eq.{pratica_id},id_richiesta.eq.{pratica_id}") \
@@ -3926,7 +3924,27 @@ def dashboard_pratica_pdf(pratica_id: str):
 
     if result.data:
         pratica = result.data[0]
+        pratica_pdf_url = pratica.get("pdf_url")
 
+        # 3. Se la pratica ha il PDF originale, cerca la relativa riga H2H
+        if pratica_pdf_url:
+            result_h2h_by_pdf = supabase.table("poste_h2h_orders") \
+                .select("*") \
+                .eq("pdf_url", pratica_pdf_url) \
+                .execute()
+
+            if result_h2h_by_pdf.data:
+                ordine = result_h2h_by_pdf.data[0]
+                pdf_cliente = (
+                    ordine.get("pdf_ricevuta_cliente_url")
+                    or ordine.get("pdf_ricevuta_url")
+                    or ordine.get("pdf_url")
+                )
+
+                if pdf_cliente:
+                    return RedirectResponse(url=pdf_cliente, status_code=302)
+
+        # 4. Fallback: se non trova H2H, apre il PDF pratica
         pdf_url = (
             pratica.get("pdf_ricevuta_cliente_url")
             or pratica.get("pdf_ricevuta_url")
