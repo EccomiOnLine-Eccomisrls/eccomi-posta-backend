@@ -3482,7 +3482,7 @@ def dashboard_pratiche(stato: str = None):
 
     result = query.execute()
     pratiche = result.data or []
-    
+
     h2h_result = supabase.table("poste_h2h_orders") \
         .select("pdf_url,shopify_order_name") \
         .execute()
@@ -3529,12 +3529,13 @@ def dashboard_pratiche(stato: str = None):
             or h2h_by_pdf.get(p.get("pdf_url"))
             or p.get("order_name")
             or "-"
-        )       
-        
+        )
+
         created_raw = p.get("created_at") or ""
         data_breve = created_raw.replace("T", " ")[:16]
         cliente_email = p.get("cliente_email") or "-"
         email_breve = cliente_email if len(cliente_email) <= 14 else cliente_email[:11] + "..."
+        numero_raccomandata = p.get("numero_raccomandata")
         colore = "#999"
 
         if stato_pratica == "RICEVUTO":
@@ -3548,6 +3549,14 @@ def dashboard_pratiche(stato: str = None):
         elif stato_pratica == "COMPLETATO":
             colore = "#8e44ad"
 
+        tracking_html = "-"
+        if numero_raccomandata:
+            tracking_html = f"""
+            <a href="https://www.poste.it/cerca/index.html#/risultati-spedizioni/{numero_raccomandata}" target="_blank">
+                {numero_raccomandata}
+            </a>
+            """
+
         rows += f"""
         <tr>
             <td>{order_display}</td>
@@ -3558,10 +3567,8 @@ def dashboard_pratiche(stato: str = None):
                     {stato_pratica}
                 </span>
             </td>
-            <td>
-                {f'<a href="https://www.poste.it/cerca/index.html#/risultati-spedizioni/{p.get("numero_raccomandata")}" target="_blank">{p.get("numero_raccomandata")}</a>' if p.get("numero_raccomandata") else '-'}
-            </td>            
-        <td>{data_breve}</td>
+            <td>{tracking_html}</td>
+            <td>{data_breve}</td>
             <td class="actions">
                 <a class="btn-action" href="/dashboard/pratiche/{p.get('id')}" target="_blank">Dettaglio</a>
                 <a class="btn-action" href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">Reinvia</a>
@@ -3609,11 +3616,6 @@ def dashboard_pratiche(stato: str = None):
                 padding:12px;
                 border-bottom:1px solid #eee;
             }}
-            td a[href^="mailto"],
-            td a[x-apple-data-detectors] {{
-                color:inherit !important;
-                text-decoration:none !important;
-            }}
 
             tr:hover {{
                 background:#fafafa;
@@ -3649,7 +3651,7 @@ def dashboard_pratiche(stato: str = None):
                 text-decoration:none;
                 font-weight:bold;
             }}
-            
+
             .email-cell {{
                 text-decoration:none !important;
                 white-space:nowrap !important;
@@ -3681,6 +3683,13 @@ def dashboard_pratiche(stato: str = None):
                 border-radius:20px;
                 display:inline-block;
                 font-weight:bold;
+            }}
+
+            .footer-brand {{
+                text-align:center;
+                margin-top:35px;
+                color:#6b7280;
+                font-size:13px;
             }}
 
             @media (max-width: 700px) {{
@@ -3716,7 +3725,7 @@ def dashboard_pratiche(stato: str = None):
                     font-size:15px !important;
                     word-break:break-word !important;
                 }}
-                
+
                 .email-cell {{
                     white-space:nowrap !important;
                     word-break:normal !important;
@@ -3727,8 +3736,9 @@ def dashboard_pratiche(stato: str = None):
                 td:nth-child(2)::before {{ content:"Servizio: "; font-weight:bold; }}
                 td:nth-child(3)::before {{ content:"Email: "; font-weight:bold; }}
                 td:nth-child(4)::before {{ content:"Stato: "; font-weight:bold; }}
-                td:nth-child(5)::before {{ content:"Data: "; font-weight:bold; }}
-                td:nth-child(6)::before {{ content:"Azioni: "; font-weight:bold; }}
+                td:nth-child(5)::before {{ content:"Tracking: "; font-weight:bold; }}
+                td:nth-child(6)::before {{ content:"Data: "; font-weight:bold; }}
+                td:nth-child(7)::before {{ content:"Azioni: "; font-weight:bold; }}
 
                 .actions a {{
                     display:inline-block;
@@ -3780,7 +3790,7 @@ def dashboard_pratiche(stato: str = None):
             <a class="btn-action {'btn-filter-active' if filtro_stato == 'LAVORAZIONE_MANUALE' else ''}" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
             <a class="btn-action {'btn-filter-active' if filtro_stato == 'COMPLETATO' else ''}" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
         </div>
-        
+
         {search_box}
 
         <table>
@@ -3813,25 +3823,32 @@ def dashboard_pratiche(stato: str = None):
             </div>
         </div>
 
+        <div class="footer-brand">
+            Progettato ed elaborato by
+            <a href="https://www.eccomionline.com" target="_blank">
+                www.eccomionline.com
+            </a>
+        </div>
+
         <script>
         const searchInput = document.getElementById("searchInput");
 
-        searchInput.addEventListener("keyup", function() {
-            const value = this.value.toLowerCase();
+        if (searchInput) {{
+            searchInput.addEventListener("keyup", function() {{
+                const value = this.value.toLowerCase();
 
-            document.querySelectorAll("tbody tr").forEach(row => {
-                const text = row.innerText.toLowerCase();
+                document.querySelectorAll("tbody tr").forEach(function(row) {{
+                    const text = row.innerText.toLowerCase();
 
-                if(text.includes(value)){
-                    row.style.display = "";
-                } else {
-                    row.style.display = "none";
-                }
-
-        });
-
-});
-</script>    
+                    if (text.includes(value)) {{
+                        row.style.display = "";
+                    }} else {{
+                        row.style.display = "none";
+                    }}
+                }});
+            }});
+        }}
+        </script>
 
     </body>
     </html>
