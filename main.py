@@ -2522,6 +2522,26 @@ def confirm_poste_order(order_id: str):
         costo = float(
             pre_result.Valorizzazione.Totale.ImportoTotale
         )
+        pdf_cliente = genera_pdf_cliente_eccomi_posta(
+    numero_raccomandata=numero_racc,
+    mittente=str(ordine.get("mittente")),
+    destinatario=str(ordine.get("destinatario"))
+)
+
+cliente_pdf_path = f"ricevute-clienti/{order_id}/ricevuta_cliente.pdf"
+
+supabase.storage.from_(SUPABASE_BUCKET).upload(
+    cliente_pdf_path,
+    pdf_cliente,
+    {
+        "content-type": "application/pdf",
+        "upsert": "true"
+    }
+)
+
+cliente_pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
+    cliente_pdf_path
+)
 
         supabase.table("poste_h2h_orders") \
             .update({
@@ -2531,6 +2551,7 @@ def confirm_poste_order(order_id: str):
                 "id_ordine_poste": str(pre_result.IdOrdine),
                 "costo": costo,
                 "poste_response": str(pre_result)
+                "pdf_ricevuta_cliente_url": cliente_pdf_url
             }) \
             .eq("id", order_id) \
             .execute()
