@@ -3500,6 +3500,25 @@ def dashboard_pratiche(stato: str = None):
     tot_manuali = len([p for p in pratiche if p.get("stato") == "LAVORAZIONE_MANUALE"])
     tot_completati = len([p for p in pratiche if p.get("stato") == "COMPLETATO"])
 
+    search_box = """
+    <div style="margin:20px 0;">
+        <input
+            type="text"
+            id="searchInput"
+            placeholder="Cerca ordine, email, tracking..."
+            style="
+                width:100%;
+                max-width:420px;
+                padding:14px 18px;
+                border-radius:14px;
+                border:1px solid #d1d5db;
+                font-size:16px;
+                outline:none;
+            "
+        >
+    </div>
+    """
+
     rows = ""
 
     for p in pratiche:
@@ -3761,6 +3780,8 @@ def dashboard_pratiche(stato: str = None):
             <a class="btn-action {'btn-filter-active' if filtro_stato == 'LAVORAZIONE_MANUALE' else ''}" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
             <a class="btn-action {'btn-filter-active' if filtro_stato == 'COMPLETATO' else ''}" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
         </div>
+        
+        {search_box}
 
         <table>
             <thead>
@@ -3791,6 +3812,26 @@ def dashboard_pratiche(stato: str = None):
                 <span style="background:#8e44ad;">COMPLETATO</span>
             </div>
         </div>
+
+        <script>
+        const searchInput = document.getElementById("searchInput");
+
+        searchInput.addEventListener("keyup", function() {
+            const value = this.value.toLowerCase();
+
+            document.querySelectorAll("tbody tr").forEach(row => {
+                const text = row.innerText.toLowerCase();
+
+                if(text.includes(value)){
+                    row.style.display = "";
+                } else {
+                    row.style.display = "none";
+                }
+
+        });
+
+});
+</script>    
 
     </body>
     </html>
