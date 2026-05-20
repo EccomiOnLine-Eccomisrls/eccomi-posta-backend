@@ -1815,6 +1815,13 @@ def confirm_poste_order(order_id: str):
             .eq("id", order_id) \
             .execute()
 
+        # Aggiorna anche la pratica visibile nella dashboard
+        supabase.table("pratiche").update({
+            "numero_raccomandata": numero_racc,
+            "stato": "INVIATO_POSTE",
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }).eq("pdf_url", ordine.get("pdf_url")).execute()
+
         return {
             "success": True,
             "step": "INVIATO_POSTE",
