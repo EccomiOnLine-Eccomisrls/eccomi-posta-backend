@@ -2627,7 +2627,7 @@ def confirm_poste_order(order_id: str):
 
         supabase.table("poste_h2h_orders") \
             .update({
-                "stato": "PRECONFERMATA",
+                "stato": "INVIATO_POSTE",
                 "numero_raccomandata": numero_racc,
                 "id_ricevuta": id_ricevuta,
                 "id_ordine_poste": str(pre_result.IdOrdine),
@@ -2640,7 +2640,7 @@ def confirm_poste_order(order_id: str):
 
         return {
             "success": True,
-            "step": "PRECONFERMATA",
+            "step": "INVIATO_POSTE",
             "order_id": order_id,
             "id_richiesta": id_richiesta,
             "guid_utente": guid_utente,
