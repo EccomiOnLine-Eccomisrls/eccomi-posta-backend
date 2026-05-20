@@ -3490,6 +3490,19 @@ def dashboard_pratiche(stato: str = None):
     for p in pratiche:
 
         stato_pratica = p.get("stato", "-")
+        
+        order_display = p.get("order_name") or "-"
+
+        try:
+            poste_response_raw = p.get("poste_response")
+            if isinstance(poste_response_raw, dict):
+                order_display = poste_response_raw.get("shopify_order_name") or order_display
+            elif isinstance(poste_response_raw, str) and "shopify_order_name" in poste_response_raw:
+                import ast
+                parsed = ast.literal_eval(poste_response_raw)
+                order_display = parsed.get("shopify_order_name") or order_display
+        except Exception:
+            pass
         created_raw = p.get("created_at") or ""
         data_breve = created_raw.replace("T", " ")[:16]
         cliente_email = p.get("cliente_email") or "-"
