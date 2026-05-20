@@ -2463,19 +2463,19 @@ def confirm_poste_order(order_id: str):
             extra_plugins=[history]
         )
 
-        ordine = supabase.table("poste_h2h_orders") \
+        ordine_res = supabase.table("poste_h2h_orders") \
             .select("*") \
             .eq("id", order_id) \
             .single() \
             .execute()
 
-        if not ordine.data:
+        if not ordine_res.data:
             return {
                 "success": False,
                 "error": "Ordine non trovato"
             }
 
-        ordine = ordine.data
+        ordine = ordine_res.data
 
         id_richiesta = ordine.get("id_richiesta")
         guid_utente = ordine.get("guid_utente")
@@ -2522,6 +2522,7 @@ def confirm_poste_order(order_id: str):
         costo = float(
             pre_result.Valorizzazione.Totale.ImportoTotale
         )
+
         pdf_cliente = genera_pdf_cliente_eccomi_posta(
             numero_raccomandata=numero_racc,
             mittente=str(ordine.get("mittente")),
@@ -2530,18 +2531,18 @@ def confirm_poste_order(order_id: str):
 
         cliente_pdf_path = f"ricevute-clienti/{order_id}/ricevuta_cliente.pdf"
 
-supabase.storage.from_(SUPABASE_BUCKET).upload(
-    cliente_pdf_path,
-    pdf_cliente,
-    {
-        "content-type": "application/pdf",
-        "upsert": "true"
-    }
-)
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            cliente_pdf_path,
+            pdf_cliente,
+            {
+                "content-type": "application/pdf",
+                "upsert": "true"
+            }
+        )
 
-cliente_pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
-    cliente_pdf_path
-)
+        cliente_pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
+            cliente_pdf_path
+        )
 
         supabase.table("poste_h2h_orders") \
             .update({
@@ -2550,7 +2551,7 @@ cliente_pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
                 "id_ricevuta": id_ricevuta,
                 "id_ordine_poste": str(pre_result.IdOrdine),
                 "costo": costo,
-                "poste_response": str(pre_result)
+                "poste_response": str(pre_result),
                 "pdf_ricevuta_cliente_url": cliente_pdf_url
             }) \
             .eq("id", order_id) \
@@ -2565,7 +2566,8 @@ cliente_pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
             "numero_raccomandata": numero_racc,
             "id_ricevuta": id_ricevuta,
             "costo": costo,
-            "message": "Ordine confermato e raccomandata generata"
+            "pdf_cliente_url": cliente_pdf_url,
+            "message": "Ordine confermato, raccomandata generata e PDF cliente salvato"
         }
 
     except Exception as e:
