@@ -3900,25 +3900,7 @@ def dashboard_pratica_completa(pratica_id: str):
 @app.get("/dashboard/pratiche/pdf/{pratica_id}")
 def dashboard_pratica_pdf(pratica_id: str):
 
-    # 1. Prima cerca nella tabella pratiche
-    result = supabase.table("pratiche") \
-        .select("*") \
-        .or_(f"id.eq.{pratica_id},id_richiesta.eq.{pratica_id}") \
-        .execute()
-
-    if result.data:
-        pratica = result.data[0]
-
-        pdf_url = (
-            pratica.get("pdf_ricevuta_cliente_url")
-            or pratica.get("pdf_ricevuta_url")
-            or pratica.get("pdf_url")
-        )
-
-        if pdf_url:
-            return RedirectResponse(url=pdf_url, status_code=302)
-
-    # 2. Poi cerca nella tabella poste_h2h_orders
+    # 1. Prima cerca nella tabella reale H2H
     result_h2h = supabase.table("poste_h2h_orders") \
         .select("*") \
         .or_(f"id.eq.{pratica_id},id_richiesta.eq.{pratica_id}") \
@@ -3931,6 +3913,24 @@ def dashboard_pratica_pdf(pratica_id: str):
             ordine.get("pdf_ricevuta_cliente_url")
             or ordine.get("pdf_ricevuta_url")
             or ordine.get("pdf_url")
+        )
+
+        if pdf_url:
+            return RedirectResponse(url=pdf_url, status_code=302)
+
+    # 2. Solo dopo cerca nella tabella pratiche
+    result = supabase.table("pratiche") \
+        .select("*") \
+        .or_(f"id.eq.{pratica_id},id_richiesta.eq.{pratica_id}") \
+        .execute()
+
+    if result.data:
+        pratica = result.data[0]
+
+        pdf_url = (
+            pratica.get("pdf_ricevuta_cliente_url")
+            or pratica.get("pdf_ricevuta_url")
+            or pratica.get("pdf_url")
         )
 
         if pdf_url:
