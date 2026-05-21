@@ -1475,7 +1475,7 @@ async def shopify_order_created(request: Request):
 
             insert_result = supabase.table("poste_h2h_orders").insert({
                 "stato": "RICEVUTO",
-                "shopify_order_name": order_name,
+                "shopify_order_name": str(order_id),
                 "mittente": {
                     "raw": props.get("Mittente")
                 },
@@ -2445,7 +2445,7 @@ async def crea_raccomandata(
 
                 "order_name": str(order_id),
                 
-                "shopify_order_name": order_name,
+                "shopify_order_name": str(order_id),
 
                 "tipo_servizio": "RACCOMANDATA",
 
@@ -2463,7 +2463,7 @@ async def crea_raccomandata(
 
                 "parole": 0,
 
-                "_url": _url,
+                "pdf_url": pdf_url,
 
                 "stato": "RICEVUTO"
 
@@ -2482,11 +2482,11 @@ async def crea_raccomandata(
 
             "token": token,
 
-            "_saved": _saved,
+            "pdf_saved": pdf_saved,
 
             "folder": pratica_dir,
 
-            "_url": _url,
+            "pdf_url": pdf_url,
 
             "stato": "RICEVUTO"
 
