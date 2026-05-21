@@ -2720,7 +2720,7 @@ async def shopify_telegramma_order(request: Request):
                     "destinatario": tg.get("destinatario"),
                     "testo": tg.get("testo"),
                     "parole": int(tg.get("parole") or 0),
-                    "stato": "RICEVUTO"
+                    "stato": "RICEVUTO_MANUALE"
                 }).execute()
 
                 saved_items.append(insert_result.data)
@@ -2729,14 +2729,14 @@ async def shopify_telegramma_order(request: Request):
                     pratica_id = insert_result.data[0].get("id")
 
                     if pratica_id:
-                        invia_telegramma_pratica_h2h(pratica_id)
+                        # invia_telegramma_pratica_h2h(pratica_id)
 
             except Exception as db_error:
                 print("ERRORE SALVATAGGIO/INVIO TELEGRAMMA:", str(db_error))
 
         return {
             "success": True,
-            "message": "Telegramma salvato e inviato automaticamente a Poste",
+            "message": "Telegramma salvato in dashboard per lavorazione manuale",
             "order_id": order_id,
             "order_name": order_name,
             "telegrammi_trovati": len(telegrammi),
@@ -3594,6 +3594,8 @@ def dashboard_pratiche(stato: str = None):
             colore = "#8e44ad"
         elif stato_pratica == "PREZZATA_DA_CONFERMARE":
             colore = "#6366f1"
+        elif stato_pratica == "RICEVUTO_MANUALE":
+            colore = "#f97316"
 
         tracking_html = "-"
         if numero_raccomandata:
@@ -3903,6 +3905,7 @@ def dashboard_pratiche(stato: str = None):
                 <span style="background:#f39c12;">LAVORAZIONE_MANUALE</span>
                 <span style="background:#8e44ad;">COMPLETATO</span>
                 <span style="background:#6366f1;">PREZZATA_DA_CONFERMARE</span>
+                <span style="background:#f97316;">RICEVUTO_MANUALE</span>
             </div>
         </div>
 
