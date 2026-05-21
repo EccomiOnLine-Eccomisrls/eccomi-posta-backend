@@ -3711,6 +3711,15 @@ def dashboard_pratiche(stato: str = None):
                 color:#6b7280;
                 font-size:13px;
             }}
+            
+            .topbar-sticky {{
+                position: sticky;
+                top: 0;
+                z-index: 999;
+                background: #f4f6f9;
+                padding-top: 10px;
+                padding-bottom: 10px;
+            }}
 
             @media (max-width: 700px) {{
                 body {{
@@ -3773,14 +3782,7 @@ def dashboard_pratiche(stato: str = None):
                     font-size:13px !important;
                     padding:7px 10px !important;
                 }}
-                .topbar-sticky {{
-                    position: sticky;
-                    top: 0;
-                    z-index: 999;
-                    background: #f4f6f9;
-                    padding-top: 10px;
-                     padding-bottom: 10px;
-                 }}
+            
             }}
         </style>
     </head>
