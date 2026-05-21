@@ -3557,8 +3557,19 @@ def dashboard_pratiche(stato: str = None):
             </a>
             """
 
+        row_bg = "#ffffff"
+
+        if stato_pratica == "ERRORE_POSTE":
+            row_bg = "#fff5f5"
+
+        elif stato_pratica == "INVIATO_POSTE":
+            row_bg = "#f0fff4"
+ 
+        elif stato_pratica == "COMPLETATO":
+            row_bg = "#faf5ff"
+
         rows += f"""
-        <tr>
+        <tr style="background:{row_bg};">
             <td>{order_display}</td>
             <td>{p.get('tipo_servizio')}</td>
             <td class="email-cell" title="{cliente_email}">{email_breve}</td>
