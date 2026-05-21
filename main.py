@@ -1493,6 +1493,16 @@ async def shopify_order_created(request: Request):
             }).execute()
 
             saved_items.append(insert_result.data)
+            
+            try:
+                if insert_result.data and len(insert_result.data) > 0:
+                    nuovo_ordine_id = insert_result.data[0].get("id")
+
+                    if nuovo_ordine_id:
+                        process_poste_order(nuovo_ordine_id)
+
+            except Exception as auto_error:
+                print("ERRORE INVIO AUTOMATICO POSTE:", str(auto_error))
 
         return {
             "success": True,
