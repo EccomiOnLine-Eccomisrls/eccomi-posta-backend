@@ -1429,6 +1429,22 @@ def poste_full_cycle_v7():
             "error": str(e)
         }
 
+def process_poste_order_full(order_id: str):
+    step1 = process_poste_order(order_id)
+
+    if not step1.get("success"):
+        return step1
+
+    time.sleep(8)
+
+    step2 = confirm_poste_order(order_id)
+
+    return {
+        "success": step2.get("success"),
+        "process_order": step1,
+        "finalizza": step2
+    }
+
 @app.post("/shopify/webhook/order-created")
 async def shopify_order_created(request: Request):
     try:
@@ -1500,7 +1516,7 @@ async def shopify_order_created(request: Request):
                     nuovo_order_id = insert_result.data[0].get("id")
 
                     if nuovo_order_id:
-                        process_poste_order(nuovo_order_id)
+                        process_poste_order_full(nuovo_order_id)
 
             except Exception as auto_error:
                 print("ERRORE INVIO AUTOMATICO POSTE:", str(auto_error))
