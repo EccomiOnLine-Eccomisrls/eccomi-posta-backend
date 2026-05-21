@@ -1475,7 +1475,7 @@ async def shopify_order_created(request: Request):
 
             insert_result = supabase.table("poste_h2h_orders").insert({
                 "stato": "RICEVUTO",
-                "shopify_order_name": str(order_id),
+                "shopify_order_name": str(order_name),
                 "mittente": {
                     "raw": props.get("Mittente")
                 },
@@ -1493,52 +1493,21 @@ async def shopify_order_created(request: Request):
             }).execute()
 
             saved_items.append(insert_result.data)
-            
+
+            # INVIO AUTOMATICO A POSTE DOPO ORDINE PAGATO
             try:
                 if insert_result.data and len(insert_result.data) > 0:
-                    nuovo_ordine_id = insert_result.data[0].get("id")
+                    nuovo_order_id = insert_result.data[0].get("id")
 
-                    if nuovo_ordine_id:
-                        process_poste_order(nuovo_ordine_id)
+                    if nuovo_order_id:
+                        process_poste_order(nuovo_order_id)
 
             except Exception as auto_error:
                 print("ERRORE INVIO AUTOMATICO POSTE:", str(auto_error))
 
-        insert_result = supabase.table("poste_h2h_orders").insert({
-    "stato": "RICEVUTO",
-    "shopify_order_name": order_name,
-    "mittente": {
-        "raw": props.get("Mittente")
-    },
-    "destinatario": {
-        "raw": props.get("Destinatario")
-    },
-    "pdf_url": props.get("_PDF pratica"),
-    "poste_response": str({
-        "shopify_order_id": str(order_id),
-        "shopify_order_name": str(order_name),
-        "email": email,
-        "item": poste_item,
-        "properties": props
-    })
-}).execute()
-
-saved_items.append(insert_result.data)
-
-# INVIO AUTOMATICO A POSTE DOPO PAGAMENTO
-try:
-    if insert_result.data and len(insert_result.data) > 0:
-        nuovo_order_id = insert_result.data[0].get("id")
-
-        if nuovo_order_id:
-            process_poste_order(nuovo_order_id)
-
-except Exception as auto_error:
-    print("ERRORE INVIO AUTOMATICO POSTE:", str(auto_error))
-
         return {
             "success": True,
-            "message": "Ordine Eccomi Posta salvato in Supabase",
+            "message": "Ordine Eccomi Posta salvato in Supabase e inviato automaticamente a Poste",
             "order_id": order_id,
             "order_name": order_name,
             "email": email,
