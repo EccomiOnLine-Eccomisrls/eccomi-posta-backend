@@ -3814,7 +3814,6 @@ def dashboard_pratiche(stato: str = None):
             <a href="/dashboard/pratiche" style="background:#111827;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
                 🔄 Auto-refresh: 15s
             </a>
-        </div>
 
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
             <a class="btn-action {'btn-filter-active' if not filtro_stato else ''}" href="/dashboard/pratiche">Tutti</a>
