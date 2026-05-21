@@ -3551,11 +3551,20 @@ def dashboard_pratiche(stato: str = None):
 
         tracking_html = "-"
         if numero_raccomandata:
-            tracking_html = f"""
-            <a href="https://www.poste.it/cerca/index.html#/risultati-spedizioni/{numero_raccomandata}" target="_blank">
-                {numero_raccomandata}
-            </a>
-            """
+        tracking_html = f"""
+        <a href="https://www.poste.it/cerca/index.html#/risultati-spedizioni/{numero_raccomandata}"
+        target="_blank"
+        style="
+            background:#eef3ff;
+            padding:8px 12px;
+            border-radius:10px;
+            display:inline-block;
+            font-size:14px;
+            font-weight:bold;
+        ">
+            📦 {numero_raccomandata}
+        </a>
+        """
 
         row_bg = "#ffffff"
 
