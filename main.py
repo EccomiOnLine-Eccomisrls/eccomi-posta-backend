@@ -3773,13 +3773,23 @@ def dashboard_pratiche(stato: str = None):
                     font-size:13px !important;
                     padding:7px 10px !important;
                 }}
+                .topbar-sticky {{
+                    position: sticky;
+                    top: 0;
+                    z-index: 999;
+                    background: #f4f6f9;
+                    padding-top: 10px;
+                     padding-bottom: 10px;
+                 }}
             }}
         </style>
     </head>
 
     <body>
 
-        <h1>📬 Eccomi Posta — Dashboard Pratiche</h1>
+        <div class="topbar-sticky">
+
+            <h1>📬 Eccomi Posta — Dashboard Pratiche</h1>
 
         <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
         style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
@@ -3815,6 +3825,8 @@ def dashboard_pratiche(stato: str = None):
         </div>
 
         {search_box}
+        
+        </div>
 
         <table>
             <thead>
