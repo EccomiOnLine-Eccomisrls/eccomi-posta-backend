@@ -2654,7 +2654,7 @@ async def shopify_telegramma_order(request: Request):
 
         order_id = order.get("id")
         order_name = order.get("name")
-        email = order.get("email")
+        email = order.get("email") or order.get("contact_email")
 
         telegrammi = []
 
@@ -2667,9 +2667,7 @@ async def shopify_telegramma_order(request: Request):
             props = {}
 
             for p in item.get("properties", []):
-                name = p.get("name")
-                value = p.get("value")
-                props[name] = value
+                props[p.get("name")] = p.get("value")
 
             telegrammi.append({
                 "order_id": order_id,
@@ -2709,9 +2707,11 @@ async def shopify_telegramma_order(request: Request):
                 "telegrammi": telegrammi
             }, f, ensure_ascii=False, indent=2)
 
+        saved_items = []
+
         for tg in telegrammi:
             try:
-                supabase.table("pratiche").insert({
+                insert_result = supabase.table("pratiche").insert({
                     "order_id": str(order_id),
                     "order_name": order_name,
                     "tipo_servizio": "TELEGRAMMA",
@@ -2722,15 +2722,26 @@ async def shopify_telegramma_order(request: Request):
                     "parole": int(tg.get("parole") or 0),
                     "stato": "RICEVUTO"
                 }).execute()
+
+                saved_items.append(insert_result.data)
+
+                if insert_result.data and len(insert_result.data) > 0:
+                    pratica_id = insert_result.data[0].get("id")
+
+                    if pratica_id:
+                        invia_telegramma_pratica_h2h(pratica_id)
+
             except Exception as db_error:
-                print("ERRORE SALVATAGGIO PRATICA:", str(db_error))
+                print("ERRORE SALVATAGGIO/INVIO TELEGRAMMA:", str(db_error))
 
         return {
             "success": True,
+            "message": "Telegramma salvato e inviato automaticamente a Poste",
             "order_id": order_id,
             "order_name": order_name,
             "telegrammi_trovati": len(telegrammi),
-            "telegrammi": telegrammi
+            "telegrammi": telegrammi,
+            "saved_items": saved_items
         }
 
     except Exception as e:
