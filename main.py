@@ -3761,22 +3761,25 @@ def dashboard_pratiche(stato: str = None):
 
         <h1>📬 Eccomi Posta — Dashboard Pratiche</h1>
 
-        <div style="display:flex;flex-wrap:wrap;gap:14px;margin:25px 0;">
-            <div style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;">
-                🔴 Errori: {tot_errori}
-            </div>
+        <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
+        style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
+            🔴 Errori: {tot_errori}
+        </a>
 
-            <div style="background:#27ae60;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;">
+            <a href="/dashboard/pratiche?stato=INVIATO_POSTE"
+            style="background:#27ae60;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
                 🟢 Inviati: {tot_inviati}
-            </div>
+            </a>
 
-            <div style="background:#f39c12;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;">
+            <a href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE"
+            style="background:#f39c12;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
                 🟠 Manuali: {tot_manuali}
-            </div>
+            </a>
 
-            <div style="background:#8e44ad;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;">
+            <a href="/dashboard/pratiche?stato=COMPLETATO"
+            style="background:#8e44ad;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
                 🟣 Completati: {tot_completati}
-            </div>
+            </a>
 
             <a href="/dashboard/pratiche" style="background:#111827;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
                 🔄 Auto-refresh: 15s
