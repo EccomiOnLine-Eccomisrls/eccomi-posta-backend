@@ -3591,7 +3591,7 @@ def dashboard_pratiche(stato: str = None):
             <td>{data_breve}</td>
             <td class="actions">
                 <a class="btn-action" href="/dashboard/pratiche/{p.get('id')}" target="_blank">Dettaglio</a>
-                <a class="btn-action" href="/shopify/telegramma/invia-pratica/{p.get('id')}" target="_blank">Reinvia</a>
+                <a class="btn-action" href="/poste/h2h/process-order/{p.get('id')}" target="_blank">Invia Poste</a>
                 <a class="btn-action" href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">Manuale</a>
                 <a class="btn-action" href="/dashboard/pratiche/completa/{p.get('id')}" target="_blank" onclick="return confirm('Confermi di voler COMPLETARE questa pratica?')">Completa</a>
                 <a class="btn-action" href="/dashboard/pratiche/pdf/{p.get('id_richiesta') or p.get('id')}" target="_blank">PDF Cliente</a>
