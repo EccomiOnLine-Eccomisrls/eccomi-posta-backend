@@ -1681,6 +1681,12 @@ def process_poste_order(order_id: str):
             }) \
             .eq("id", order_id) \
             .execute()
+        supabase.table("pratiche").update({
+            "stato": "PREZZATA_DA_CONFERMARE",
+            "id_richiesta": id_richiesta,
+            "poste_response": {"raw": str(valorizza_result)},
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }).eq("pdf_url", ordine.get("pdf_url")).execute()
 
         return {
             "success": True,
@@ -3558,6 +3564,8 @@ def dashboard_pratiche(stato: str = None):
             colore = "#f39c12"
         elif stato_pratica == "COMPLETATO":
             colore = "#8e44ad"
+        elif stato_pratica == "PREZZATA_DA_CONFERMARE":
+            colore = "#6366f1"
 
         tracking_html = "-"
         if numero_raccomandata:
@@ -3866,6 +3874,7 @@ def dashboard_pratiche(stato: str = None):
                 <span style="background:#e74c3c;">ERRORE_POSTE</span>
                 <span style="background:#f39c12;">LAVORAZIONE_MANUALE</span>
                 <span style="background:#8e44ad;">COMPLETATO</span>
+                <span style="background:#6366f1;">PREZZATA_DA_CONFERMARE</span>
             </div>
         </div>
 
