@@ -3350,8 +3350,8 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
             Toponimo=clean_h2h_text(dest_toponimo),
             NumeroCivico=clean_h2h_text(dest.get("civico", ""))
         ),
-        TipoIndirizzo="NORMAL",
-        ForzaDestinazione=False,
+        TipoIndirizzo="NORMALE",
+        ForzaDestinazione=True,
         InesitateDigitali=False,
         CodiceFiscaleResult=0
     )
@@ -3411,7 +3411,7 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
             },
             "PrezzaturaSincrona": False,
             "Nazionale": True,
-            "ForzaInvioDestinazioniValide": False
+            "ForzaInvioDestinazioniValide": True
         }
     )
 
