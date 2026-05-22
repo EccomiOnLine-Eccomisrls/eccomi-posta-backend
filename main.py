@@ -3403,7 +3403,7 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
             },
             "PrezzaturaSincrona": True,
             "Nazionale": True,
-            "ForzaInvioDestinazioniValide": True
+            "ForzaInvioDestinazioniValide": False
         }
     )
 
