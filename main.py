@@ -2903,7 +2903,7 @@ def shopify_telegramma_test_h2h_xml_last():
                 Toponimo=dest_toponimo,
                 NumeroCivico=dest.get("civico", "")
             ),
-            TipoIndirizzo="NORMALE",
+            TipoIndirizzo="NORMAL",
             ForzaDestinazione=True,
             InesitateDigitali=False,
             CodiceFiscaleResult=0
