@@ -3461,6 +3461,26 @@ def shopify_telegramma_invia_pratica(pratica_id: str):
             "error": str(e)
         }
 
+@app.get("/poste/h2h/telegramma-v2/{pratica_id}")
+def invia_telegramma_h2h_v2_endpoint(pratica_id: str):
+    try:
+        result = invia_telegramma_pratica_h2h(pratica_id)
+
+        return {
+            "success": result.get("success"),
+            "versione": "TELEGRAMMA_H2H_V2_TEST",
+            "pratica_id": pratica_id,
+            "result": result
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "versione": "TELEGRAMMA_H2H_V2_TEST",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
 @app.get("/shopify/telegramma/process-pending")
 def process_pending_telegrammi():
 
