@@ -2084,7 +2084,7 @@ def debug_invio_xml():
             Citta="ROMA",
             Provincia="RM",
             Indirizzo=indirizzo_mitt,
-            TipoIndirizzo="NORMAL",
+            TipoIndirizzo="NORMALE",
             ForzaDestinazione=False,
             InesitateDigitali=False,
             CodiceFiscaleResult=0
@@ -3350,7 +3350,7 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
             Toponimo=clean_h2h_text(dest_toponimo),
             NumeroCivico=clean_h2h_text(dest.get("civico", ""))
         ),
-        TipoIndirizzo="NORMALE",
+        TipoIndirizzo="NORMAL",
         ForzaDestinazione=False,
         InesitateDigitali=False,
         CodiceFiscaleResult=0
