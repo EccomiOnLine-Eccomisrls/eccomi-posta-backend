@@ -3371,6 +3371,10 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
         TipoDocumento="PDF",
         MD5=hashlib.md5(pdf_bytes).hexdigest()
     )
+    destinatario_obj = DestinatarioType(
+        Nominativo=nom_dest,
+        IdDestinatario=1
+    )
 
     id_richiesta = str(uuid.uuid4())
 
@@ -3380,9 +3384,11 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
         CodiceContratto=POSTE_H2H_CONTRACT_ID,
         ROLSubmit={
             "Mittente": MittenteType(Nominativo=nom_mitt, InviaStampa=False),
-            "Destinatari": [
-                DestinatarioType(Nominativo=nom_dest)
-            ],
+            "Destinatari": {
+                "Destinatario": [
+                    destinatario_obj
+                ]
+            },
             "NumeroDestinatari": 1,
             "Documento": [documento],
             "Opzioni": {
