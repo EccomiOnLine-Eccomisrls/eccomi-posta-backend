@@ -3973,6 +3973,8 @@ def dashboard_pratica_dettaglio(pratica_id: str):
         """
 
     p = result.data
+    mittente = p.get("mittente") or {}
+    destinatario = p.get("destinatario") or {}
 
     return f"""
     <html>
@@ -4025,14 +4027,20 @@ def dashboard_pratica_dettaglio(pratica_id: str):
         <div class="card">
             <h2>Mittente</h2>
             <div class="detail-box">
-              {(p.get('mittente') or {}).get('raw', '-').replace(' - ', '<br>', 1).replace(', ', '<br>', 1)}
+                {mittente.get('nome') or mittente.get('raw') or '-'}<br>
+                {mittente.get('via') or ''} {mittente.get('civico') or ''}<br>
+                {mittente.get('cap') or ''} {mittente.get('comune') or ''} ({mittente.get('provincia') or ''})<br>
+                {mittente.get('contatto') or ''}
             </div>
         </div>
 
         <div class="card">
             <h2>Destinatario</h2>
             <div class="detail-box">
-              {(p.get('destinatario') or {}).get('raw', '-').replace(' - ', '<br>', 1).replace(', ', '<br>', 1)}
+                {destinatario.get('nome') or destinatario.get('raw') or '-'}<br>
+                {destinatario.get('via') or ''} {destinatario.get('civico') or ''}<br>
+                {destinatario.get('cap') or ''} {destinatario.get('comune') or ''} ({destinatario.get('provincia') or ''})<br>
+                {destinatario.get('contatto') or ''}
             </div>
         </div>
 
@@ -4040,7 +4048,7 @@ def dashboard_pratica_dettaglio(pratica_id: str):
             <h2>Contenuto documento</h2>
             <p>{p.get('testo') or '-'}</p>
             <p><strong>Servizio:</strong> {p.get('tipo_servizio') or '-'}</p>
-            </div>
+        </div>
 
         <div class="card">
             <h2>Risposta Poste</h2>
