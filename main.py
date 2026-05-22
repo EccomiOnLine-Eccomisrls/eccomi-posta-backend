@@ -3368,7 +3368,7 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
 
     documento = DocumentoType(
         Immagine=base64.b64encode(pdf_bytes).decode("utf-8"),
-        TipoDocumento="PDF",
+        TipoDocumento="pdf",
         MD5=hashlib.md5(pdf_bytes).hexdigest()
     )
     destinatario_obj = DestinatarioType(
