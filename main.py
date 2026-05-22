@@ -2730,6 +2730,7 @@ async def shopify_telegramma_order(request: Request):
 
                     if pratica_id:
                         # invia_telegramma_pratica_h2h(pratica_id)
+                        pass
 
             except Exception as db_error:
                 print("ERRORE SALVATAGGIO/INVIO TELEGRAMMA:", str(db_error))
