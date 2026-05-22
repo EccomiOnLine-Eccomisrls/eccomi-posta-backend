@@ -3380,7 +3380,9 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
         CodiceContratto=POSTE_H2H_CONTRACT_ID,
         ROLSubmit={
             "Mittente": MittenteType(Nominativo=nom_mitt, InviaStampa=False),
-            "Destinatari": {"Destinatario": [DestinatarioType(Nominativo=nom_dest)]},
+            "Destinatari": [
+                DestinatarioType(Nominativo=nom_dest)
+            ],
             "NumeroDestinatari": 1,
             "Documento": [documento],
             "Opzioni": {
