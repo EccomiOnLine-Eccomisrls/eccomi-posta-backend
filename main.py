@@ -3872,11 +3872,23 @@ def dashboard_pratiche(stato: str = None):
             <a class="btn-action {'btn-filter-active' if filtro_stato == 'INVIATO_POSTE' else ''}" href="/dashboard/pratiche?stato=INVIATO_POSTE">Inviati</a>
             <a class="btn-action {'btn-filter-active' if filtro_stato == 'LAVORAZIONE_MANUALE' else ''}" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
             <a class="btn-action {'btn-filter-active' if filtro_stato == 'COMPLETATO' else ''}" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
-        </div>
+        <input
+            type="text"
+            id="searchInput"
+            placeholder="Cerca ordine, email, tracking..."
+            style="
+                flex:1;
+                min-width:260px;
+                max-width:420px;
+                padding:10px 14px;
+                border-radius:12px;
+                border:1px solid #d1d5db;
+                font-size:14px;
+                outline:none;
+            "
+        >
 
-        {search_box}
-        
-        </div>
+</div>
 
         <table>
             <thead>
