@@ -3390,7 +3390,6 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
                 ]
             },
             "NumeroDestinatari": 1,
-            "TipoCover": "TELEGRAMMA",
             "Documento": [documento],
             "Opzioni": {
                 "OpzionidiStampa": {
