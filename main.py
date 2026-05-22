@@ -3351,7 +3351,7 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
             NumeroCivico=clean_h2h_text(dest.get("civico", ""))
         ),
         TipoIndirizzo="NORMALE",
-        ForzaDestinazione=True,
+        ForzaDestinazione=False,
         InesitateDigitali=False,
         CodiceFiscaleResult=0
     )
