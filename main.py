@@ -3399,9 +3399,9 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
                 "AnniArchiviazioneSpecified": False,
                 "FirmaElettronica": False,
                 "AnniArchiviazione": 0,
-                "ArchiviazioneDocumenti": ""
+                "ArchiviazioneDocumenti": "NESSUNA"
             },
-            "PrezzaturaSincrona": False,
+            "PrezzaturaSincrona": True,
             "Nazionale": True,
             "ForzaInvioDestinazioniValide": True
         }
