@@ -3409,7 +3409,7 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
                 "AnniArchiviazione": 0,
                 "ArchiviazioneDocumenti": "NESSUNA"
             },
-            "PrezzaturaSincrona": True,
+            "PrezzaturaSincrona": False,
             "Nazionale": True,
             "ForzaInvioDestinazioniValide": False
         }
