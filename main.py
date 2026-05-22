@@ -3346,6 +3346,7 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
     MittenteType = client.get_type("ns1:Mittente")
     DestinatarioType = client.get_type("ns1:Destinatario")
     DocumentoType = client.get_type("ns1:Documento")
+    DatiRicevutaType = client.get_type("ns0:DatiRicevuta")
 
     mitt = telegramma["mittente"]
     dest = telegramma["destinatario"]
@@ -3409,6 +3410,9 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
         Nominativo=nom_dest,
         IdDestinatario=1
     )
+    dati_ricevuta = DatiRicevutaType(
+        Nominativo=nom_mitt
+    )
 
     id_richiesta = str(uuid.uuid4())
 
@@ -3418,6 +3422,8 @@ def invia_telegramma_pratica_h2h(pratica_id: str):
         CodiceContratto=POSTE_H2H_CONTRACT_ID,
         ROLSubmit={
             "Mittente": MittenteType(Nominativo=nom_mitt, InviaStampa=False),
+            "DatiRicevuta": dati_ricevuta,
+            
             "Destinatari": {
                 "Destinatario": [
                     destinatario_obj
