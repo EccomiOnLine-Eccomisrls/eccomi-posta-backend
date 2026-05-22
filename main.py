@@ -475,6 +475,40 @@ def poste_rol_types_detail():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/cover-types-detail")
+def poste_cover_types_detail():
+    try:
+        client, service = poste_client(timeout=30)
+
+        types_to_check = [
+            "ns0:DatiRicevuta",
+            "ns0:TestataCover",
+            "ns0:Cover",
+            "ns0:CoverHeader",
+            "ns0:CoverBasic",
+            "ns0:CoverBody",
+            "ns0:CoverFooter",
+        ]
+
+        result = {}
+
+        for t in types_to_check:
+            try:
+                result[t] = str(client.get_type(t))
+            except Exception as e:
+                result[t] = f"ERRORE: {str(e)}"
+
+        return {
+            "success": True,
+            "types": result
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 @app.get("/poste/h2h/xol-types")
 def poste_xol_types():
     try:
