@@ -3542,7 +3542,7 @@ def dashboard_pratiche(stato: str = None):
 
     tot_errori = len([p for p in pratiche if p.get("stato") == "ERRORE_POSTE"])
     tot_inviati = len([p for p in pratiche if p.get("stato") == "INVIATO_POSTE"])
-    tot_manuali = len([p for p in pratiche if p.get("stato") == "LAVORAZIONE_MANUALE"])
+    tot_manuali = len([p for p in pratiche if p.get("stato") in ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"]])
     tot_completati = len([p for p in pratiche if p.get("stato") == "COMPLETATO"])
 
     search_box = """
