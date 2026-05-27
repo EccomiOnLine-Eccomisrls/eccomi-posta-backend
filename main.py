@@ -43,6 +43,73 @@ POSTE_H2H_CONTRACT_ID = os.getenv("POSTE_H2H_CONTRACT_ID")
 POSTE_INVIO_MODE = os.getenv("POSTE_INVIO_MODE", "manual").strip().lower()
 POSTE_INVIO_AUTO = POSTE_INVIO_MODE in ["auto", "automatico", "on", "true", "1"]
 
+def bool_from_any(value):
+    if isinstance(value, bool):
+        return value
+
+    if value is None:
+        return False
+
+    text = str(value).strip().lower()
+
+    return text in [
+        "true",
+        "1",
+        "yes",
+        "si",
+        "sì",
+        "on",
+        "rr",
+        "+1€",
+        "+1",
+        "ricevuta di ritorno",
+        "ricevuta ritorno"
+    ]
+
+
+def detect_ricevuta_ritorno(props: dict):
+    text = " ".join([
+        str(props.get("Ricevuta di ritorno", "")),
+        str(props.get("Ricevuta ritorno", "")),
+        str(props.get("RR", "")),
+        str(props.get("_ricevuta_ritorno", "")),
+        str(props.get("ricevuta_ritorno", ""))
+    ]).lower()
+
+    return (
+        "sì" in text
+        or "si" in text
+        or "+1" in text
+        or "true" in text
+        or "ricevuta" in text
+        or "ritorno" in text
+    )
+
+
+def get_ricevuta_ritorno_from_order(ordine: dict):
+    if bool_from_any(ordine.get("ricevuta_ritorno")):
+        return True
+
+    try:
+        pdf_url = ordine.get("pdf_url")
+
+        if not pdf_url:
+            return False
+
+        pratica_rr = supabase.table("pratiche") \
+            .select("ricevuta_ritorno") \
+            .eq("pdf_url", pdf_url) \
+            .limit(1) \
+            .execute()
+
+        if pratica_rr.data:
+            return bool_from_any(pratica_rr.data[0].get("ricevuta_ritorno"))
+
+    except Exception as e:
+        print("ERRORE LETTURA RR:", str(e))
+
+    return False
+
 POSTE_H2H_ROL_WSDL = os.getenv(
     "POSTE_H2H_ROL_WSDL",
     "https://cewebservices.posteitaliane.it/ROLGC/RolService.WSDL"
