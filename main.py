@@ -1760,6 +1760,7 @@ def process_poste_order(order_id: str):
         DestinatarioType = client.get_type("ns1:Destinatario")
         DocumentoType = client.get_type("ns1:Documento")
         RichiestaType = client.get_type("ns1:Richiesta")
+        DatiRicevutaType = client.get_type("ns0:DatiRicevuta")
 
         indirizzo_mitt = IndirizzoType(
             DUG="VIALE",
@@ -1784,6 +1785,10 @@ def process_poste_order(order_id: str):
             Nominativo=nom_mitt,
             InviaStampa=False
         )
+        
+        dati_ricevuta = DatiRicevutaType(
+            Nominativo=nom_mitt
+        ) if has_rr else None
 
         indirizzo_dest = IndirizzoType(
             DUG="VIA",
@@ -1823,6 +1828,7 @@ def process_poste_order(order_id: str):
             CodiceContratto=POSTE_H2H_CONTRACT_ID,
             ROLSubmit={
                 "Mittente": mittente,
+                **({"DatiRicevuta": dati_ricevuta} if has_rr else {}),
                 "Destinatari": {
                     "Destinatario": [destinatario]
                 },
