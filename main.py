@@ -3634,7 +3634,7 @@ def dashboard_pratiche(stato: str = None):
 
     result = query.execute()
     pratiche = result.data or []
-    
+
     # Nasconde dalla dashboard principale le pratiche non pagate o solo compilate
     if not filtro_stato:
         pratiche = [
@@ -3643,7 +3643,7 @@ def dashboard_pratiche(stato: str = None):
         ]
 
     h2h_result = supabase.table("poste_h2h_orders") \
-        .select("pdf_url,shopify_order_name") \
+        .select("id,pdf_url,shopify_order_name") \
         .execute()
 
     h2h_rows = h2h_result.data or []
@@ -3654,35 +3654,23 @@ def dashboard_pratiche(stato: str = None):
         if h.get("pdf_url") and h.get("shopify_order_name")
     }
 
+    h2h_id_by_pdf = {
+        h.get("pdf_url"): h.get("id")
+        for h in h2h_rows
+        if h.get("pdf_url") and h.get("id")
+    }
+
     tot_errori = len([p for p in pratiche if p.get("stato") == "ERRORE_POSTE"])
     tot_inviati = len([p for p in pratiche if p.get("stato") == "INVIATO_POSTE"])
     tot_manuali = len([p for p in pratiche if p.get("stato") in ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"]])
     tot_completati = len([p for p in pratiche if p.get("stato") == "COMPLETATO"])
-
-    search_box = """
-    <div style="margin:20px 0;">
-        <input
-            type="text"
-            id="searchInput"
-            placeholder="Cerca ordine, email, tracking..."
-            style="
-                width:100%;
-                max-width:420px;
-                padding:14px 18px;
-                border-radius:14px;
-                border:1px solid #d1d5db;
-                font-size:16px;
-                outline:none;
-            "
-        >
-    </div>
-    """
 
     rows = ""
 
     for p in pratiche:
 
         stato_pratica = p.get("stato", "-")
+
         order_display = (
             p.get("shopify_order_name")
             or h2h_by_pdf.get(p.get("pdf_url"))
@@ -3692,13 +3680,20 @@ def dashboard_pratiche(stato: str = None):
 
         created_raw = p.get("created_at") or ""
         data_breve = created_raw.replace("T", " ")[:16]
+
         cliente_email = p.get("cliente_email") or "-"
         email_breve = cliente_email if len(cliente_email) <= 14 else cliente_email[:11] + "..."
+
         numero_raccomandata = p.get("numero_raccomandata")
+
+        h2h_order_id = h2h_id_by_pdf.get(p.get("pdf_url")) or p.get("id")
+
         colore = "#999"
 
         if stato_pratica == "RICEVUTO":
             colore = "#3498db"
+        elif stato_pratica == "RICEVUTO_PAGATO":
+            colore = "#0ea5e9"
         elif stato_pratica == "INVIATO_POSTE":
             colore = "#27ae60"
         elif stato_pratica == "ERRORE_POSTE":
@@ -3711,8 +3706,13 @@ def dashboard_pratiche(stato: str = None):
             colore = "#6366f1"
         elif stato_pratica == "RICEVUTO_MANUALE":
             colore = "#f97316"
+        elif stato_pratica == "BOZZA_CHECKOUT":
+            colore = "#9ca3af"
+        elif stato_pratica == "NON_PAGATO":
+            colore = "#6b7280"
 
         tracking_html = "-"
+
         if numero_raccomandata:
             tracking_html = f"""
             <a href="https://www.poste.it/cerca/index.html#/risultati-spedizioni/{numero_raccomandata}"
@@ -3733,12 +3733,31 @@ def dashboard_pratiche(stato: str = None):
 
         if stato_pratica == "ERRORE_POSTE":
             row_bg = "#fff5f5"
-
         elif stato_pratica == "INVIATO_POSTE":
             row_bg = "#f0fff4"
- 
         elif stato_pratica == "COMPLETATO":
             row_bg = "#faf5ff"
+        elif stato_pratica == "BOZZA_CHECKOUT":
+            row_bg = "#f9fafb"
+        elif stato_pratica == "NON_PAGATO":
+            row_bg = "#f9fafb"
+        elif stato_pratica == "RICEVUTO_PAGATO":
+            row_bg = "#eff6ff"
+        elif stato_pratica == "PREZZATA_DA_CONFERMARE":
+            row_bg = "#eef2ff"
+
+        if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"]:
+            invia_poste_btn = f"""
+                <a class="btn-action" href="/poste/h2h/process-order/{h2h_order_id}" target="_blank">Invia Poste</a>
+            """
+        elif stato_pratica == "PREZZATA_DA_CONFERMARE":
+            invia_poste_btn = f"""
+                <a class="btn-action" href="/poste/h2h/finalizza/{h2h_order_id}" target="_blank">Finalizza Poste</a>
+            """
+        else:
+            invia_poste_btn = """
+                <span class="btn-action btn-disabled">Invia Poste bloccato</span>
+            """
 
         rows += f"""
         <tr style="background:{row_bg};">
@@ -3754,7 +3773,7 @@ def dashboard_pratiche(stato: str = None):
             <td>{data_breve}</td>
             <td class="actions">
                 <a class="btn-action" href="/dashboard/pratiche/{p.get('id')}" target="_blank">Dettaglio</a>
-                <a class="btn-action" href="/poste/h2h/process-order/{p.get('id')}" target="_blank">Invia Poste</a>
+                {invia_poste_btn}
                 <a class="btn-action" href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">Manuale</a>
                 <a class="btn-action" href="/dashboard/pratiche/completa/{p.get('id')}" target="_blank" onclick="return confirm('Confermi di voler COMPLETARE questa pratica?')">Completa</a>
                 <a class="btn-action" href="/dashboard/pratiche/pdf/{p.get('id_richiesta') or p.get('id')}" target="_blank">PDF Cliente</a>
@@ -3833,6 +3852,14 @@ def dashboard_pratiche(stato: str = None):
                 margin:3px;
                 text-decoration:none;
                 font-weight:bold;
+            }}
+
+            .btn-disabled {{
+                opacity:.35;
+                cursor:not-allowed;
+                color:#6b7280 !important;
+                background:#f3f4f6 !important;
+                pointer-events:none;
             }}
 
             .email-cell {{
@@ -3932,7 +3959,8 @@ def dashboard_pratiche(stato: str = None):
                 td:nth-child(6)::before {{ content:"Data: "; font-weight:bold; }}
                 td:nth-child(7)::before {{ content:"Azioni: "; font-weight:bold; }}
 
-                .actions a {{
+                .actions a,
+                .actions span {{
                     display:inline-block;
                     margin:4px 6px 4px 0;
                 }}
@@ -3945,7 +3973,6 @@ def dashboard_pratiche(stato: str = None):
                     font-size:13px !important;
                     padding:7px 10px !important;
                 }}
-            
             }}
         </style>
     </head>
@@ -3956,10 +3983,10 @@ def dashboard_pratiche(stato: str = None):
 
             <h1>📬 Eccomi Posta — Dashboard Pratiche</h1>
 
-        <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
-        style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-            🔴 Errori: {tot_errori}
-        </a>
+            <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
+            style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
+                🔴 Errori: {tot_errori}
+            </a>
 
             <a href="/dashboard/pratiche?stato=INVIATO_POSTE"
             style="background:#27ae60;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
@@ -3980,31 +4007,33 @@ def dashboard_pratiche(stato: str = None):
                 🔄 Auto-refresh: 15s
             </a>
 
-        <div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
-            <a class="btn-action {'btn-filter-active' if not filtro_stato else ''}" href="/dashboard/pratiche">Tutti</a>
-            <a class="btn-action {'btn-filter-active' if filtro_stato == 'ERRORE_POSTE' else ''}" href="/dashboard/pratiche?stato=ERRORE_POSTE">Errori</a>
-            <a class="btn-action {'btn-filter-active' if filtro_stato == 'INVIATO_POSTE' else ''}" href="/dashboard/pratiche?stato=INVIATO_POSTE">Inviati</a>
-            <a class="btn-action {'btn-filter-active' if filtro_stato == 'LAVORAZIONE_MANUALE' else ''}" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
-            <a class="btn-action {'btn-filter-active' if filtro_stato == 'COMPLETATO' else ''}" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
-            <a class="btn-action {'btn-filter-active' if filtro_stato == 'BOZZA_CHECKOUT' else ''}" href="/dashboard/pratiche?stato=BOZZA_CHECKOUT">Bozze checkout</a>
-            <a class="btn-action {'btn-filter-active' if filtro_stato == 'NON_PAGATO' else ''}" href="/dashboard/pratiche?stato=NON_PAGATO">Non pagati</a>
-        <input
-            type="text"
-            id="searchInput"
-            placeholder="Cerca ordine, email, tracking..."
-            style="
-                flex:1;
-                min-width:260px;
-                max-width:420px;
-                padding:10px 14px;
-                border-radius:12px;
-                border:1px solid #d1d5db;
-                font-size:14px;
-                outline:none;
-            "
-        >
+            <div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
+                <a class="btn-action {'btn-filter-active' if not filtro_stato else ''}" href="/dashboard/pratiche">Tutti</a>
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'ERRORE_POSTE' else ''}" href="/dashboard/pratiche?stato=ERRORE_POSTE">Errori</a>
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'INVIATO_POSTE' else ''}" href="/dashboard/pratiche?stato=INVIATO_POSTE">Inviati</a>
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'LAVORAZIONE_MANUALE' else ''}" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'COMPLETATO' else ''}" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'BOZZA_CHECKOUT' else ''}" href="/dashboard/pratiche?stato=BOZZA_CHECKOUT">Bozze checkout</a>
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'NON_PAGATO' else ''}" href="/dashboard/pratiche?stato=NON_PAGATO">Non pagati</a>
 
-</div>
+                <input
+                    type="text"
+                    id="searchInput"
+                    placeholder="Cerca ordine, email, tracking..."
+                    style="
+                        flex:1;
+                        min-width:260px;
+                        max-width:420px;
+                        padding:10px 14px;
+                        border-radius:12px;
+                        border:1px solid #d1d5db;
+                        font-size:14px;
+                        outline:none;
+                    "
+                >
+            </div>
+
+        </div>
 
         <table>
             <thead>
@@ -4029,12 +4058,15 @@ def dashboard_pratiche(stato: str = None):
 
             <div class="legend-line">
                 <span style="background:#3498db;">RICEVUTO</span>
+                <span style="background:#0ea5e9;">RICEVUTO_PAGATO</span>
                 <span style="background:#27ae60;">INVIATO_POSTE</span>
                 <span style="background:#e74c3c;">ERRORE_POSTE</span>
                 <span style="background:#f39c12;">LAVORAZIONE_MANUALE</span>
                 <span style="background:#8e44ad;">COMPLETATO</span>
                 <span style="background:#6366f1;">PREZZATA_DA_CONFERMARE</span>
                 <span style="background:#f97316;">RICEVUTO_MANUALE</span>
+                <span style="background:#9ca3af;">BOZZA_CHECKOUT</span>
+                <span style="background:#6b7280;">NON_PAGATO</span>
             </div>
         </div>
 
