@@ -3634,6 +3634,133 @@ def clean_order_display(value):
 
     return value
 
+def resolve_h2h_order_id(pratica_id: str):
+    """
+    Trova l'id corretto in poste_h2h_orders partendo da:
+    - id diretto H2H
+    - oppure id pratica dashboard collegata tramite pdf_url
+    """
+
+    try:
+        h2h_res = supabase.table("poste_h2h_orders") \
+            .select("id") \
+            .eq("id", pratica_id) \
+            .limit(1) \
+            .execute()
+
+        if h2h_res.data:
+            return h2h_res.data[0].get("id")
+
+        pratica_res = supabase.table("pratiche") \
+            .select("id,pdf_url") \
+            .eq("id", pratica_id) \
+            .limit(1) \
+            .execute()
+
+        if not pratica_res.data:
+            return None
+
+        pdf_url = pratica_res.data[0].get("pdf_url")
+
+        if not pdf_url:
+            return None
+
+        h2h_by_pdf = supabase.table("poste_h2h_orders") \
+            .select("id") \
+            .eq("pdf_url", pdf_url) \
+            .limit(1) \
+            .execute()
+
+        if h2h_by_pdf.data:
+            return h2h_by_pdf.data[0].get("id")
+
+        return None
+
+    except Exception as e:
+        print("ERRORE resolve_h2h_order_id:", str(e))
+        return None
+
+
+@app.get("/dashboard/pratiche/invia-poste/{pratica_id}")
+def dashboard_invia_poste(pratica_id: str):
+    """
+    Pulsante dashboard: invia a Poste e torna alla dashboard.
+    Non mostra JSON tecnico al cliente/operatore.
+    """
+
+    try:
+        h2h_order_id = resolve_h2h_order_id(pratica_id)
+
+        if not h2h_order_id:
+            try:
+                supabase.table("pratiche").update({
+                    "stato": "ERRORE_POSTE",
+                    "poste_response": {
+                        "raw": "Impossibile trovare ordine H2H collegato alla pratica"
+                    },
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }).eq("id", pratica_id).execute()
+            except Exception:
+                pass
+
+            return RedirectResponse(
+                url="/dashboard/pratiche?stato=ERRORE_POSTE",
+                status_code=302
+            )
+
+        result = process_poste_order_full(h2h_order_id)
+
+        if not result.get("success"):
+            errore = result.get("error") or str(result)
+
+            try:
+                supabase.table("poste_h2h_orders").update({
+                    "stato": "ERRORE_POSTE",
+                    "poste_response": errore
+                }).eq("id", h2h_order_id).execute()
+            except Exception:
+                pass
+
+            try:
+                supabase.table("pratiche").update({
+                    "stato": "ERRORE_POSTE",
+                    "poste_response": {
+                        "raw": errore
+                    },
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }).eq("id", pratica_id).execute()
+            except Exception:
+                pass
+
+            return RedirectResponse(
+                url="/dashboard/pratiche?stato=ERRORE_POSTE",
+                status_code=302
+            )
+
+        return RedirectResponse(
+            url="/dashboard/pratiche?stato=INVIATO_POSTE",
+            status_code=302
+        )
+
+    except Exception as e:
+        print("ERRORE dashboard_invia_poste:", str(e))
+
+        try:
+            supabase.table("pratiche").update({
+                "stato": "ERRORE_POSTE",
+                "poste_response": {
+                    "raw": str(e)
+                },
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }).eq("id", pratica_id).execute()
+        except Exception:
+            pass
+
+        return RedirectResponse(
+            url="/dashboard/pratiche?stato=ERRORE_POSTE",
+            status_code=302
+        )
+
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
 
@@ -3762,10 +3889,7 @@ def dashboard_pratiche(stato: str = None):
 
         if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
             invia_poste_html = f"""
-                <a class="btn-action btn-send" href="/poste/h2h/process-order/{h2h_order_id}" target="_blank"
-                onclick="return confirm('Confermi invio a Poste per questa pratica pagata?')">
-                    🚀 Invia Poste
-                </a>
+                <a class="btn-action" href="/dashboard/pratiche/invia-poste/{pratica_id}" onclick="return confirm('Confermi invio a Poste? Questa operazione può generare costo H2H.')">🚀 Invia Poste</a>
             """
         elif stato_pratica == "PREZZATA_DA_CONFERMARE" and h2h_order_id:
             invia_poste_html = f"""
