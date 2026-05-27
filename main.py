@@ -3822,6 +3822,10 @@ def dashboard_pratiche(stato: str = None):
         </tr>
         """
 
+    h2h_led = "🟢" if POSTE_INVIO_AUTO else "🔴"
+    h2h_mode_label = "H2H AUTO" if POSTE_INVIO_AUTO else "H2H MANUALE"
+    h2h_mode_bg = "#16a34a" if POSTE_INVIO_AUTO else "#dc2626"
+
     return f"""
     <html>
     <head>
@@ -4067,7 +4071,37 @@ def dashboard_pratiche(stato: str = None):
 
         <div class="topbar-sticky">
 
-            <h1>📬 Eccomi Posta — Dashboard Pratiche</h1>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;">
+    <h1 style="margin:0;">📬 Eccomi Posta — Dashboard Pratiche</h1>
+
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="
+            background:{h2h_mode_bg};
+            color:white;
+            padding:14px 20px;
+            border-radius:16px;
+            font-weight:bold;
+            font-size:18px;
+            display:inline-block;
+            box-shadow:0 2px 8px rgba(0,0,0,.10);
+        ">
+            {h2h_led} Modalità: {h2h_mode_label}
+        </div>
+
+        <div style="
+            background:#111827;
+            color:white;
+            padding:14px 20px;
+            border-radius:16px;
+            font-weight:bold;
+            font-size:18px;
+            display:inline-block;
+            box-shadow:0 2px 8px rgba(0,0,0,.10);
+        ">
+            🔄 Auto-refresh: 15s
+        </div>
+    </div>
+</div>
 
             <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
             style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
@@ -4089,9 +4123,6 @@ def dashboard_pratiche(stato: str = None):
                 🟣 Completati: {tot_completati}
             </a>
 
-            <a href="/dashboard/pratiche" style="background:#111827;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                🔄 Auto-refresh: 15s
-            </a>
 
             <div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
                 <a class="btn-action {'btn-filter-active' if not filtro_stato else ''}" href="/dashboard/pratiche">Tutti</a>
