@@ -3794,7 +3794,7 @@ def dashboard_pratiche(stato: str = None):
     query = supabase.table("pratiche") \
         .select("*") \
         .order("created_at", desc=True) \
-        .limit(100)
+        .limit(50)
 
     if filtro_stato:
         query = query.eq("stato", filtro_stato)
@@ -3811,6 +3811,8 @@ def dashboard_pratiche(stato: str = None):
 
     h2h_result = supabase.table("poste_h2h_orders") \
         .select("id,pdf_url,shopify_order_name") \
+        .order("created_at", desc=True) \
+        .limit(100) \
         .execute()
 
     h2h_rows = h2h_result.data or []
