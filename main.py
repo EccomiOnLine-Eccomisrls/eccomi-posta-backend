@@ -3669,11 +3669,14 @@ def dashboard_pratiche(stato: str = None):
 
     for p in pratiche:
 
+        pratica_id = p.get("id")
         stato_pratica = p.get("stato", "-")
+        pdf_url_pratica = p.get("pdf_url")
+        h2h_order_id = h2h_id_by_pdf.get(pdf_url_pratica)
 
         order_display = (
             p.get("shopify_order_name")
-            or h2h_by_pdf.get(p.get("pdf_url"))
+            or h2h_by_pdf.get(pdf_url_pratica)
             or p.get("order_name")
             or "-"
         )
@@ -3685,8 +3688,6 @@ def dashboard_pratiche(stato: str = None):
         email_breve = cliente_email if len(cliente_email) <= 14 else cliente_email[:11] + "..."
 
         numero_raccomandata = p.get("numero_raccomandata")
-
-        h2h_order_id = h2h_id_by_pdf.get(p.get("pdf_url")) or p.get("id")
 
         colore = "#999"
 
@@ -3737,35 +3738,32 @@ def dashboard_pratiche(stato: str = None):
             row_bg = "#f0fff4"
         elif stato_pratica == "COMPLETATO":
             row_bg = "#faf5ff"
-        elif stato_pratica == "BOZZA_CHECKOUT":
-            row_bg = "#f9fafb"
-        elif stato_pratica == "NON_PAGATO":
-            row_bg = "#f9fafb"
         elif stato_pratica == "RICEVUTO_PAGATO":
             row_bg = "#eff6ff"
         elif stato_pratica == "PREZZATA_DA_CONFERMARE":
             row_bg = "#eef2ff"
+        elif stato_pratica in ["BOZZA_CHECKOUT", "NON_PAGATO"]:
+            row_bg = "#f9fafb"
 
-        if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"]:
-            invia_poste_btn = f"""
-                <a class="btn-action" href="/poste/h2h/process-order/{h2h_order_id}" target="_blank">Invia Poste</a>
-            """
-        elif stato_pratica == "PREZZATA_DA_CONFERMARE":
-            invia_poste_btn = f"""
-                <a class="btn-action" href="/poste/h2h/finalizza/{h2h_order_id}" target="_blank">Finalizza Poste</a>
-            """
-        else:
-            invia_poste_btn = """
-                <span class="btn-action btn-disabled">Invia Poste bloccato</span>
-            """
-
-                pratica_id = p.get("id")
-
-        if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"]:
+        if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
             invia_poste_html = f"""
-                <a class="btn-action btn-send" href="/poste/h2h/process-order/{pratica_id}" target="_blank">
+                <a class="btn-action btn-send" href="/poste/h2h/process-order/{h2h_order_id}" target="_blank"
+                onclick="return confirm('Confermi invio a Poste per questa pratica pagata?')">
                     🚀 Invia Poste
                 </a>
+            """
+        elif stato_pratica == "PREZZATA_DA_CONFERMARE" and h2h_order_id:
+            invia_poste_html = f"""
+                <a class="btn-action btn-send" href="/poste/h2h/finalizza/{h2h_order_id}" target="_blank"
+                onclick="return confirm('Confermi finalizzazione Poste per questa pratica?')">
+                    ✅ Finalizza Poste
+                </a>
+            """
+        elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE", "PREZZATA_DA_CONFERMARE"] and not h2h_order_id:
+            invia_poste_html = """
+                <span class="btn-action btn-disabled">
+                    ⚠️ H2H non pronto
+                </span>
             """
         else:
             invia_poste_html = """
@@ -3774,7 +3772,7 @@ def dashboard_pratiche(stato: str = None):
                 </span>
             """
 
-                rows += f"""
+        rows += f"""
         <tr class="main-row" style="background:{row_bg};">
             <td>{order_display}</td>
             <td>{p.get('tipo_servizio')}</td>
@@ -3790,7 +3788,7 @@ def dashboard_pratiche(stato: str = None):
 
         <tr class="action-row" style="background:{row_bg};">
             <td colspan="6">
-                <div class="actions action-bar">
+                <div class="action-bar">
                     <a class="btn-action" href="/dashboard/pratiche/{pratica_id}" target="_blank">
                         Dettaglio
                     </a>
@@ -3873,54 +3871,54 @@ def dashboard_pratiche(stato: str = None):
                 display:inline-block;
             }}
 
-            .actions {
-    white-space:normal;
-}
+            .main-row td {{
+                border-bottom:0 !important;
+            }}
 
-.action-row td {
-    padding-top:0 !important;
-    padding-bottom:18px !important;
-    border-bottom:1px solid #e5e7eb;
-}
+            .action-row td {{
+                padding-top:0 !important;
+                padding-bottom:18px !important;
+                border-bottom:1px solid #e5e7eb;
+            }}
 
-.action-bar {
-    display:flex;
-    flex-wrap:wrap;
-    gap:8px;
-    padding:10px 0 4px 0;
-}
+            .action-bar {{
+                display:flex;
+                flex-wrap:wrap;
+                gap:8px;
+                padding:10px 0 4px 0;
+            }}
 
-.btn-action {
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    background:#eef3ff;
-    color:#2563eb;
-    padding:8px 12px;
-    border-radius:10px;
-    font-size:13px;
-    margin:0;
-    text-decoration:none;
-    font-weight:bold;
-    min-height:34px;
-}
+            .btn-action {{
+                display:inline-flex;
+                align-items:center;
+                justify-content:center;
+                background:#eef3ff;
+                color:#2563eb;
+                padding:8px 12px;
+                border-radius:10px;
+                font-size:13px;
+                margin:0;
+                text-decoration:none;
+                font-weight:bold;
+                min-height:34px;
+            }}
 
-.btn-send {
-    background:#dcfce7 !important;
-    color:#15803d !important;
-}
+            .btn-send {{
+                background:#dcfce7 !important;
+                color:#15803d !important;
+            }}
 
-.btn-delete {
-    background:#fee2e2 !important;
-    color:#b91c1c !important;
-}
+            .btn-delete {{
+                background:#fee2e2 !important;
+                color:#b91c1c !important;
+            }}
 
-.btn-disabled {
-    background:#f3f4f6 !important;
-    color:#9ca3af !important;
-    cursor:not-allowed;
-    pointer-events:none;
-}
+            .btn-disabled {{
+                background:#f3f4f6 !important;
+                color:#9ca3af !important;
+                cursor:not-allowed;
+                pointer-events:none;
+            }}
 
             .email-cell {{
                 text-decoration:none !important;
@@ -3990,12 +3988,20 @@ def dashboard_pratiche(stato: str = None):
                     display:none !important;
                 }}
 
-                tr {{
+                .main-row {{
+                    background:white !important;
+                    margin-bottom:0 !important;
+                    border-radius:16px 16px 0 0 !important;
+                    padding:14px 14px 0 14px !important;
+                    box-shadow:0 2px 10px rgba(0,0,0,.06) !important;
+                }}
+
+                .action-row {{
                     background:white !important;
                     margin-bottom:18px !important;
-                    border-radius:16px !important;
-                    padding:14px !important;
-                    box-shadow:0 2px 10px rgba(0,0,0,.06) !important;
+                    border-radius:0 0 16px 16px !important;
+                    padding:0 14px 14px 14px !important;
+                    box-shadow:0 8px 10px rgba(0,0,0,.04) !important;
                 }}
 
                 td {{
@@ -4011,37 +4017,32 @@ def dashboard_pratiche(stato: str = None):
                     overflow-wrap:normal !important;
                 }}
 
-                td:nth-child(1)::before {{ content:"Ordine: "; font-weight:bold; }}
-                td:nth-child(2)::before {{ content:"Servizio: "; font-weight:bold; }}
-                td:nth-child(3)::before {{ content:"Email: "; font-weight:bold; }}
-                td:nth-child(4)::before {{ content:"Stato: "; font-weight:bold; }}
-                td:nth-child(5)::before {{ content:"Tracking: "; font-weight:bold; }}
-                td:nth-child(6)::before {{ content:"Data: "; font-weight:bold; }}
+                .main-row td:nth-child(1)::before {{ content:"Ordine: "; font-weight:bold; }}
+                .main-row td:nth-child(2)::before {{ content:"Servizio: "; font-weight:bold; }}
+                .main-row td:nth-child(3)::before {{ content:"Email: "; font-weight:bold; }}
+                .main-row td:nth-child(4)::before {{ content:"Stato: "; font-weight:bold; }}
+                .main-row td:nth-child(5)::before {{ content:"Tracking: "; font-weight:bold; }}
+                .main-row td:nth-child(6)::before {{ content:"Data: "; font-weight:bold; }}
 
-                .actions a,
-                .actions span {{
-                    display:inline-block;
-                    margin:4px 6px 4px 0;
+                .action-row td::before {{
+                    content:"Azioni: ";
+                    font-weight:bold;
+                    display:block;
+                    margin-bottom:8px;
                 }}
-                .action-row td::before {
-    content:"Azioni: ";
-    font-weight:bold;
-    display:block;
-    margin-bottom:8px;
-}
 
-.action-bar {
-    display:flex !important;
-    flex-wrap:wrap !important;
-    gap:8px !important;
-}
+                .action-bar {{
+                    display:flex !important;
+                    flex-wrap:wrap !important;
+                    gap:8px !important;
+                }}
 
-.action-bar a,
-.action-bar span {
-    flex:1 1 45%;
-    font-size:13px !important;
-    padding:9px 8px !important;
-}
+                .action-bar a,
+                .action-bar span {{
+                    flex:1 1 45%;
+                    font-size:13px !important;
+                    padding:9px 8px !important;
+                }}
 
                 .legend-line {{
                     gap:8px !important;
