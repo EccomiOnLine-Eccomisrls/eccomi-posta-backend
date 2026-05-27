@@ -1537,6 +1537,20 @@ async def shopify_order_created(request: Request):
                 for p in poste_item.get("properties", [])
             }
 
+        ricevuta_ritorno = str(
+            props.get("Ricevuta di ritorno")
+            or props.get("Ricevuta ritorno")
+            or props.get("RR")
+            or ""
+        ).lower()
+
+        has_rr = (
+            "sì" in ricevuta_ritorno
+            or "si" in ricevuta_ritorno
+            or "+1" in ricevuta_ritorno
+            or "true" in ricevuta_ritorno
+        )
+
             insert_result = supabase.table("poste_h2h_orders").insert({
                 "stato": "RICEVUTO_PAGATO",
                 "shopify_order_name": str(order_name),
@@ -1547,12 +1561,14 @@ async def shopify_order_created(request: Request):
                     "raw": props.get("Destinatario")
                 },
                 "pdf_url": props.get("_PDF pratica"),
+                "ricevuta_ritorno": has_rr,
                 "poste_response": str({
                     "shopify_order_id": str(order_id),
                     "shopify_order_name": str(order_name),
                     "email": email,
                     "item": poste_item,
-                    "properties": props
+                    "properties": props,
+                    "ricevuta_ritorno": has_rr
                 })
             }).execute()
             
@@ -1567,6 +1583,7 @@ async def shopify_order_created(request: Request):
                     "order_name": str(order_name),
                     "shopify_order_name": str(order_name),
                     "cliente_email": email or "",
+                    "ricevuta_ritorno": has_rr,
                     "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
                 }).eq("pdf_url", pdf_pratica_url).execute()
 
