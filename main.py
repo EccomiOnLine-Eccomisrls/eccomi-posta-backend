@@ -3792,7 +3792,7 @@ def dashboard_pratiche(stato: str = None):
     filtro_stato = stato
 
     query = supabase.table("pratiche") \
-        .select("*") \
+        .select("id,order_id,order_name,shopify_order_name,tipo_servizio,cliente_email,stato,numero_raccomandata,pdf_url,id_richiesta,ricevuta_ritorno,created_at,updated_at") \
         .order("created_at", desc=True) \
         .limit(50)
 
