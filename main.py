@@ -40,6 +40,8 @@ SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "eccomi-posta")
 POSTE_H2H_USERID = os.getenv("POSTE_H2H_USERID")
 POSTE_H2H_PASSWORD = os.getenv("POSTE_H2H_PASSWORD")
 POSTE_H2H_CONTRACT_ID = os.getenv("POSTE_H2H_CONTRACT_ID")
+POSTE_INVIO_MODE = os.getenv("POSTE_INVIO_MODE", "manual").strip().lower()
+POSTE_INVIO_AUTO = POSTE_INVIO_MODE in ["auto", "automatico", "on", "true", "1"]
 
 POSTE_H2H_ROL_WSDL = os.getenv(
     "POSTE_H2H_ROL_WSDL",
@@ -1570,14 +1572,19 @@ async def shopify_order_created(request: Request):
 
             saved_items.append(insert_result.data)
 
-            # INVIO AUTOMATICO A POSTE DOPO ORDINE PAGATO
+            # GESTIONE MODALITÀ INVIO POSTE
             try:
                 if insert_result.data and len(insert_result.data) > 0:
                     nuovo_order_id = insert_result.data[0].get("id")
 
                     if nuovo_order_id:
-                        process_poste_order_full(nuovo_order_id)
-
+                        if POSTE_INVIO_AUTO:
+                            print("POSTE_INVIO_MODE=auto → invio automatico a Poste")
+                            process_poste_order_full(nuovo_order_id)
+                        else:
+                            print("POSTE_INVIO_MODE=manual → pratica pagata salvata, invio Poste manuale da dashboard")
+                            
+                            _
             except Exception as auto_error:
                 print("ERRORE INVIO AUTOMATICO POSTE:", str(auto_error))
 
