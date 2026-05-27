@@ -3887,6 +3887,243 @@ def dashboard_invia_poste(pratica_id: str):
             status_code=302
         )
 
+@app.get("/poste/h2h/preview-xml/{pratica_id}", response_class=HTMLResponse)
+def preview_xml_h2h_pratica(pratica_id: str):
+    try:
+        result = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not result.data:
+            return """
+            <html>
+            <body style="font-family:Arial;padding:30px;">
+                <h1>Pratica non trovata</h1>
+                <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+            </body>
+            </html>
+            """
+
+        pratica = result.data
+        has_rr = bool_from_any(pratica.get("ricevuta_ritorno"))
+
+        history = HistoryPlugin()
+        client, service = poste_client(timeout=60, extra_plugins=[history])
+
+        NominativoType = client.get_type("ns1:Nominativo")
+        IndirizzoType = client.get_type("ns1:Indirizzo")
+        MittenteType = client.get_type("ns1:Mittente")
+        DestinatarioType = client.get_type("ns1:Destinatario")
+        DocumentoType = client.get_type("ns1:Documento")
+        DatiRicevutaType = client.get_type("ns0:DatiRicevuta")
+
+        # Anteprima tecnica: dati semplificati, NON invia nulla a Poste.
+        indirizzo_mitt = IndirizzoType(
+            DUG="VIALE",
+            Toponimo="STEFANO D'ARRIGO",
+            NumeroCivico="321"
+        )
+
+        nom_mitt = NominativoType(
+            Nome="SALVATORE",
+            Cognome="DEL LIBANO",
+            CAP="00131",
+            Citta="ROMA",
+            Provincia="RM",
+            Indirizzo=indirizzo_mitt,
+            TipoIndirizzo="NORMALE",
+            ForzaDestinazione=True,
+            InesitateDigitali=False,
+            CodiceFiscaleResult=0
+        )
+
+        mittente = MittenteType(
+            Nominativo=nom_mitt,
+            InviaStampa=False
+        )
+
+        dati_ricevuta = DatiRicevutaType(
+            Nominativo=nom_mitt
+        ) if has_rr else None
+
+        indirizzo_dest = IndirizzoType(
+            DUG="VIA",
+            Toponimo="PRAGA",
+            NumeroCivico="7"
+        )
+
+        nom_dest = NominativoType(
+            Nome="TEST",
+            Cognome="DESTINATARIO",
+            CAP="88842",
+            Citta="CUTRO",
+            Provincia="KR",
+            Indirizzo=indirizzo_dest,
+            TipoIndirizzo="NORMALE",
+            ForzaDestinazione=True,
+            InesitateDigitali=False,
+            CodiceFiscaleResult=0
+        )
+
+        destinatario = DestinatarioType(
+            Nominativo=nom_dest
+        )
+
+        pdf_bytes = b"%PDF-1.4 PREVIEW ECCOMI POSTA\n%%EOF"
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        md5_pdf = hashlib.md5(pdf_bytes).hexdigest().upper()
+
+        documento = DocumentoType(
+            Immagine=pdf_base64,
+            TipoDocumento="pdf",
+            MD5=md5_pdf
+        )
+
+        rol_submit = {
+            "Mittente": mittente,
+            **({"DatiRicevuta": dati_ricevuta} if has_rr else {}),
+            "Destinatari": {
+                "Destinatario": [destinatario]
+            },
+            "NumeroDestinatari": 1,
+            "Documento": [documento],
+            "Opzioni": {
+                "OpzionidiStampa": {
+                    "ResolutionX": 300,
+                    "ResolutionY": 300,
+                    "BW": True,
+                    "FronteRetro": False,
+                    "PageSize": "A4"
+                },
+                "SecurPaper": False,
+                "DPM": False,
+                "DataStampa": datetime.datetime.now().replace(microsecond=0),
+                "InserisciMittente": True,
+                "Archiviazione": False,
+                "AnniArchiviazioneSpecified": False,
+                "FirmaElettronica": False,
+                "AnniArchiviazione": 0,
+                "ArchiviazioneDocumenti": "NESSUNA"
+            },
+            "PrezzaturaSincrona": False,
+            "Nazionale": True,
+            "ForzaInvioDestinazioniValide": True
+        }
+
+        message = client.create_message(
+            service,
+            "Invio",
+            IDRichiesta=f"PREVIEW-{uuid.uuid4()}",
+            Cliente=POSTE_H2H_USERID,
+            CodiceContratto=POSTE_H2H_CONTRACT_ID,
+            ROLSubmit=rol_submit
+        )
+
+        fix_wsa_to(message)
+
+        xml_string = etree.tostring(
+            message,
+            pretty_print=True,
+            encoding="unicode"
+        )
+
+        xml_safe = (
+            xml_string
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+
+        rr_status = "SÌ" if has_rr else "NO"
+        rr_color = "#16a34a" if has_rr else "#dc2626"
+
+        return f"""
+        <html>
+        <head>
+            <title>Anteprima XML H2H</title>
+            <style>
+                body {{
+                    font-family: Arial;
+                    background:#f4f6f9;
+                    padding:30px;
+                }}
+                .card {{
+                    background:white;
+                    border-radius:14px;
+                    padding:22px;
+                    margin-bottom:20px;
+                    box-shadow:0 2px 10px rgba(0,0,0,.06);
+                }}
+                pre {{
+                    background:#111827;
+                    color:#d1d5db;
+                    padding:18px;
+                    border-radius:12px;
+                    overflow:auto;
+                    max-height:650px;
+                    white-space:pre-wrap;
+                    word-break:break-word;
+                }}
+                .badge {{
+                    display:inline-block;
+                    background:{rr_color};
+                    color:white;
+                    padding:8px 12px;
+                    border-radius:999px;
+                    font-weight:bold;
+                }}
+                a {{
+                    color:#2563eb;
+                    font-weight:bold;
+                    text-decoration:none;
+                }}
+            </style>
+        </head>
+        <body>
+            <h1>🧪 Anteprima XML H2H</h1>
+
+            <p>
+                <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+            </p>
+
+            <div class="card">
+                <h2>Pratica</h2>
+                <p><strong>ID:</strong> {pratica.get("id")}</p>
+                <p><strong>Ordine:</strong> {pratica.get("shopify_order_name") or pratica.get("order_name") or "-"}</p>
+                <p><strong>Servizio:</strong> {pratica.get("tipo_servizio")}</p>
+                <p><strong>Ricevuta di ritorno:</strong> <span class="badge">{rr_status}</span></p>
+                <p><strong>Invio reale a Poste:</strong> NO — questa è solo anteprima XML.</p>
+            </div>
+
+            <div class="card">
+                <h2>Controllo rapido</h2>
+                <p>
+                    Se la pratica è RR, qui sotto deve comparire:
+                    <strong>&lt;DatiRicevuta&gt;</strong>
+                </p>
+            </div>
+
+            <div class="card">
+                <h2>XML generato</h2>
+                <pre>{xml_safe}</pre>
+            </div>
+        </body>
+        </html>
+        """
+
+    except Exception as e:
+        return f"""
+        <html>
+        <body style="font-family:Arial;padding:30px;">
+            <h1>Errore anteprima XML</h1>
+            <pre>{str(e)}</pre>
+            <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+        </body>
+        </html>
+        """
+
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
 
@@ -4068,6 +4305,9 @@ def dashboard_pratiche(stato: str = None):
                 <div class="action-bar">
                     <a class="btn-action" href="/dashboard/pratiche/{pratica_id}" target="_blank">
                         Dettaglio
+                    </a>
+                    <a class="btn-action" href="/poste/h2h/preview-xml/{pratica_id}" target="_blank">
+                        🧪 Anteprima XML
                     </a>
 
                     {invia_poste_html}
