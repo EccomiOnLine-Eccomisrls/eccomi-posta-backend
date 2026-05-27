@@ -1894,7 +1894,10 @@ def process_poste_order(order_id: str):
                 "stato": "PREZZATA_DA_CONFERMARE",
                 "id_richiesta": id_richiesta,
                 "guid_utente": guid_utente,
-                "poste_response": str(valorizza_result)
+                "poste_response": str(valorizza_result),
+                "xml_sent": xml_invio_sent,
+                "xml_received": xml_invio_received,
+                "ricevuta_ritorno": has_rr
             }) \
             .eq("id", order_id) \
             .execute()
@@ -1902,6 +1905,9 @@ def process_poste_order(order_id: str):
             "stato": "PREZZATA_DA_CONFERMARE",
             "id_richiesta": id_richiesta,
             "poste_response": {"raw": str(valorizza_result)},
+            "xml_sent": xml_invio_sent,
+            "xml_received": xml_invio_received,
+            "ricevuta_ritorno": has_rr,
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }).eq("pdf_url", ordine.get("pdf_url")).execute()
 
