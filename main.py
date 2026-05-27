@@ -1487,6 +1487,18 @@ async def shopify_order_created(request: Request):
         order_id = payload.get("id")
         order_name = payload.get("name")
         email = payload.get("email") or payload.get("contact_email")
+        
+        financial_status = (payload.get("financial_status") or "").lower()
+
+        if financial_status != "paid":
+            return {
+                "success": True,
+                "skipped": True,
+                "reason": "Ordine Shopify non pagato: pratica non lavorabile",
+                "order_id": order_id,
+                "order_name": order_name,
+                "financial_status": financial_status
+            }
 
         line_items = payload.get("line_items", [])
         poste_items = []
@@ -1524,7 +1536,7 @@ async def shopify_order_created(request: Request):
             }
 
             insert_result = supabase.table("poste_h2h_orders").insert({
-                "stato": "RICEVUTO",
+                "stato": "RICEVUTO_PAGATO",
                 "shopify_order_name": str(order_name),
                 "mittente": {
                     "raw": props.get("Mittente")
@@ -1541,6 +1553,20 @@ async def shopify_order_created(request: Request):
                     "properties": props
                 })
             }).execute()
+            
+            # Aggiorna la pratica provvisoria creata prima del pagamento
+            # da BOZZA_CHECKOUT a RICEVUTO_PAGATO
+            pdf_pratica_url = props.get("_PDF pratica")
+
+            if pdf_pratica_url:
+                supabase.table("pratiche").update({
+                    "stato": "RICEVUTO_PAGATO",
+                    "order_id": str(order_id),
+                    "order_name": str(order_name),
+                    "shopify_order_name": str(order_name),
+                    "cliente_email": email or "",
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }).eq("pdf_url", pdf_pratica_url).execute()
 
             saved_items.append(insert_result.data)
 
@@ -1594,6 +1620,19 @@ def process_poste_order(order_id: str):
             }
 
         ordine = ordine.data
+
+        # BLOCCO SICUREZZA: invia a Poste solo pratiche pagate/lavorabili
+        stato_ordine = ordine.get("stato")
+
+        if stato_ordine not in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"]:
+            return {
+                "success": False,
+                "blocked": True,
+                "error": "Invio Poste bloccato: ordine non pagato o non lavorabile",
+                "stato": stato_ordine,
+                "order_id": order_id
+            }
+
         pdf_url = ordine.get("pdf_url")
 
         if not pdf_url:
@@ -2435,7 +2474,7 @@ async def crea_raccomandata(
             f.write(f"TOKEN: {token}\n")
             f.write(f"DATA CREAZIONE: {timestamp}\n")
             f.write(f"ORDER ID: {order_id}\n")
-            f.write("STATO: RICEVUTA\n\n")
+            f.write("STATO: BOZZA_CHECKOUT\n\n")
 
             f.write(f"METODO: {metodo}\n")
             f.write(f"OGGETTO: {oggetto}\n")
@@ -2532,7 +2571,7 @@ async def crea_raccomandata(
 
                 "pdf_url": pdf_url,
 
-                "stato": "RICEVUTO"
+                "stato": "BOZZA_CHECKOUT"
 
             }).execute()
 
@@ -2555,7 +2594,7 @@ async def crea_raccomandata(
 
             "pdf_url": pdf_url,
 
-            "stato": "RICEVUTO"
+            "stato": "BOZZA_CHECKOUT"
 
         }
 
