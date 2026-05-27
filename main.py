@@ -3840,6 +3840,13 @@ def dashboard_pratiche(stato: str = None):
 
         pratica_id = p.get("id")
         stato_pratica = p.get("stato", "-")
+        has_rr = bool(p.get("ricevuta_ritorno"))
+
+        servizio_display = p.get("tipo_servizio") or "-"
+
+        if has_rr:
+            servizio_display = f"{servizio_display} + RR"
+            
         pdf_url_pratica = p.get("pdf_url")
         h2h_order_id = h2h_id_by_pdf.get(pdf_url_pratica)
 
@@ -3941,7 +3948,10 @@ def dashboard_pratiche(stato: str = None):
         rows += f"""
         <tr class="main-row" style="background:{row_bg};">
             <td>{clean_order_display(order_display)}</td>
-            <td>{p.get('tipo_servizio')}</td>
+            <td>
+                {servizio_display}
+                {"<span class='badge-rr'>📬 RR</span>" if has_rr else ""}
+        </td>
             <td class="email-cell" title="{cliente_email}">{email_breve}</td>
             <td>
                 <span class="badge" style="background:{colore};">
@@ -3996,6 +4006,17 @@ def dashboard_pratiche(stato: str = None):
                 font-family: Arial;
                 background:#f4f6f9;
                 padding:30px;
+            }}
+            
+           .badge-rr {{
+               display:inline-block;
+               margin-left:8px;
+               background:#f97316;
+               color:white;
+               padding:4px 8px;
+               border-radius:999px;
+               font-size:12px;
+               font-weight:bold;
             }}
 
             h1 {{
