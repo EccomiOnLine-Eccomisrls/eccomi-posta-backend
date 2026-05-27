@@ -3626,6 +3626,14 @@ def process_pending_telegrammi():
             "error": str(e)
         }
 
+def clean_order_display(value):
+    value = str(value or "-")
+
+    if value.startswith("SHOPIFY-"):
+        return value.replace("SHOPIFY-", "", 1)
+
+    return value
+
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
 
@@ -3781,7 +3789,7 @@ def dashboard_pratiche(stato: str = None):
 
         rows += f"""
         <tr class="main-row" style="background:{row_bg};">
-            <td>{order_display}</td>
+            <td>{clean_order_display(order_display)}</td>
             <td>{p.get('tipo_servizio')}</td>
             <td class="email-cell" title="{cliente_email}">{email_breve}</td>
             <td>
