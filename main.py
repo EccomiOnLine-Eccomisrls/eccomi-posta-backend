@@ -1489,7 +1489,7 @@ async def shopify_order_created(request: Request):
         order_id = payload.get("id")
         order_name = payload.get("name")
         email = payload.get("email") or payload.get("contact_email")
-        
+
         financial_status = (payload.get("financial_status") or "").lower()
 
         if financial_status != "paid":
@@ -1503,6 +1503,13 @@ async def shopify_order_created(request: Request):
             }
 
         line_items = payload.get("line_items", [])
+
+        # Verifica se nell'ordine esiste anche il prodotto/accessorio Ricevuta di ritorno
+        order_has_rr_item = any(
+            "ricevuta di ritorno" in ((item.get("title") or "").lower())
+            for item in line_items
+        )
+
         poste_items = []
 
         for item in line_items:
@@ -1537,31 +1544,39 @@ async def shopify_order_created(request: Request):
                 for p in poste_item.get("properties", [])
             }
 
-        ricevuta_ritorno = str(
-            props.get("Ricevuta di ritorno")
-            or props.get("Ricevuta ritorno")
-            or props.get("RR")
-            or ""
-        ).lower()
+            ricevuta_ritorno_value = str(
+                props.get("Ricevuta di ritorno")
+                or props.get("Ricevuta ritorno")
+                or props.get("RR")
+                or ""
+            ).lower()
 
-        has_rr = (
-            "sì" in ricevuta_ritorno
-            or "si" in ricevuta_ritorno
-            or "+1" in ricevuta_ritorno
-            or "true" in ricevuta_ritorno
-        )
+            has_rr = (
+                order_has_rr_item
+                or "sì" in ricevuta_ritorno_value
+                or "si" in ricevuta_ritorno_value
+                or "+1" in ricevuta_ritorno_value
+                or "true" in ricevuta_ritorno_value
+            )
+
+            pdf_pratica_url = props.get("_PDF pratica")
 
             insert_result = supabase.table("poste_h2h_orders").insert({
                 "stato": "RICEVUTO_PAGATO",
                 "shopify_order_name": str(order_name),
+
                 "mittente": {
                     "raw": props.get("Mittente")
                 },
+
                 "destinatario": {
                     "raw": props.get("Destinatario")
                 },
-                "pdf_url": props.get("_PDF pratica"),
+
+                "pdf_url": pdf_pratica_url,
+
                 "ricevuta_ritorno": has_rr,
+
                 "poste_response": str({
                     "shopify_order_id": str(order_id),
                     "shopify_order_name": str(order_name),
@@ -1571,11 +1586,8 @@ async def shopify_order_created(request: Request):
                     "ricevuta_ritorno": has_rr
                 })
             }).execute()
-            
-            # Aggiorna la pratica provvisoria creata prima del pagamento
-            # da BOZZA_CHECKOUT a RICEVUTO_PAGATO
-            pdf_pratica_url = props.get("_PDF pratica")
 
+            # Aggiorna la pratica provvisoria creata prima del pagamento
             if pdf_pratica_url:
                 supabase.table("pratiche").update({
                     "stato": "RICEVUTO_PAGATO",
@@ -1589,25 +1601,21 @@ async def shopify_order_created(request: Request):
 
             saved_items.append(insert_result.data)
 
-            # GESTIONE MODALITÀ INVIO POSTE
+            # Invio automatico a Poste solo se la modalità H2H AUTO è attiva
             try:
-                if insert_result.data and len(insert_result.data) > 0:
+                if POSTE_INVIO_AUTO and insert_result.data and len(insert_result.data) > 0:
                     nuovo_order_id = insert_result.data[0].get("id")
 
                     if nuovo_order_id:
-                        if POSTE_INVIO_AUTO:
-                            print("POSTE_INVIO_MODE=auto → invio automatico a Poste")
-                            process_poste_order_full(nuovo_order_id)
-                        else:
-                            print("POSTE_INVIO_MODE=manual → pratica pagata salvata, invio Poste manuale da dashboard")
-                            
-                            _
+                        process_poste_order_full(nuovo_order_id)
+
             except Exception as auto_error:
                 print("ERRORE INVIO AUTOMATICO POSTE:", str(auto_error))
 
         return {
             "success": True,
-            "message": "Ordine Eccomi Posta salvato in Supabase e inviato automaticamente a Poste",
+            "message": "Ordine Eccomi Posta salvato correttamente",
+            "h2h_auto": POSTE_INVIO_AUTO,
             "order_id": order_id,
             "order_name": order_name,
             "email": email,
