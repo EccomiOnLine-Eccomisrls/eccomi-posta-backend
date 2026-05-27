@@ -1719,6 +1719,8 @@ def process_poste_order(order_id: str):
             }
 
         ordine = ordine.data
+        
+        has_rr = get_ricevuta_ritorno_from_order(ordine)
 
         # BLOCCO SICUREZZA: invia a Poste solo pratiche pagate/lavorabili
         stato_ordine = ordine.get("stato")
