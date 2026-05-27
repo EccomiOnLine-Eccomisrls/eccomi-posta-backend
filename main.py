@@ -3759,8 +3759,23 @@ def dashboard_pratiche(stato: str = None):
                 <span class="btn-action btn-disabled">Invia Poste bloccato</span>
             """
 
-        rows += f"""
-        <tr style="background:{row_bg};">
+                pratica_id = p.get("id")
+
+        if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"]:
+            invia_poste_html = f"""
+                <a class="btn-action btn-send" href="/poste/h2h/process-order/{pratica_id}" target="_blank">
+                    🚀 Invia Poste
+                </a>
+            """
+        else:
+            invia_poste_html = """
+                <span class="btn-action btn-disabled">
+                    🔒 Invia Poste bloccato
+                </span>
+            """
+
+                rows += f"""
+        <tr class="main-row" style="background:{row_bg};">
             <td>{order_display}</td>
             <td>{p.get('tipo_servizio')}</td>
             <td class="email-cell" title="{cliente_email}">{email_breve}</td>
@@ -3771,13 +3786,33 @@ def dashboard_pratiche(stato: str = None):
             </td>
             <td>{tracking_html}</td>
             <td>{data_breve}</td>
-            <td class="actions">
-                <a class="btn-action" href="/dashboard/pratiche/{p.get('id')}" target="_blank">Dettaglio</a>
-                {invia_poste_btn}
-                <a class="btn-action" href="/dashboard/pratiche/manuale/{p.get('id')}" target="_blank">Manuale</a>
-                <a class="btn-action" href="/dashboard/pratiche/completa/{p.get('id')}" target="_blank" onclick="return confirm('Confermi di voler COMPLETARE questa pratica?')">Completa</a>
-                <a class="btn-action" href="/dashboard/pratiche/pdf/{p.get('id_richiesta') or p.get('id')}" target="_blank">PDF Cliente</a>
-                <a class="btn-action" href="/dashboard/pratiche/elimina/{p.get('id')}" target="_blank" onclick="return confirm('Confermi di voler eliminare questa pratica?')">Elimina</a>
+        </tr>
+
+        <tr class="action-row" style="background:{row_bg};">
+            <td colspan="6">
+                <div class="actions action-bar">
+                    <a class="btn-action" href="/dashboard/pratiche/{pratica_id}" target="_blank">
+                        Dettaglio
+                    </a>
+
+                    {invia_poste_html}
+
+                    <a class="btn-action" href="/dashboard/pratiche/manuale/{pratica_id}" target="_blank">
+                        Manuale
+                    </a>
+
+                    <a class="btn-action" href="/dashboard/pratiche/completa/{pratica_id}" target="_blank" onclick="return confirm('Confermi di voler COMPLETARE questa pratica?')">
+                        Completa
+                    </a>
+
+                    <a class="btn-action" href="/dashboard/pratiche/pdf/{p.get('id_richiesta') or pratica_id}" target="_blank">
+                        PDF Cliente
+                    </a>
+
+                    <a class="btn-action btn-delete" href="/dashboard/pratiche/elimina/{pratica_id}" target="_blank" onclick="return confirm('Confermi di voler eliminare questa pratica?')">
+                        Elimina
+                    </a>
+                </div>
             </td>
         </tr>
         """
@@ -3838,29 +3873,54 @@ def dashboard_pratiche(stato: str = None):
                 display:inline-block;
             }}
 
-            .actions {{
-                white-space:normal;
-            }}
+            .actions {
+    white-space:normal;
+}
 
-            .btn-action {{
-                display:inline-block;
-                background:#eef3ff;
-                color:#2563eb;
-                padding:6px 9px;
-                border-radius:8px;
-                font-size:13px;
-                margin:3px;
-                text-decoration:none;
-                font-weight:bold;
-            }}
+.action-row td {
+    padding-top:0 !important;
+    padding-bottom:18px !important;
+    border-bottom:1px solid #e5e7eb;
+}
 
-            .btn-disabled {{
-                opacity:.35;
-                cursor:not-allowed;
-                color:#6b7280 !important;
-                background:#f3f4f6 !important;
-                pointer-events:none;
-            }}
+.action-bar {
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    padding:10px 0 4px 0;
+}
+
+.btn-action {
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    background:#eef3ff;
+    color:#2563eb;
+    padding:8px 12px;
+    border-radius:10px;
+    font-size:13px;
+    margin:0;
+    text-decoration:none;
+    font-weight:bold;
+    min-height:34px;
+}
+
+.btn-send {
+    background:#dcfce7 !important;
+    color:#15803d !important;
+}
+
+.btn-delete {
+    background:#fee2e2 !important;
+    color:#b91c1c !important;
+}
+
+.btn-disabled {
+    background:#f3f4f6 !important;
+    color:#9ca3af !important;
+    cursor:not-allowed;
+    pointer-events:none;
+}
 
             .email-cell {{
                 text-decoration:none !important;
@@ -3957,13 +4017,31 @@ def dashboard_pratiche(stato: str = None):
                 td:nth-child(4)::before {{ content:"Stato: "; font-weight:bold; }}
                 td:nth-child(5)::before {{ content:"Tracking: "; font-weight:bold; }}
                 td:nth-child(6)::before {{ content:"Data: "; font-weight:bold; }}
-                td:nth-child(7)::before {{ content:"Azioni: "; font-weight:bold; }}
 
                 .actions a,
                 .actions span {{
                     display:inline-block;
                     margin:4px 6px 4px 0;
                 }}
+                .action-row td::before {
+    content:"Azioni: ";
+    font-weight:bold;
+    display:block;
+    margin-bottom:8px;
+}
+
+.action-bar {
+    display:flex !important;
+    flex-wrap:wrap !important;
+    gap:8px !important;
+}
+
+.action-bar a,
+.action-bar span {
+    flex:1 1 45%;
+    font-size:13px !important;
+    padding:9px 8px !important;
+}
 
                 .legend-line {{
                     gap:8px !important;
@@ -4044,7 +4122,6 @@ def dashboard_pratiche(stato: str = None):
                     <th>Stato</th>
                     <th>Tracking</th>
                     <th>Data</th>
-                    <th>Azione</th>
                 </tr>
             </thead>
 
