@@ -1857,6 +1857,26 @@ def process_poste_order(order_id: str):
                 "ForzaInvioDestinazioniValide": True
             }
         )
+        
+        xml_invio_sent = None
+        xml_invio_received = None
+
+        try:
+            xml_invio_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+        try:
+            xml_invio_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
 
         guid_utente = invio_result.GuidUtente
 
