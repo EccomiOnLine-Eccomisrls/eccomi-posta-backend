@@ -3634,6 +3634,13 @@ def dashboard_pratiche(stato: str = None):
 
     result = query.execute()
     pratiche = result.data or []
+    
+    # Nasconde dalla dashboard principale le pratiche non pagate o solo compilate
+    if not filtro_stato:
+        pratiche = [
+            p for p in pratiche
+            if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
+        ]
 
     h2h_result = supabase.table("poste_h2h_orders") \
         .select("pdf_url,shopify_order_name") \
@@ -3979,6 +3986,8 @@ def dashboard_pratiche(stato: str = None):
             <a class="btn-action {'btn-filter-active' if filtro_stato == 'INVIATO_POSTE' else ''}" href="/dashboard/pratiche?stato=INVIATO_POSTE">Inviati</a>
             <a class="btn-action {'btn-filter-active' if filtro_stato == 'LAVORAZIONE_MANUALE' else ''}" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
             <a class="btn-action {'btn-filter-active' if filtro_stato == 'COMPLETATO' else ''}" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
+            <a class="btn-action {'btn-filter-active' if filtro_stato == 'BOZZA_CHECKOUT' else ''}" href="/dashboard/pratiche?stato=BOZZA_CHECKOUT">Bozze checkout</a>
+            <a class="btn-action {'btn-filter-active' if filtro_stato == 'NON_PAGATO' else ''}" href="/dashboard/pratiche?stato=NON_PAGATO">Non pagati</a>
         <input
             type="text"
             id="searchInput"
