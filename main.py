@@ -2572,6 +2572,23 @@ def genera_pdf_da_testo(pdf_path, mittente, destinatario, oggetto, testo, firma)
 
     c.save()
 
+def parse_bool(value):
+    if isinstance(value, bool):
+        return value
+
+    if value is None:
+        return False
+
+    return str(value).strip().lower() in [
+        "true",
+        "1",
+        "yes",
+        "y",
+        "si",
+        "sì",
+        "on"
+    ]
+
 
 @app.post("/raccomandata")
 async def crea_raccomandata(
@@ -2582,12 +2599,13 @@ async def crea_raccomandata(
     oggetto: str = Form(None),
     firma: str = Form(None),
     pagine: str = Form(None),
-    ricevuta_ritorno: str = Form(None),
+    ricevuta_ritorno: str = Form("false"),
     metodo: str = Form(None),
     file: UploadFile = File(None),
 ):
     try:
 
+        ricevuta_ritorno_bool = parse_bool(ricevuta_ritorno)
         now = datetime.datetime.now()
         anno = now.year
         timestamp = now.strftime("%d/%m/%Y %H:%M:%S")
@@ -2679,33 +2697,22 @@ async def crea_raccomandata(
         try:
 
             supabase.table("pratiche").insert({
-
                 "order_id": str(order_id),
-
                 "order_name": str(order_id),
-                
                 "shopify_order_name": str(order_id),
-
                 "tipo_servizio": "RACCOMANDATA",
-
                 "cliente_email": "",
-
                 "mittente": {
                     "raw": mittente
                 },
-
                 "destinatario": {
                     "raw": destinatario
                 },
-
                 "testo": testo or "",
-
                 "parole": 0,
-
                 "pdf_url": pdf_url,
-
-                "stato": "BOZZA_CHECKOUT"
-
+                "stato": "BOZZA_CHECKOUT",
+                "ricevuta_ritorno": ricevuta_ritorno_bool
             }).execute()
 
         except Exception as db_error:
@@ -2718,17 +2725,11 @@ async def crea_raccomandata(
         return {
 
             "success": True,
-
             "token": token,
-
             "pdf_saved": pdf_saved,
-
             "folder": pratica_dir,
-
             "pdf_url": pdf_url,
-
             "stato": "BOZZA_CHECKOUT"
-
         }
 
     except Exception as e:
