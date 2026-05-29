@@ -2737,7 +2737,7 @@ def parse_bool(value):
         "on"
     ]
 
-def salva_rubrica_posta(cliente_email, mittente, destinatario):
+def salva_rubrica_posta_da_raccomandata(cliente_email, mittente, destinatario):
     if not cliente_email:
         return
 
@@ -2883,62 +2883,56 @@ async def crea_raccomandata(
             storage_path
         )
 
-# =========================
-# SALVATAGGIO PRATICA
-# =========================
+        # =========================
+        # SALVATAGGIO PRATICA
+        # =========================
 
-cliente_email_safe = locals().get("cliente_email") or ""
+        cliente_email_safe = cliente_email or ""
 
-try:
+        try:
+            supabase.table("pratiche").insert({
+                "order_id": str(order_id),
+                "order_name": str(order_id),
+                "shopify_order_name": str(order_id),
+                "tipo_servizio": "RACCOMANDATA",
+                "cliente_email": cliente_email_safe,
+                "mittente": {
+                    "raw": mittente
+                },
+                "destinatario": {
+                    "raw": destinatario
+                },
+                "testo": testo or "",
+                "parole": 0,
+                "pdf_url": pdf_url,
+                "stato": "BOZZA_CHECKOUT",
+                "ricevuta_ritorno": ricevuta_ritorno_bool
+            }).execute()
 
-    supabase.table("pratiche").insert({
-        "order_id": str(order_id),
-        "order_name": str(order_id),
-        "shopify_order_name": str(order_id),
-        "tipo_servizio": "RACCOMANDATA",
-        "cliente_email": cliente_email_safe,
-        "mittente": {
-            "raw": mittente
-        },
-        "destinatario": {
-            "raw": destinatario
-        },
-        "testo": testo or "",
-        "parole": 0,
-        "pdf_url": pdf_url,
-        "stato": "BOZZA_CHECKOUT",
-        "ricevuta_ritorno": ricevuta_ritorno_bool
-    }).execute()
+        except Exception as db_error:
+            print(
+                "ERRORE SALVATAGGIO PRATICA RACCOMANDATA:",
+                str(db_error)
+            )
 
-except Exception as db_error:
+        # =========================
+        # SALVATAGGIO RUBRICA POSTA
+        # =========================
 
-    print(
-        "ERRORE SALVATAGGIO PRATICA RACCOMANDATA:",
-        str(db_error)
-    )
+        try:
+            salva_rubrica_posta_da_raccomandata(
+                cliente_email=cliente_email_safe,
+                mittente=mittente,
+                destinatario=destinatario
+            )
 
-
-# =========================
-# SALVATAGGIO RUBRICA POSTA
-# =========================
-
-try:
-
-    salva_rubrica_posta(
-        cliente_email=cliente_email_safe,
-        mittente=mittente,
-        destinatario=destinatario
-    )
-
-except Exception as rubrica_error:
-
-    print(
-        "ERRORE SALVATAGGIO RUBRICA POSTA:",
-        str(rubrica_error)
-    )
+        except Exception as rubrica_error:
+            print(
+                "ERRORE SALVATAGGIO RUBRICA POSTA:",
+                str(rubrica_error)
+            )
 
         return {
-
             "success": True,
             "token": token,
             "pdf_saved": pdf_saved,
@@ -2948,7 +2942,6 @@ except Exception as rubrica_error:
         }
 
     except Exception as e:
-
         return {
             "success": False,
             "error": str(e)
