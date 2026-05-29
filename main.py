@@ -159,37 +159,66 @@ def clean_tipo_rubrica(value):
 
 
 @app.get("/rubrica-posta")
-def lista_rubrica_posta(
-    customer_id: str = "",
-    email: str = "",
-    tipo: str = ""
-):
-    customer_id = clean_text(customer_id)
-    email = clean_email(email)
-    tipo = str(tipo or "").strip().lower()
+async def rubrica_posta(email: str = "", customer_id: str = ""):
+    try:
+        email = (email or "").strip().lower()
+        customer_id = (customer_id or "").strip()
 
-    if not customer_id and not email:
-        raise HTTPException(
-            status_code=400,
-            detail="Cliente non identificato."
+        print("RUBRICA POSTA REQUEST:", {
+            "email": email,
+            "customer_id": customer_id
+        })
+
+        if not email and not customer_id:
+            return {
+                "success": True,
+                "count": 0,
+                "items": [],
+                "message": "Email o customer_id assenti"
+            }
+
+        query = (
+            supabase
+            .table("rubrica_posta")
+            .select("*")
+            .order("created_at", desc=True)
+            .limit(200)
+            .execute()
         )
 
-    query = supabase.table("rubrica_posta").select("*")
+        rows = query.data or []
 
-    if customer_id:
-        query = query.eq("shopify_customer_id", customer_id)
-    else:
-        query = query.eq("customer_email", email)
+        items = []
 
-    if tipo in ["mittente", "destinatario"]:
-        query = query.eq("tipo", tipo)
+        for row in rows:
+            row_email = str(row.get("email") or "").strip().lower()
+            row_customer_id = str(row.get("customer_id") or "").strip()
 
-    result = query.order("created_at", desc=True).execute()
+            if email and row_email == email:
+                items.append(row)
+                continue
 
-    return {
-        "success": True,
-        "items": result.data or []
-    }
+            if customer_id and row_customer_id == customer_id:
+                items.append(row)
+                continue
+
+        return {
+            "success": True,
+            "email": email,
+            "customer_id": customer_id,
+            "total_rows_checked": len(rows),
+            "count": len(items),
+            "items": items
+        }
+
+    except Exception as e:
+        print("ERRORE RUBRICA POSTA:", str(e))
+
+        return {
+            "success": False,
+            "error": str(e),
+            "items": []
+        }
 
 
 @app.post("/rubrica-posta")
