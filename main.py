@@ -2887,6 +2887,8 @@ async def crea_raccomandata(
 # SALVATAGGIO PRATICA
 # =========================
 
+cliente_email_safe = locals().get("cliente_email") or ""
+
 try:
 
     supabase.table("pratiche").insert({
@@ -2894,7 +2896,7 @@ try:
         "order_name": str(order_id),
         "shopify_order_name": str(order_id),
         "tipo_servizio": "RACCOMANDATA",
-        "cliente_email": cliente_email or "",
+        "cliente_email": cliente_email_safe,
         "mittente": {
             "raw": mittente
         },
@@ -2908,17 +2910,31 @@ try:
         "ricevuta_ritorno": ricevuta_ritorno_bool
     }).execute()
 
-    salva_rubrica_posta(
-        cliente_email=cliente_email,
-        mittente=mittente,
-        destinatario=destinatario
-    )
-
 except Exception as db_error:
 
     print(
         "ERRORE SALVATAGGIO PRATICA RACCOMANDATA:",
         str(db_error)
+    )
+
+
+# =========================
+# SALVATAGGIO RUBRICA POSTA
+# =========================
+
+try:
+
+    salva_rubrica_posta(
+        cliente_email=cliente_email_safe,
+        mittente=mittente,
+        destinatario=destinatario
+    )
+
+except Exception as rubrica_error:
+
+    print(
+        "ERRORE SALVATAGGIO RUBRICA POSTA:",
+        str(rubrica_error)
     )
 
         return {
