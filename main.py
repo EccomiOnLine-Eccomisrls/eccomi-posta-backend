@@ -2737,46 +2737,88 @@ def parse_bool(value):
         "on"
     ]
 
-def salva_rubrica_posta_da_raccomandata(cliente_email, mittente, destinatario):
-    if not cliente_email:
-        return
+def estrai_dati_rubrica_da_raw(raw):
+    raw = str(raw or "").strip()
 
-    cliente_email = str(cliente_email).strip().lower()
+    nome = raw
+    via = ""
+    civico = ""
+    cap = ""
+    comune = ""
+    provincia = ""
+
+    if " - " in raw:
+        nome, resto = raw.split(" - ", 1)
+    else:
+        resto = ""
+
+    if "," in resto:
+        via, parte_localita = resto.split(",", 1)
+    else:
+        via = resto
+        parte_localita = ""
+
+    parte_localita = parte_localita.strip()
+
+    # Esempio: 00131 Roma (RM)
+    try:
+        pezzi = parte_localita.split()
+        if len(pezzi) >= 2:
+            cap = pezzi[0]
+            provincia = parte_localita.split("(")[-1].replace(")", "").strip().upper()[:2]
+
+            comune_raw = parte_localita.replace(cap, "").replace(f"({provincia})", "").strip()
+            comune = comune_raw
+    except Exception:
+        pass
+
+    return {
+        "nome": nome.strip(),
+        "via": via.strip(),
+        "civico": civico.strip(),
+        "cap": cap.strip(),
+        "comune": comune.strip(),
+        "provincia": provincia.strip().upper()[:2]
+    }
+
+
+def salva_rubrica_posta_da_raccomandata(cliente_email, mittente, destinatario):
+    cliente_email = str(cliente_email or "").strip().lower()
 
     if not cliente_email:
         return
 
     items = [
         {
-            "cliente_email": cliente_email,
-            "tipo": "MITTENTE",
+            "tipo": "mittente",
             "raw": mittente or ""
         },
         {
-            "cliente_email": cliente_email,
-            "tipo": "DESTINATARIO",
+            "tipo": "destinatario",
             "raw": destinatario or ""
         }
     ]
 
     for item in items:
-        raw = item["raw"].strip()
+        raw = str(item["raw"] or "").strip()
 
         if len(raw) < 5:
             continue
 
-        key = hashlib.md5(
-            f"{cliente_email}|{item['tipo']}|{raw}".encode("utf-8")
-        ).hexdigest()
+        dati = estrai_dati_rubrica_da_raw(raw)
 
         try:
-            supabase.table("rubrica_posta").upsert({
-                "cliente_email": cliente_email,
+            supabase.table("rubrica_posta").insert({
+                "shopify_customer_id": "",
+                "customer_email": cliente_email,
                 "tipo": item["tipo"],
-                "raw": raw,
-                "rubrica_key": key,
-                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-            }, on_conflict="rubrica_key").execute()
+                "nome": dati["nome"],
+                "via": dati["via"],
+                "civico": dati["civico"],
+                "cap": dati["cap"],
+                "comune": dati["comune"],
+                "provincia": dati["provincia"]
+            }).execute()
 
         except Exception as e:
             print("ERRORE SALVATAGGIO RUBRICA POSTA:", str(e))
