@@ -2883,43 +2883,43 @@ async def crea_raccomandata(
             storage_path
         )
 
-        # =========================
-        # SALVATAGGIO PRATICA
-        # =========================
+# =========================
+# SALVATAGGIO PRATICA
+# =========================
 
-        try:
+try:
 
-            supabase.table("pratiche").insert({
-                "order_id": str(order_id),
-                "order_name": str(order_id),
-                "shopify_order_name": str(order_id),
-                "tipo_servizio": "RACCOMANDATA",
-                "cliente_email": cliente_email or "",
-                "mittente": {
-                    "raw": mittente
-                },
-                "destinatario": {
-                    "raw": destinatario
-                },
-                "testo": testo or "",
-                "parole": 0,
-                "pdf_url": pdf_url,
-                "stato": "BOZZA_CHECKOUT",
-                "ricevuta_ritorno": ricevuta_ritorno_bool
-            }).execute()
+    supabase.table("pratiche").insert({
+        "order_id": str(order_id),
+        "order_name": str(order_id),
+        "shopify_order_name": str(order_id),
+        "tipo_servizio": "RACCOMANDATA",
+        "cliente_email": cliente_email or "",
+        "mittente": {
+            "raw": mittente
+        },
+        "destinatario": {
+            "raw": destinatario
+        },
+        "testo": testo or "",
+        "parole": 0,
+        "pdf_url": pdf_url,
+        "stato": "BOZZA_CHECKOUT",
+        "ricevuta_ritorno": ricevuta_ritorno_bool
+    }).execute()
 
-        salva_rubrica_posta(
-            cliente_email=cliente_email,
-            mittente=mittente,
-            destinatario=destinatario
-        )
+    salva_rubrica_posta(
+        cliente_email=cliente_email,
+        mittente=mittente,
+        destinatario=destinatario
+    )
 
-        except Exception as db_error:
+except Exception as db_error:
 
-            print(
-                "ERRORE SALVATAGGIO PRATICA RACCOMANDATA:",
-                str(db_error)
-            )
+    print(
+        "ERRORE SALVATAGGIO PRATICA RACCOMANDATA:",
+        str(db_error)
+    )
 
         return {
 
