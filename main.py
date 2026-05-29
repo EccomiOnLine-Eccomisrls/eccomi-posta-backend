@@ -2990,6 +2990,183 @@ async def crea_raccomandata(
             "error": str(e)
         }
 
+def supabase_rubrica_headers():
+    return {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }
+
+
+@app.get("/rubrica-posta")
+async def get_rubrica_posta(email: str = "", customer_id: str = ""):
+    try:
+        if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "error": "Supabase non configurato"
+                }
+            )
+
+        if not email and not customer_id:
+            return {
+                "success": True,
+                "items": []
+            }
+
+        params = {
+            "select": "*",
+            "order": "created_at.desc"
+        }
+
+        if email:
+            params["email"] = f"eq.{email}"
+
+        if customer_id:
+            params["customer_id"] = f"eq.{customer_id}"
+
+        response = requests.get(
+            f"{SUPABASE_URL}/rest/v1/rubrica_posta",
+            headers=supabase_rubrica_headers(),
+            params=params,
+            timeout=20
+        )
+
+        if response.status_code >= 400:
+            return JSONResponse(
+                status_code=response.status_code,
+                content={
+                    "success": False,
+                    "error": response.text
+                }
+            )
+
+        return {
+            "success": True,
+            "items": response.json()
+        }
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+
+@app.post("/rubrica-posta")
+async def save_rubrica_posta(request: Request):
+    try:
+        if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "error": "Supabase non configurato"
+                }
+            )
+
+        data = await request.json()
+
+        email = str(data.get("email") or "").strip()
+        customer_id = str(data.get("customer_id") or "").strip()
+        tipo = str(data.get("tipo") or "").strip().lower()
+
+        nome = str(data.get("nome") or "").strip()
+        via = str(data.get("via") or "").strip()
+        civico = str(data.get("civico") or "").strip()
+        cap = str(data.get("cap") or "").strip()
+        comune = str(data.get("comune") or "").strip()
+        provincia = str(data.get("provincia") or "").strip().upper()
+
+        if not email and not customer_id:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": "Email o customer_id obbligatorio"
+                }
+            )
+
+        if tipo not in ["mittente", "destinatario"]:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": "Tipo non valido"
+                }
+            )
+
+        if not nome or not via or not cap or not comune or not provincia:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": "Dati rubrica incompleti"
+                }
+            )
+
+        payload = {
+            "email": email,
+            "customer_id": customer_id,
+            "tipo": tipo,
+            "nome": nome,
+            "via": via,
+            "civico": civico,
+            "cap": cap,
+            "comune": comune,
+            "provincia": provincia
+        }
+
+        response = requests.post(
+            f"{SUPABASE_URL}/rest/v1/rubrica_posta",
+            headers=supabase_rubrica_headers(),
+            json=payload,
+            timeout=20
+        )
+
+        if response.status_code >= 400:
+            error_text = response.text or ""
+
+            if "duplicate key" in error_text.lower() or "23505" in error_text:
+                return {
+                    "success": True,
+                    "duplicate": True,
+                    "item": payload
+                }
+
+            return JSONResponse(
+                status_code=response.status_code,
+                content={
+                    "success": False,
+                    "error": error_text
+                }
+            )
+
+        try:
+            saved = response.json()
+        except Exception:
+            saved = []
+
+        return {
+            "success": True,
+            "item": saved[0] if saved else payload
+        }
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
 
 @app.get("/raccomandata/{token}/pdf")
 async def scarica_pdf(token: str):
