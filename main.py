@@ -2736,7 +2736,6 @@ def parse_bool(value):
         "sì",
         "on"
     ]
-
 def estrai_dati_rubrica_da_raw(raw):
     raw = str(raw or "").strip()
 
@@ -2760,12 +2759,14 @@ def estrai_dati_rubrica_da_raw(raw):
 
     parte_localita = parte_localita.strip()
 
-    # Esempio: 00131 Roma (RM)
     try:
         pezzi = parte_localita.split()
+
         if len(pezzi) >= 2:
             cap = pezzi[0]
-            provincia = parte_localita.split("(")[-1].replace(")", "").strip().upper()[:2]
+
+            if "(" in parte_localita and ")" in parte_localita:
+                provincia = parte_localita.split("(")[-1].replace(")", "").strip().upper()[:2]
 
             comune_raw = parte_localita.replace(cap, "").replace(f"({provincia})", "").strip()
             comune = comune_raw
