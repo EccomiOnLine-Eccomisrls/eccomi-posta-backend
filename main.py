@@ -4958,20 +4958,6 @@ def dashboard_pratiche(stato: str = None):
                 padding-top: 10px;
                 padding-bottom: 10px;
             }}
-            .racc-rubrica-select {
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 2px solid rgba(255,255,255,.25);
-  background: rgba(255,255,255,.08);
-  color: #fff;
-  box-sizing: border-box;
-  margin-bottom: 8px;
-}
-
-.racc-rubrica-select option {
-  color: #111;
-}
 
             @media (max-width: 700px) {{
                 body {{
