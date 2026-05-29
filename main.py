@@ -1,7 +1,7 @@
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from fastapi import FastAPI, UploadFile, File, Form, Request
+from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from reportlab.lib.pagesizes import A4
@@ -30,6 +30,8 @@ import requests
 import uuid
 import json
 import time
+from pydantic import BaseModel
+from typing import Optional
 
 app = FastAPI()
 
@@ -119,6 +121,152 @@ POSTE_H2H_SERVICE_URL = "https://cewebservices.posteitaliane.it/ROLGC/RolService
 POSTE_H2H_BINDING = "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_ROLServiceSoap"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+# ============================================================
+# RUBRICA POSTA - MITTENTI / DESTINATARI SALVATI
+# ============================================================
+
+class RubricaPostaPayload(BaseModel):
+    shopify_customer_id: Optional[str] = ""
+    customer_email: Optional[str] = ""
+    tipo: str
+    nome: str
+    via: str
+    civico: Optional[str] = ""
+    cap: Optional[str] = ""
+    comune: Optional[str] = ""
+    provincia: Optional[str] = ""
+
+
+def clean_text(value):
+    return str(value or "").strip()
+
+
+def clean_email(value):
+    return str(value or "").strip().lower()
+
+
+def clean_tipo_rubrica(value):
+    tipo = str(value or "").strip().lower()
+
+    if tipo not in ["mittente", "destinatario"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Tipo non valido. Usa mittente oppure destinatario."
+        )
+
+    return tipo
+
+
+@app.get("/rubrica-posta")
+def lista_rubrica_posta(
+    customer_id: str = "",
+    email: str = "",
+    tipo: str = ""
+):
+    customer_id = clean_text(customer_id)
+    email = clean_email(email)
+    tipo = str(tipo or "").strip().lower()
+
+    if not customer_id and not email:
+        raise HTTPException(
+            status_code=400,
+            detail="Cliente non identificato."
+        )
+
+    query = supabase.table("rubrica_posta").select("*")
+
+    if customer_id:
+        query = query.eq("shopify_customer_id", customer_id)
+    else:
+        query = query.eq("customer_email", email)
+
+    if tipo in ["mittente", "destinatario"]:
+        query = query.eq("tipo", tipo)
+
+    result = query.order("created_at", desc=True).execute()
+
+    return {
+        "success": True,
+        "items": result.data or []
+    }
+
+
+@app.post("/rubrica-posta")
+def salva_rubrica_posta(payload: RubricaPostaPayload):
+    customer_id = clean_text(payload.shopify_customer_id)
+    email = clean_email(payload.customer_email)
+    tipo = clean_tipo_rubrica(payload.tipo)
+
+    nome = clean_text(payload.nome)
+    via = clean_text(payload.via)
+    civico = clean_text(payload.civico)
+    cap = clean_text(payload.cap)
+    comune = clean_text(payload.comune)
+    provincia = clean_text(payload.provincia).upper()[:2]
+
+    if not customer_id and not email:
+        raise HTTPException(
+            status_code=400,
+            detail="Cliente non identificato."
+        )
+
+    if not nome or not via or not cap or not comune or not provincia:
+        raise HTTPException(
+            status_code=400,
+            detail="Dati rubrica incompleti."
+        )
+
+    data = {
+        "shopify_customer_id": customer_id,
+        "customer_email": email,
+        "tipo": tipo,
+        "nome": nome,
+        "via": via,
+        "civico": civico,
+        "cap": cap,
+        "comune": comune,
+        "provincia": provincia
+    }
+
+    result = supabase.table("rubrica_posta").insert(data).execute()
+
+    return {
+        "success": True,
+        "message": "Contatto salvato in rubrica.",
+        "item": result.data[0] if result.data else data
+    }
+
+
+@app.delete("/rubrica-posta/{rubrica_id}")
+def elimina_rubrica_posta(
+    rubrica_id: str,
+    customer_id: str = "",
+    email: str = ""
+):
+    customer_id = clean_text(customer_id)
+    email = clean_email(email)
+
+    if not customer_id and not email:
+        raise HTTPException(
+            status_code=400,
+            detail="Cliente non identificato."
+        )
+
+    query = supabase.table("rubrica_posta").delete().eq("id", rubrica_id)
+
+    if customer_id:
+        query = query.eq("shopify_customer_id", customer_id)
+    else:
+        query = query.eq("customer_email", email)
+
+    result = query.execute()
+
+    return {
+        "success": True,
+        "message": "Contatto eliminato dalla rubrica.",
+        "deleted": result.data or []
+    }
 
 def salva_poste_h2h_order(data: dict):
     try:
