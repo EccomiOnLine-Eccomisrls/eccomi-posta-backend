@@ -2737,12 +2737,57 @@ def parse_bool(value):
         "on"
     ]
 
+def salva_rubrica_posta(cliente_email, mittente, destinatario):
+    if not cliente_email:
+        return
+
+    cliente_email = str(cliente_email).strip().lower()
+
+    if not cliente_email:
+        return
+
+    items = [
+        {
+            "cliente_email": cliente_email,
+            "tipo": "MITTENTE",
+            "raw": mittente or ""
+        },
+        {
+            "cliente_email": cliente_email,
+            "tipo": "DESTINATARIO",
+            "raw": destinatario or ""
+        }
+    ]
+
+    for item in items:
+        raw = item["raw"].strip()
+
+        if len(raw) < 5:
+            continue
+
+        key = hashlib.md5(
+            f"{cliente_email}|{item['tipo']}|{raw}".encode("utf-8")
+        ).hexdigest()
+
+        try:
+            supabase.table("rubrica_posta").upsert({
+                "cliente_email": cliente_email,
+                "tipo": item["tipo"],
+                "raw": raw,
+                "rubrica_key": key,
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }, on_conflict="rubrica_key").execute()
+
+        except Exception as e:
+            print("ERRORE SALVATAGGIO RUBRICA POSTA:", str(e))
+
 
 @app.post("/raccomandata")
 async def crea_raccomandata(
     order_id: str = Form(...),
     mittente: str = Form(...),
     destinatario: str = Form(...),
+    cliente_email: str = Form(None),
     testo: str = Form(None),
     oggetto: str = Form(None),
     firma: str = Form(None),
@@ -2849,7 +2894,7 @@ async def crea_raccomandata(
                 "order_name": str(order_id),
                 "shopify_order_name": str(order_id),
                 "tipo_servizio": "RACCOMANDATA",
-                "cliente_email": "",
+                "cliente_email": cliente_email or "",
                 "mittente": {
                     "raw": mittente
                 },
@@ -2862,6 +2907,12 @@ async def crea_raccomandata(
                 "stato": "BOZZA_CHECKOUT",
                 "ricevuta_ritorno": ricevuta_ritorno_bool
             }).execute()
+
+        salva_rubrica_posta(
+            cliente_email=cliente_email,
+            mittente=mittente,
+            destinatario=destinatario
+        )
 
         except Exception as db_error:
 
