@@ -4608,13 +4608,19 @@ def preview_xml_h2h_pratica(pratica_id: str):
 
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
-
     filtro_stato = stato
 
-    query = supabase.table("pratiche") \
-        .select("id,order_id,order_name,shopify_order_name,tipo_servizio,cliente_email,stato,numero_raccomandata,pdf_url,id_richiesta,ricevuta_ritorno,created_at,updated_at") \
-        .order("created_at", desc=True) \
+    query = (
+        supabase
+        .table("pratiche")
+        .select(
+            "id,order_id,order_name,shopify_order_name,tipo_servizio,"
+            "cliente_email,stato,numero_raccomandata,pdf_url,"
+            "id_richiesta,ricevuta_ritorno,created_at,updated_at"
+        )
+        .order("created_at", desc=True)
         .limit(50)
+    )
 
     if filtro_stato:
         query = query.eq("stato", filtro_stato)
@@ -4629,11 +4635,14 @@ def dashboard_pratiche(stato: str = None):
             if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
         ]
 
-    h2h_result = supabase.table("poste_h2h_orders") \
-        .select("id,pdf_url,shopify_order_name,costo") \
-        .order("created_at", desc=True) \
-        .limit(100) \
+    h2h_result = (
+        supabase
+        .table("poste_h2h_orders")
+        .select("id,pdf_url,shopify_order_name,costo")
+        .order("created_at", desc=True)
+        .limit(100)
         .execute()
+    )
 
     h2h_rows = h2h_result.data or []
 
@@ -4655,18 +4664,29 @@ def dashboard_pratiche(stato: str = None):
         if h.get("pdf_url")
     }
 
-    tot_errori = len([p for p in pratiche if p.get("stato") == "ERRORE_POSTE"])
-    tot_inviati = len([p for p in pratiche if p.get("stato") == "INVIATO_POSTE"])
+    tot_errori = len([
+        p for p in pratiche
+        if p.get("stato") == "ERRORE_POSTE"
+    ])
+
+    tot_inviati = len([
+        p for p in pratiche
+        if p.get("stato") == "INVIATO_POSTE"
+    ])
+
     tot_manuali = len([
         p for p in pratiche
         if p.get("stato") in ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"]
     ])
-    tot_completati = len([p for p in pratiche if p.get("stato") == "COMPLETATO"])
+
+    tot_completati = len([
+        p for p in pratiche
+        if p.get("stato") == "COMPLETATO"
+    ])
 
     rows = ""
 
     for p in pratiche:
-
         pratica_id = p.get("id")
         stato_pratica = p.get("stato", "-")
         has_rr = bool_from_any(p.get("ricevuta_ritorno"))
@@ -4700,7 +4720,11 @@ def dashboard_pratiche(stato: str = None):
         data_breve = created_raw.replace("T", " ")[:16]
 
         cliente_email = p.get("cliente_email") or "-"
-        email_breve = cliente_email if len(cliente_email) <= 14 else cliente_email[:11] + "..."
+        email_breve = (
+            cliente_email
+            if len(cliente_email) <= 14
+            else cliente_email[:11] + "..."
+        )
 
         numero_raccomandata = p.get("numero_raccomandata")
 
@@ -4732,15 +4756,15 @@ def dashboard_pratiche(stato: str = None):
         if numero_raccomandata:
             tracking_html = f"""
             <a href="https://www.poste.it/cerca/index.html#/risultati-spedizioni/{numero_raccomandata}"
-            target="_blank"
-            style="
-                background:#eef3ff;
-                padding:8px 12px;
-                border-radius:10px;
-                display:inline-block;
-                font-size:14px;
-                font-weight:bold;
-            ">
+               target="_blank"
+               style="
+                   background:#eef3ff;
+                   padding:8px 12px;
+                   border-radius:10px;
+                   display:inline-block;
+                   font-size:14px;
+                   font-weight:bold;
+               ">
                 📦 {numero_raccomandata}
             </a>
             """
@@ -4762,8 +4786,9 @@ def dashboard_pratiche(stato: str = None):
 
         if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
             invia_poste_html = f"""
-                <a class="btn-action" href="/dashboard/pratiche/invia-poste/{pratica_id}"
-                onclick="return confirm('Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.')">
+                <a class="btn-action"
+                   href="/dashboard/pratiche/invia-poste/{pratica_id}"
+                   onclick="return confirm('Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.')">
                     💶 Calcola prezzo Poste
                 </a>
             """
@@ -4775,8 +4800,10 @@ def dashboard_pratiche(stato: str = None):
                         💶 Prezzo Poste: {costo_display}
                     </span>
 
-                    <a class="btn-action btn-send" href="/poste/h2h/finalizza/{h2h_order_id}" target="_blank"
-                    onclick="return confirm('Confermi finalizzazione Poste al prezzo indicato? Questa operazione può generare costo H2H.')">
+                    <a class="btn-action btn-send"
+                       href="/poste/h2h/finalizza/{h2h_order_id}"
+                       target="_blank"
+                       onclick="return confirm('Confermi finalizzazione Poste al prezzo indicato? Questa operazione può generare costo H2H.')">
                         ✅ Finalizza Poste
                     </a>
                 """
@@ -4806,50 +4833,69 @@ def dashboard_pratiche(stato: str = None):
             """
 
         rows += f"""
-        <tr class="main-row" style="background:{row_bg};">
+        <tr class="main-row searchable-row" style="background:{row_bg};">
             <td>{clean_order_display(order_display)}</td>
+
             <td>
                 {servizio_display}
                 {"<span class='badge-rr'>📬 RR</span>" if has_rr else ""}
             </td>
-            <td class="email-cell" title="{cliente_email}">{email_breve}</td>
+
+            <td class="email-cell" title="{cliente_email}">
+                {email_breve}
+            </td>
+
             <td>
                 <span class="badge" style="background:{colore};">
                     {stato_pratica}
                 </span>
             </td>
+
             <td>{tracking_html}</td>
+
             <td>{data_breve}</td>
         </tr>
 
-        <tr class="action-row" style="background:{row_bg};">
+        <tr class="action-row searchable-row" style="background:{row_bg};">
             <td colspan="6">
                 <div class="action-bar">
-                    <a class="btn-action" href="/dashboard/pratiche/{pratica_id}" target="_blank">
+                    <a class="btn-action"
+                       href="/dashboard/pratiche/{pratica_id}"
+                       target="_blank">
                         Dettaglio
                     </a>
 
-                    <a class="btn-action" href="/poste/h2h/preview-xml/{pratica_id}" target="_blank">
+                    <a class="btn-action"
+                       href="/poste/h2h/preview-xml/{pratica_id}"
+                       target="_blank">
                         🧪 Anteprima XML
                     </a>
 
                     {invia_poste_html}
 
-                    <a class="btn-action" href="/dashboard/pratiche/manuale/{pratica_id}" target="_blank">
+                    <a class="btn-action"
+                       href="/dashboard/pratiche/manuale/{pratica_id}"
+                       target="_blank">
                         Manuale
                     </a>
 
-                    <a class="btn-action" href="/dashboard/pratiche/completa/{pratica_id}" target="_blank"
-                    onclick="return confirm('Confermi di voler COMPLETARE questa pratica?')">
+                    <a class="btn-action"
+                       href="/dashboard/pratiche/completa/{pratica_id}"
+                       target="_blank"
+                       onclick="return confirm('Confermi di voler COMPLETARE questa pratica?')">
                         Completa
                     </a>
 
-                    <a class="btn-action" href="/dashboard/pratiche/pdf/{p.get('id_richiesta') or pratica_id}" target="_blank">
+                    <a class="btn-action"
+                       href="/dashboard/pratiche/pdf/{p.get('id_richiesta') or pratica_id}"
+                       target="_blank">
                         PDF Cliente
                     </a>
 
-                    <a class="btn-action btn-delete" href="/dashboard/pratiche/elimina/{pratica_id}" target="_blank"
-                    onclick="return confirm('Confermi di voler eliminare questa pratica?')">
+                    <a class="btn-action btn-delete"
+                       href="/dashboard/pratiche/elimina/{pratica_id}"
+                       target="_blank"
+                       onclick="return confirm('Confermi di voler eliminare questa pratica?')">
                         Elimina
                     </a>
                 </div>
@@ -4865,6 +4911,7 @@ def dashboard_pratiche(stato: str = None):
     <html>
     <head>
         <title>Eccomi Posta Dashboard</title>
+        <meta charset="utf-8">
         <meta http-equiv="refresh" content="15">
 
         <style>
@@ -5129,9 +5176,7 @@ def dashboard_pratiche(stato: str = None):
     </head>
 
     <body>
-
         <div class="topbar-sticky">
-
             <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;">
                 <h1 style="margin:0;">📬 Eccomi Posta — Dashboard Pratiche</h1>
 
@@ -5165,33 +5210,60 @@ def dashboard_pratiche(stato: str = None):
             </div>
 
             <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
-            style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
+               style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
                 🔴 Errori: {tot_errori}
             </a>
 
             <a href="/dashboard/pratiche?stato=INVIATO_POSTE"
-            style="background:#27ae60;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
+               style="background:#27ae60;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
                 🟢 Inviati: {tot_inviati}
             </a>
 
             <a href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE"
-            style="background:#f39c12;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
+               style="background:#f39c12;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
                 🟠 Manuali: {tot_manuali}
             </a>
 
             <a href="/dashboard/pratiche?stato=COMPLETATO"
-            style="background:#8e44ad;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
+               style="background:#8e44ad;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
                 🟣 Completati: {tot_completati}
             </a>
 
             <div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
-                <a class="btn-action {'btn-filter-active' if not filtro_stato else ''}" href="/dashboard/pratiche">Tutti</a>
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'ERRORE_POSTE' else ''}" href="/dashboard/pratiche?stato=ERRORE_POSTE">Errori</a>
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'INVIATO_POSTE' else ''}" href="/dashboard/pratiche?stato=INVIATO_POSTE">Inviati</a>
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'LAVORAZIONE_MANUALE' else ''}" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'COMPLETATO' else ''}" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'BOZZA_CHECKOUT' else ''}" href="/dashboard/pratiche?stato=BOZZA_CHECKOUT">Bozze checkout</a>
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'NON_PAGATO' else ''}" href="/dashboard/pratiche?stato=NON_PAGATO">Non pagati</a>
+                <a class="btn-action {'btn-filter-active' if not filtro_stato else ''}"
+                   href="/dashboard/pratiche">
+                    Tutti
+                </a>
+
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'ERRORE_POSTE' else ''}"
+                   href="/dashboard/pratiche?stato=ERRORE_POSTE">
+                    Errori
+                </a>
+
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'INVIATO_POSTE' else ''}"
+                   href="/dashboard/pratiche?stato=INVIATO_POSTE">
+                    Inviati
+                </a>
+
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'LAVORAZIONE_MANUALE' else ''}"
+                   href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">
+                    Manuali
+                </a>
+
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'COMPLETATO' else ''}"
+                   href="/dashboard/pratiche?stato=COMPLETATO">
+                    Completati
+                </a>
+
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'BOZZA_CHECKOUT' else ''}"
+                   href="/dashboard/pratiche?stato=BOZZA_CHECKOUT">
+                    Bozze checkout
+                </a>
+
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'NON_PAGATO' else ''}"
+                   href="/dashboard/pratiche?stato=NON_PAGATO">
+                    Non pagati
+                </a>
 
                 <input
                     type="text"
@@ -5209,7 +5281,6 @@ def dashboard_pratiche(stato: str = None):
                     "
                 >
             </div>
-
         </div>
 
         <table>
@@ -5272,158 +5343,6 @@ def dashboard_pratiche(stato: str = None):
                 }});
             }}
         </script>
-
-    </body>
-    </html>
-    """
-    </head>
-
-    <body>
-
-        <div class="topbar-sticky">
-
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;">
-    <h1 style="margin:0;">📬 Eccomi Posta — Dashboard Pratiche</h1>
-
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <div style="
-            background:{h2h_mode_bg};
-            color:white;
-            padding:14px 20px;
-            border-radius:16px;
-            font-weight:bold;
-            font-size:18px;
-            display:inline-block;
-            box-shadow:0 2px 8px rgba(0,0,0,.10);
-        ">
-            {h2h_led} Modalità: {h2h_mode_label}
-        </div>
-
-        <div style="
-            background:#111827;
-            color:white;
-            padding:14px 20px;
-            border-radius:16px;
-            font-weight:bold;
-            font-size:18px;
-            display:inline-block;
-            box-shadow:0 2px 8px rgba(0,0,0,.10);
-        ">
-            🔄 Auto-refresh: 15s
-        </div>
-    </div>
-</div>
-
-            <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
-            style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                🔴 Errori: {tot_errori}
-            </a>
-
-            <a href="/dashboard/pratiche?stato=INVIATO_POSTE"
-            style="background:#27ae60;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                🟢 Inviati: {tot_inviati}
-            </a>
-
-            <a href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE"
-            style="background:#f39c12;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                🟠 Manuali: {tot_manuali}
-            </a>
-
-            <a href="/dashboard/pratiche?stato=COMPLETATO"
-            style="background:#8e44ad;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                🟣 Completati: {tot_completati}
-            </a>
-
-
-            <div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
-                <a class="btn-action {'btn-filter-active' if not filtro_stato else ''}" href="/dashboard/pratiche">Tutti</a>
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'ERRORE_POSTE' else ''}" href="/dashboard/pratiche?stato=ERRORE_POSTE">Errori</a>
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'INVIATO_POSTE' else ''}" href="/dashboard/pratiche?stato=INVIATO_POSTE">Inviati</a>
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'LAVORAZIONE_MANUALE' else ''}" href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">Manuali</a>
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'COMPLETATO' else ''}" href="/dashboard/pratiche?stato=COMPLETATO">Completati</a>
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'BOZZA_CHECKOUT' else ''}" href="/dashboard/pratiche?stato=BOZZA_CHECKOUT">Bozze checkout</a>
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'NON_PAGATO' else ''}" href="/dashboard/pratiche?stato=NON_PAGATO">Non pagati</a>
-
-                <input
-                    type="text"
-                    id="searchInput"
-                    placeholder="Cerca ordine, email, tracking..."
-                    style="
-                        flex:1;
-                        min-width:260px;
-                        max-width:420px;
-                        padding:10px 14px;
-                        border-radius:12px;
-                        border:1px solid #d1d5db;
-                        font-size:14px;
-                        outline:none;
-                    "
-                >
-            </div>
-
-        </div>
-
-        <table>
-            <thead>
-                <tr>
-                    <th>Ordine</th>
-                    <th>Servizio</th>
-                    <th>Email</th>
-                    <th>Stato</th>
-                    <th>Tracking</th>
-                    <th>Data</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                {rows}
-            </tbody>
-        </table>
-
-        <div class="legend-box">
-            <h3>📌 Legenda Stati</h3>
-
-            <div class="legend-line">
-                <span style="background:#3498db;">RICEVUTO</span>
-                <span style="background:#0ea5e9;">RICEVUTO_PAGATO</span>
-                <span style="background:#27ae60;">INVIATO_POSTE</span>
-                <span style="background:#e74c3c;">ERRORE_POSTE</span>
-                <span style="background:#f39c12;">LAVORAZIONE_MANUALE</span>
-                <span style="background:#8e44ad;">COMPLETATO</span>
-                <span style="background:#6366f1;">PREZZATA_DA_CONFERMARE</span>
-                <span style="background:#f97316;">RICEVUTO_MANUALE</span>
-                <span style="background:#9ca3af;">BOZZA_CHECKOUT</span>
-                <span style="background:#6b7280;">NON_PAGATO</span>
-            </div>
-        </div>
-
-        <div class="footer-brand">
-            Progettato ed elaborato by
-            <a href="https://www.eccomionline.com" target="_blank">
-                www.eccomionline.com
-            </a>
-        </div>
-
-        <script>
-        const searchInput = document.getElementById("searchInput");
-
-        if (searchInput) {{
-            searchInput.addEventListener("keyup", function() {{
-                const value = this.value.toLowerCase();
-
-                document.querySelectorAll("tbody tr").forEach(function(row) {{
-                    const text = row.innerText.toLowerCase();
-
-                    if (text.includes(value)) {{
-                        row.style.display = "";
-                    }} else {{
-                        row.style.display = "none";
-                    }}
-                }});
-            }});
-        }}
-        </script>
-
     </body>
     </html>
     """
