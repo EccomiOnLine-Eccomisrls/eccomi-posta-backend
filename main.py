@@ -1726,7 +1726,6 @@ def process_poste_order_full(order_id: str):
         "finalizza": step2
     }
 
-
 def estrai_costo_valorizza(valorizza_result):
     try:
         responses = getattr(valorizza_result, "ServizioEnquiryResponse", None)
