@@ -30,6 +30,7 @@ import requests
 import uuid
 import json
 import time
+import re
 from pydantic import BaseModel
 from typing import Optional
 
@@ -2765,10 +2766,60 @@ def parse_bool(value):
         "sì",
         "on"
     ]
+def normalizza_cap(value):
+    return re.sub(r"\D", "", str(value or ""))[:5]
+
+
+def normalizza_provincia(value):
+    return re.sub(r"[^A-Za-z]", "", str(value or "")).upper()[:2]
+
+
+def split_via_civico_from_text(indirizzo):
+    """
+    Gestisce:
+    - Viale Stefano D'Arrigo 321
+    - Viale Stefano D'Arrigo, 321
+    - Via Praga 7
+    - Via Praga, 7
+    - Piazza Trilussa, 3
+    - Via Nebrodi 2/B
+    """
+
+    indirizzo = str(indirizzo or "").strip().strip(",")
+
+    if not indirizzo:
+        return "", ""
+
+    # Caso con virgola: "Via Praga, 7"
+    parts = [p.strip() for p in indirizzo.split(",") if p.strip()]
+
+    if len(parts) >= 2:
+        possibile_civico = parts[-1]
+
+        if re.fullmatch(r"[0-9]+[A-Za-z0-9\/\-]*", possibile_civico):
+            via = ", ".join(parts[:-1]).strip()
+            return via, possibile_civico
+
+    # Caso senza virgola: "Via Praga 7" / "Via Nebrodi 2/B"
+    match = re.match(
+        r"^(.*?)[\s]+([0-9]+[A-Za-z0-9\/\-]*)$",
+        indirizzo
+    )
+
+    if match:
+        via = match.group(1).strip().strip(",")
+        civico = match.group(2).strip().strip(",")
+        return via, civico
+
+    return indirizzo, ""
+
+
 def estrai_dati_rubrica_da_raw(raw):
     raw = str(raw or "").strip()
 
     nome = raw
+    resto = ""
+
     via = ""
     civico = ""
     cap = ""
@@ -2780,27 +2831,29 @@ def estrai_dati_rubrica_da_raw(raw):
     else:
         resto = ""
 
-    if "," in resto:
-        via, parte_localita = resto.split(",", 1)
+    nome = nome.strip()
+
+    # Cerca la località finale:
+    # "00131 Roma (RM)"
+    # "00131 Roma, RM"
+    # "88842 Cutro KR"
+    localita_match = re.search(
+        r"\b(\d{5})\s+(.+?)(?:\s*[\(,]?\s*([A-Z]{2})\s*\)?)?\s*$",
+        resto,
+        flags=re.IGNORECASE
+    )
+
+    if localita_match:
+        cap = normalizza_cap(localita_match.group(1))
+        comune = str(localita_match.group(2) or "").strip().strip(",")
+        provincia = normalizza_provincia(localita_match.group(3))
+
+        indirizzo_part = resto[:localita_match.start()].strip().strip(",")
+
     else:
-        via = resto
-        parte_localita = ""
+        indirizzo_part = resto.strip().strip(",")
 
-    parte_localita = parte_localita.strip()
-
-    try:
-        pezzi = parte_localita.split()
-
-        if len(pezzi) >= 2:
-            cap = pezzi[0]
-
-            if "(" in parte_localita and ")" in parte_localita:
-                provincia = parte_localita.split("(")[-1].replace(")", "").strip().upper()[:2]
-
-            comune_raw = parte_localita.replace(cap, "").replace(f"({provincia})", "").strip()
-            comune = comune_raw
-    except Exception:
-        pass
+    via, civico = split_via_civico_from_text(indirizzo_part)
 
     return {
         "nome": nome.strip(),
@@ -2816,6 +2869,7 @@ def salva_rubrica_posta_da_raccomandata(cliente_email, mittente, destinatario):
     cliente_email = str(cliente_email or "").strip().lower()
 
     if not cliente_email:
+        print("Rubrica Posta: cliente_email assente, salvataggio saltato")
         return
 
     items = [
@@ -2837,20 +2891,41 @@ def salva_rubrica_posta_da_raccomandata(cliente_email, mittente, destinatario):
 
         dati = estrai_dati_rubrica_da_raw(raw)
 
+        if (
+            not dati["nome"]
+            or not dati["via"]
+            or not dati["cap"]
+            or not dati["comune"]
+            or not dati["provincia"]
+        ):
+            print("Rubrica Posta: dati incompleti, riga saltata:", dati)
+            continue
+
+        payload = {
+            "shopify_customer_id": "",
+            "customer_id": "",
+            "customer_email": cliente_email,
+            "email": cliente_email,
+            "tipo": item["tipo"],
+            "nome": dati["nome"],
+            "via": dati["via"],
+            "civico": dati["civico"],
+            "cap": dati["cap"],
+            "comune": dati["comune"],
+            "provincia": dati["provincia"]
+        }
+
         try:
-            supabase.table("rubrica_posta").insert({
-                "shopify_customer_id": "",
-                "customer_email": cliente_email,
-                "tipo": item["tipo"],
-                "nome": dati["nome"],
-                "via": dati["via"],
-                "civico": dati["civico"],
-                "cap": dati["cap"],
-                "comune": dati["comune"],
-                "provincia": dati["provincia"]
-            }).execute()
+            supabase.table("rubrica_posta").insert(payload).execute()
+            print("Rubrica Posta salvata:", payload)
 
         except Exception as e:
+            errore = str(e).lower()
+
+            if "duplicate key" in errore or "23505" in errore:
+                print("Rubrica Posta: contatto già presente, ignorato:", payload)
+                continue
+
             print("ERRORE SALVATAGGIO RUBRICA POSTA:", str(e))
 
 
