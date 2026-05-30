@@ -4630,7 +4630,7 @@ def dashboard_pratiche(stato: str = None):
         ]
 
     h2h_result = supabase.table("poste_h2h_orders") \
-        .select("id,pdf_url,shopify_order_name") \
+        .select("id,pdf_url,shopify_order_name,costo") \
         .order("created_at", desc=True) \
         .limit(100) \
         .execute()
@@ -4648,6 +4648,13 @@ def dashboard_pratiche(stato: str = None):
         for h in h2h_rows
         if h.get("pdf_url") and h.get("id")
     }
+    
+    h2h_costo_by_pdf = {
+    h.get("pdf_url"): h.get("costo")
+    for h in h2h_rows
+    if h.get("pdf_url")
+    }
+
 
     tot_errori = len([p for p in pratiche if p.get("stato") == "ERRORE_POSTE"])
     tot_inviati = len([p for p in pratiche if p.get("stato") == "INVIATO_POSTE"])
@@ -4669,6 +4676,15 @@ def dashboard_pratiche(stato: str = None):
             
         pdf_url_pratica = p.get("pdf_url")
         h2h_order_id = h2h_id_by_pdf.get(pdf_url_pratica)
+        costo_valorizzato = h2h_costo_by_pdf.get(pdf_url_pratica)
+
+        if costo_valorizzato is not None:
+            try:
+                costo_display = f"€ {float(costo_valorizzato):.2f}".replace(".", ",")
+            except Exception:
+                costo_display = f"€ {costo_valorizzato}"
+        else:
+            costo_display = "Prezzo non disponibile"
 
         order_display = (
             p.get("shopify_order_name")
@@ -4746,13 +4762,29 @@ def dashboard_pratiche(stato: str = None):
                 <a class="btn-action" href="/dashboard/pratiche/invia-poste/{pratica_id}" onclick="return confirm('Confermi invio a Poste? Questa operazione può generare costo H2H.')">🚀 Invia Poste</a>
             """
         elif stato_pratica == "PREZZATA_DA_CONFERMARE" and h2h_order_id:
-            invia_poste_html = f"""
-                <a class="btn-action btn-send" href="/poste/h2h/finalizza/{h2h_order_id}" target="_blank"
-                onclick="return confirm('Confermi finalizzazione Poste per questa pratica?')">
-                    ✅ Finalizza Poste
-                </a>
-            """
-        elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE", "PREZZATA_DA_CONFERMARE"] and not h2h_order_id:
+
+    if costo_valorizzato is not None:
+        invia_poste_html = f"""
+            <span class="btn-price">
+                💶 Prezzo Poste: {costo_display}
+            </span>
+
+            <a class="btn-action btn-send" href="/poste/h2h/finalizza/{h2h_order_id}" target="_blank"
+            onclick="return confirm('Confermi finalizzazione Poste al prezzo indicato? Questa operazione può generare costo H2H.')">
+                ✅ Finalizza Poste
+            </a>
+        """
+    else:
+        invia_poste_html = """
+            <span class="btn-action btn-disabled">
+                ⚠️ Prezzo non disponibile
+            </span>
+
+            <span class="btn-action btn-disabled">
+                ✅ Finalizza bloccato
+            </span>
+        """
+    elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE", "PREZZATA_DA_CONFERMARE"] and not h2h_order_id:
             invia_poste_html = """
                 <span class="btn-action btn-disabled">
                     ⚠️ H2H non pronto
@@ -4908,6 +4940,21 @@ def dashboard_pratiche(stato: str = None):
                 justify-content:center;
                 background:#eef3ff;
                 color:#2563eb;
+                padding:8px 12px;
+                border-radius:10px;
+                font-size:13px;
+                margin:0;
+                text-decoration:none;
+                font-weight:bold;
+                min-height:34px;
+            }}
+            
+            .btn-price {
+                display:inline-flex;
+                align-items:center;
+                justify-content:center;
+                background:#fff7ed;
+                color:#c2410c;
                 padding:8px 12px;
                 border-radius:10px;
                 font-size:13px;
