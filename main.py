@@ -4437,7 +4437,7 @@ def dashboard_invia_poste(pratica_id: str):
                 status_code=302
             )
 
-        result = process_poste_order_full(h2h_order_id)
+        result = process_poste_order(h2h_order_id)
 
         if not result.get("success"):
             errore = result.get("error") or str(result)
