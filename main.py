@@ -1749,7 +1749,6 @@ async def shopify_order_created(request: Request):
 
         line_items = payload.get("line_items", [])
 
-        # Verifica se nell'ordine esiste anche il prodotto/accessorio Ricevuta di ritorno
         order_has_rr_item = any(
             "ricevuta di ritorno" in ((item.get("title") or "").lower())
             for item in line_items
@@ -1804,7 +1803,7 @@ async def shopify_order_created(request: Request):
                 or "true" in ricevuta_ritorno_value
             )
 
-                        token_pratica = str(
+            token_pratica = str(
                 props.get("Token pratica")
                 or props.get("Token Pratica")
                 or props.get("_Token pratica")
@@ -1881,11 +1880,14 @@ async def shopify_order_created(request: Request):
                     "email": email,
                     "item": poste_item,
                     "properties": props,
-                    "ricevuta_ritorno": has_rr
+                    "ricevuta_ritorno": has_rr,
+                    "token_pratica": token_pratica,
+                    "provisional_order_id": provisional_order_id,
+                    "pratica_id_collegata": pratica_id_collegata,
+                    "pdf_pratica_url": pdf_pratica_url
                 })
             }).execute()
 
-                        # Aggiorna la pratica provvisoria creata prima del pagamento
             update_pratica_data = {
                 "stato": "RICEVUTO_PAGATO",
                 "order_id": str(order_id),
@@ -1913,7 +1915,8 @@ async def shopify_order_created(request: Request):
                     "pdf_pratica_url": pdf_pratica_url
                 })
 
-            # Invio automatico a Poste solo se la modalità H2H AUTO è attiva
+            saved_items.append(insert_result.data)
+
             try:
                 if POSTE_INVIO_AUTO and insert_result.data and len(insert_result.data) > 0:
                     nuovo_order_id = insert_result.data[0].get("id")
