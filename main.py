@@ -4761,30 +4761,30 @@ def dashboard_pratiche(stato: str = None):
             invia_poste_html = f"""
                 <a class="btn-action" href="/dashboard/pratiche/invia-poste/{pratica_id}" onclick="return confirm('Confermi invio a Poste? Questa operazione può generare costo H2H.')">🚀 Invia Poste</a>
             """
-        elif stato_pratica == "PREZZATA_DA_CONFERMARE" and h2h_order_id:
+                elif stato_pratica == "PREZZATA_DA_CONFERMARE" and h2h_order_id:
 
-    if costo_valorizzato is not None:
-        invia_poste_html = f"""
-            <span class="btn-price">
-                💶 Prezzo Poste: {costo_display}
-            </span>
+            if costo_valorizzato is not None:
+                invia_poste_html = f"""
+                    <span class="btn-price">
+                        💶 Prezzo Poste: {costo_display}
+                    </span>
 
-            <a class="btn-action btn-send" href="/poste/h2h/finalizza/{h2h_order_id}" target="_blank"
-            onclick="return confirm('Confermi finalizzazione Poste al prezzo indicato? Questa operazione può generare costo H2H.')">
-                ✅ Finalizza Poste
-            </a>
-        """
-    else:
-        invia_poste_html = """
-            <span class="btn-action btn-disabled">
-                ⚠️ Prezzo non disponibile
-            </span>
+                    <a class="btn-action btn-send" href="/poste/h2h/finalizza/{h2h_order_id}" target="_blank"
+                    onclick="return confirm('Confermi finalizzazione Poste al prezzo indicato? Questa operazione può generare costo H2H.')">
+                        ✅ Finalizza Poste
+                    </a>
+                """
+            else:
+                invia_poste_html = """
+                    <span class="btn-action btn-disabled">
+                        ⚠️ Prezzo non disponibile
+                    </span>
 
-            <span class="btn-action btn-disabled">
-                ✅ Finalizza bloccato
-            </span>
-        """
-    elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE", "PREZZATA_DA_CONFERMARE"] and not h2h_order_id:
+                    <span class="btn-action btn-disabled">
+                        ✅ Finalizza bloccato
+                    </span>
+                """
+        elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE", "PREZZATA_DA_CONFERMARE"] and not h2h_order_id:
             invia_poste_html = """
                 <span class="btn-action btn-disabled">
                     ⚠️ H2H non pronto
