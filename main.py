@@ -1710,22 +1710,6 @@ def poste_full_cycle_v7():
             "error": str(e)
         }
 
-def process_poste_order_full(order_id: str):
-    step1 = process_poste_order(order_id)
-
-    if not step1.get("success"):
-        return step1
-
-    time.sleep(8)
-
-    step2 = confirm_poste_order(order_id)
-
-    return {
-        "success": step2.get("success"),
-        "process_order": step1,
-        "finalizza": step2
-    }
-
 def estrai_costo_valorizza(valorizza_result):
     """
     Estrae il costo da service.Valorizza().
