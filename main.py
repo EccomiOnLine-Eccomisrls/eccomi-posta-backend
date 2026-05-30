@@ -1804,7 +1804,60 @@ async def shopify_order_created(request: Request):
                 or "true" in ricevuta_ritorno_value
             )
 
+                        token_pratica = str(
+                props.get("Token pratica")
+                or props.get("Token Pratica")
+                or props.get("_Token pratica")
+                or ""
+            ).strip()
+
             pdf_pratica_url = props.get("_PDF pratica")
+            pratica_id_collegata = None
+            provisional_order_id = ""
+
+            if token_pratica:
+                provisional_order_id = token_pratica
+
+                if provisional_order_id.startswith("RACC-"):
+                    parts = provisional_order_id.split("-", 2)
+
+                    if len(parts) == 3:
+                        provisional_order_id = parts[2]
+
+            try:
+                pratica_lookup = None
+
+                if provisional_order_id:
+                    pratica_lookup = supabase.table("pratiche") \
+                        .select("id,pdf_url,order_id,order_name,shopify_order_name") \
+                        .eq("order_id", provisional_order_id) \
+                        .order("created_at", desc=True) \
+                        .limit(1) \
+                        .execute()
+
+                    if not pratica_lookup.data:
+                        pratica_lookup = supabase.table("pratiche") \
+                            .select("id,pdf_url,order_id,order_name,shopify_order_name") \
+                            .eq("shopify_order_name", provisional_order_id) \
+                            .order("created_at", desc=True) \
+                            .limit(1) \
+                            .execute()
+
+                    if not pratica_lookup.data:
+                        pratica_lookup = supabase.table("pratiche") \
+                            .select("id,pdf_url,order_id,order_name,shopify_order_name") \
+                            .eq("order_name", provisional_order_id) \
+                            .order("created_at", desc=True) \
+                            .limit(1) \
+                            .execute()
+
+                if pratica_lookup and pratica_lookup.data:
+                    pratica_collegata = pratica_lookup.data[0]
+                    pratica_id_collegata = pratica_collegata.get("id")
+                    pdf_pratica_url = pdf_pratica_url or pratica_collegata.get("pdf_url")
+
+            except Exception as link_error:
+                print("ERRORE COLLEGAMENTO TOKEN PRATICA:", str(link_error))
 
             insert_result = supabase.table("poste_h2h_orders").insert({
                 "stato": "RICEVUTO_PAGATO",
@@ -1832,19 +1885,33 @@ async def shopify_order_created(request: Request):
                 })
             }).execute()
 
-            # Aggiorna la pratica provvisoria creata prima del pagamento
-            if pdf_pratica_url:
-                supabase.table("pratiche").update({
-                    "stato": "RICEVUTO_PAGATO",
-                    "order_id": str(order_id),
-                    "order_name": str(order_name),
-                    "shopify_order_name": str(order_name),
-                    "cliente_email": email or "",
-                    "ricevuta_ritorno": has_rr,
-                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                }).eq("pdf_url", pdf_pratica_url).execute()
+                        # Aggiorna la pratica provvisoria creata prima del pagamento
+            update_pratica_data = {
+                "stato": "RICEVUTO_PAGATO",
+                "order_id": str(order_id),
+                "order_name": str(order_name),
+                "shopify_order_name": str(order_name),
+                "cliente_email": email or "",
+                "ricevuta_ritorno": has_rr,
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }
 
-            saved_items.append(insert_result.data)
+            if pratica_id_collegata:
+                supabase.table("pratiche").update(update_pratica_data) \
+                    .eq("id", pratica_id_collegata) \
+                    .execute()
+
+            elif pdf_pratica_url:
+                supabase.table("pratiche").update(update_pratica_data) \
+                    .eq("pdf_url", pdf_pratica_url) \
+                    .execute()
+
+            else:
+                print("ATTENZIONE: pratica non collegata al pagamento Shopify", {
+                    "order_name": order_name,
+                    "token_pratica": token_pratica,
+                    "pdf_pratica_url": pdf_pratica_url
+                })
 
             # Invio automatico a Poste solo se la modalità H2H AUTO è attiva
             try:
