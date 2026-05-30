@@ -4467,7 +4467,7 @@ def dashboard_invia_poste(pratica_id: str):
             )
 
         return RedirectResponse(
-            url="/dashboard/pratiche?stato=INVIATO_POSTE",
+            url="/dashboard/pratiche?stato=PREZZATA_DA_CONFERMARE",
             status_code=302
         )
 
