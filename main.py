@@ -1711,21 +1711,16 @@ def poste_full_cycle_v7():
             "error": str(e)
         }
 
-def estrai_costo_valorizza(valorizza_result):
-    """
-    Estrae il costo da service.Valorizza().
-    Se Poste restituisce 0.0 o valore non disponibile, torna None.
-    Compatibile sia con oggetti Zeep sia con dizionari.
-    """
-
-    def zeep_to_plain(obj):
+def zeep_to_plain(obj):
     try:
         return serialize_object(obj)
     except Exception:
         if isinstance(obj, dict):
             return obj
+
         if isinstance(obj, list):
             return obj
+
         return str(obj)
 
 
@@ -1757,8 +1752,10 @@ def parse_amount_value(value):
 
     try:
         amount = float(match.group(0))
+
         if amount > 0:
             return amount
+
     except Exception:
         return None
 
@@ -1811,8 +1808,7 @@ def collect_amount_candidates(obj, path=""):
 def estrai_costo_valorizza(valorizza_result):
     """
     Estrae il prezzo dalla risposta Poste Valorizza.
-    Versione robusta: cerca ImportoTotale / prezzo / costo / totale
-    anche se Poste cambia struttura della risposta SOAP.
+    Cerca ImportoTotale / prezzo / costo / totale anche se la struttura SOAP cambia.
     """
 
     try:
