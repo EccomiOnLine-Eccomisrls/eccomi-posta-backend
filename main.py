@@ -31,6 +31,7 @@ import uuid
 import json
 import time
 import re
+from zeep.helpers import serialize_object
 from pydantic import BaseModel
 from typing import Optional
 
@@ -1717,45 +1718,274 @@ def estrai_costo_valorizza(valorizza_result):
     Compatibile sia con oggetti Zeep sia con dizionari.
     """
 
-    def get_value(obj, key, default=None):
-        if obj is None:
-            return default
-
+    def zeep_to_plain(obj):
+    try:
+        return serialize_object(obj)
+    except Exception:
         if isinstance(obj, dict):
-            return obj.get(key, default)
+            return obj
+        if isinstance(obj, list):
+            return obj
+        return str(obj)
 
-        return getattr(obj, key, default)
+
+def parse_amount_value(value):
+    if value is None or isinstance(value, bool):
+        return None
+
+    text = str(value).strip()
+
+    if not text:
+        return None
+
+    text = (
+        text.replace("€", "")
+        .replace("EUR", "")
+        .replace(" ", "")
+        .strip()
+    )
+
+    if "," in text and "." in text:
+        text = text.replace(".", "").replace(",", ".")
+    else:
+        text = text.replace(",", ".")
+
+    match = re.search(r"\d+(?:\.\d+)?", text)
+
+    if not match:
+        return None
 
     try:
-        responses = get_value(valorizza_result, "ServizioEnquiryResponse")
+        amount = float(match.group(0))
+        if amount > 0:
+            return amount
+    except Exception:
+        return None
 
-        if not responses:
+    return None
+
+
+def collect_amount_candidates(obj, path=""):
+    candidates = []
+
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            key_str = str(key)
+            key_low = key_str.lower()
+            next_path = f"{path}.{key_str}" if path else key_str
+
+            is_amount_key = any(
+                token in key_low
+                for token in [
+                    "importo",
+                    "prezzo",
+                    "costo",
+                    "totale",
+                    "tariffa"
+                ]
+            )
+
+            if is_amount_key and not isinstance(value, (dict, list, tuple)):
+                amount = parse_amount_value(value)
+
+                if amount is not None:
+                    candidates.append({
+                        "path": next_path,
+                        "value": amount,
+                        "raw": str(value)
+                    })
+
+            candidates.extend(
+                collect_amount_candidates(value, next_path)
+            )
+
+    elif isinstance(obj, (list, tuple)):
+        for index, item in enumerate(obj):
+            candidates.extend(
+                collect_amount_candidates(item, f"{path}[{index}]")
+            )
+
+    return candidates
+
+
+def estrai_costo_valorizza(valorizza_result):
+    """
+    Estrae il prezzo dalla risposta Poste Valorizza.
+    Versione robusta: cerca ImportoTotale / prezzo / costo / totale
+    anche se Poste cambia struttura della risposta SOAP.
+    """
+
+    try:
+        plain = zeep_to_plain(valorizza_result)
+        candidates = collect_amount_candidates(plain)
+
+        if not candidates:
+            print("VALORIZZA: nessun importo trovato")
+            print("VALORIZZA RAW:", str(valorizza_result))
             return None
 
-        if not isinstance(responses, list):
-            responses = [responses]
+        def score(candidate):
+            path = candidate.get("path", "").lower()
 
-        for item in responses:
-            totale = get_value(item, "Totale")
+            if "importototale" in path:
+                return 1
+            if "prezzototale" in path:
+                return 2
+            if "costototale" in path:
+                return 3
+            if "totale" in path and "importo" in path:
+                return 4
+            if "importo" in path:
+                return 5
+            if "prezzo" in path:
+                return 6
+            if "costo" in path:
+                return 7
+            if "tariffa" in path:
+                return 8
+            if "totale" in path:
+                return 9
 
-            if not totale:
-                continue
+            return 99
 
-            importo = get_value(totale, "ImportoTotale")
+        candidates = sorted(candidates, key=score)
 
-            if importo is None:
-                continue
+        costo = candidates[0]["value"]
 
-            costo = float(str(importo).replace(",", "."))
+        print("VALORIZZA COSTO TROVATO:", costo)
+        print("VALORIZZA CANDIDATI:", candidates[:10])
 
-            if costo > 0:
-                return costo
-
-        return None
+        return costo
 
     except Exception as e:
         print("ERRORE estrai_costo_valorizza:", str(e))
         return None
+
+
+def debug_costi_valorizza(valorizza_result):
+    try:
+        plain = zeep_to_plain(valorizza_result)
+        return collect_amount_candidates(plain)[:30]
+    except Exception as e:
+        return [{"error": str(e)}]
+
+@app.get("/poste/h2h/ricalcola-prezzo/{order_id}")
+def ricalcola_prezzo_poste(order_id: str):
+    history = HistoryPlugin()
+
+    try:
+        ordine_res = supabase.table("poste_h2h_orders") \
+            .select("*") \
+            .eq("id", order_id) \
+            .single() \
+            .execute()
+
+        if not ordine_res.data:
+            return {
+                "success": False,
+                "error": "Ordine H2H non trovato",
+                "order_id": order_id
+            }
+
+        ordine = ordine_res.data
+
+        id_richiesta = ordine.get("id_richiesta")
+        guid_utente = ordine.get("guid_utente")
+
+        if not id_richiesta or not guid_utente:
+            return {
+                "success": False,
+                "error": "id_richiesta o guid_utente mancanti",
+                "order_id": order_id
+            }
+
+        client, service = poste_client(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        RichiestaType = client.get_type("ns1:Richiesta")
+
+        richiesta = RichiestaType(
+            IDRichiesta=id_richiesta,
+            GuidUtente=guid_utente
+        )
+
+        valorizza_result = service.Valorizza(
+            Richieste=[richiesta]
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        costo_valorizzato = estrai_costo_valorizza(valorizza_result)
+        costo_candidates = debug_costi_valorizza(valorizza_result)
+
+        poste_response_text = json.dumps({
+            "step": "RICALCOLO_VALORIZZA",
+            "raw": str(valorizza_result),
+            "costo_valorizzato": costo_valorizzato,
+            "costo_candidates": costo_candidates
+        }, ensure_ascii=False)
+
+        supabase.table("poste_h2h_orders") \
+            .update({
+                "stato": "PREZZATA_DA_CONFERMARE",
+                "costo": costo_valorizzato,
+                "poste_response": poste_response_text,
+                "xml_sent": xml_sent,
+                "xml_received": xml_received
+            }) \
+            .eq("id", order_id) \
+            .execute()
+
+        if ordine.get("pdf_url"):
+            supabase.table("pratiche") \
+                .update({
+                    "stato": "PREZZATA_DA_CONFERMARE",
+                    "poste_response": {
+                        "step": "RICALCOLO_VALORIZZA",
+                        "raw": str(valorizza_result),
+                        "costo_valorizzato": costo_valorizzato,
+                        "costo_candidates": costo_candidates
+                    },
+                    "xml_sent": xml_sent,
+                    "xml_received": xml_received,
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }) \
+                .eq("pdf_url", ordine.get("pdf_url")) \
+                .execute()
+
+        return RedirectResponse(
+            url="/dashboard/pratiche?stato=PREZZATA_DA_CONFERMARE",
+            status_code=302
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_RICALCOLO_PREZZO",
+            "order_id": order_id,
+            "error": str(e)
+        }
 
 
 @app.get("/poste/h2h/process-order/{order_id}")
@@ -4932,10 +5162,11 @@ def dashboard_pratiche(stato: str = None):
                     </a>
                 """
             else:
-                invia_poste_html = """
-                    <span class="btn-action btn-disabled">
-                        ⚠️ Prezzo non disponibile
-                    </span>
+                invia_poste_html = f"""
+                    <a class="btn-action" href="/poste/h2h/ricalcola-prezzo/{h2h_order_id}" target="_blank"
+                    onclick="return confirm('Vuoi ricalcolare il prezzo Poste senza finalizzare la raccomandata?')">
+                        🔁 Ricalcola prezzo
+                    </a>
 
                     <span class="btn-action btn-disabled">
                         ✅ Finalizza bloccato
