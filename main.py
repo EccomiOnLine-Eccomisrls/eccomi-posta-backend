@@ -1869,6 +1869,7 @@ def debug_costi_valorizza(valorizza_result):
     except Exception as e:
         return [{"error": str(e)}]
 
+
 @app.get("/poste/h2h/ricalcola-prezzo/{order_id}")
 def ricalcola_prezzo_poste(order_id: str):
     history = HistoryPlugin()
@@ -1939,18 +1940,18 @@ def ricalcola_prezzo_poste(order_id: str):
         costo_valorizzato = estrai_costo_valorizza(valorizza_result)
         costo_candidates = debug_costi_valorizza(valorizza_result)
 
-        poste_response_text = json.dumps({
+        poste_response_payload = {
             "step": "RICALCOLO_VALORIZZA",
             "raw": str(valorizza_result),
             "costo_valorizzato": costo_valorizzato,
             "costo_candidates": costo_candidates
-        }, ensure_ascii=False)
+        }
 
         supabase.table("poste_h2h_orders") \
             .update({
                 "stato": "PREZZATA_DA_CONFERMARE",
                 "costo": costo_valorizzato,
-                "poste_response": poste_response_text,
+                "poste_response": json.dumps(poste_response_payload, ensure_ascii=False),
                 "xml_sent": xml_sent,
                 "xml_received": xml_received
             }) \
@@ -1961,12 +1962,7 @@ def ricalcola_prezzo_poste(order_id: str):
             supabase.table("pratiche") \
                 .update({
                     "stato": "PREZZATA_DA_CONFERMARE",
-                    "poste_response": {
-                        "step": "RICALCOLO_VALORIZZA",
-                        "raw": str(valorizza_result),
-                        "costo_valorizzato": costo_valorizzato,
-                        "costo_candidates": costo_candidates
-                    },
+                    "poste_response": poste_response_payload,
                     "xml_sent": xml_sent,
                     "xml_received": xml_received,
                     "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
