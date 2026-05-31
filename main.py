@@ -4606,6 +4606,130 @@ def preview_xml_h2h_pratica(pratica_id: str):
         </html>
         """
 
+@app.get("/dashboard/pratiche/ripara-h2h-order/{order_key}")
+def dashboard_ripara_h2h_order(order_key: str, order_name: str = ""):
+    """
+    Ripara una pratica pagata ma senza riga tecnica H2H.
+    Esempio:
+    /dashboard/pratiche/ripara-h2h-order/1780159027281?order_name=%231386
+    """
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .or_(
+                f"order_id.eq.{order_key},order_name.eq.{order_key},shopify_order_name.eq.{order_key}"
+            ) \
+            .limit(1) \
+            .execute()
+
+        if not pratica_res.data:
+            pratica_res = supabase.table("pratiche") \
+                .select("*") \
+                .ilike("order_id", f"%{order_key}%") \
+                .limit(1) \
+                .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "order_key": order_key
+            }
+
+        pratica = pratica_res.data[0]
+        pratica_id = pratica.get("id")
+        pdf_url = pratica.get("pdf_url")
+
+        if not pdf_url:
+            return {
+                "success": False,
+                "error": "pdf_url mancante nella pratica",
+                "pratica_id": pratica_id
+            }
+
+        order_name_finale = (
+            order_name
+            or pratica.get("shopify_order_name")
+            or pratica.get("order_name")
+            or pratica.get("order_id")
+            or order_key
+        )
+
+        has_rr = bool_from_any(pratica.get("ricevuta_ritorno"))
+
+        # 1. Aggiorna sempre la pratica
+        supabase.table("pratiche") \
+            .update({
+                "stato": "RICEVUTO_PAGATO",
+                "order_name": order_name_finale,
+                "shopify_order_name": order_name_finale,
+                "ricevuta_ritorno": has_rr,
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }) \
+            .eq("id", pratica_id) \
+            .execute()
+
+        # 2. Cerca se esiste già una riga H2H collegata al PDF
+        h2h_esistente = supabase.table("poste_h2h_orders") \
+            .select("id") \
+            .eq("pdf_url", pdf_url) \
+            .limit(1) \
+            .execute()
+
+        payload_full = {
+            "pdf_url": pdf_url,
+            "shopify_order_name": order_name_finale,
+            "stato": "RICEVUTO_PAGATO",
+            "ricevuta_ritorno": has_rr,
+            "mittente": pratica.get("mittente") or {},
+            "destinatario": pratica.get("destinatario") or {},
+            "poste_response": "Riparazione H2H manuale da dashboard"
+        }
+
+        payload_light = {
+            "pdf_url": pdf_url,
+            "shopify_order_name": order_name_finale,
+            "stato": "RICEVUTO_PAGATO",
+            "poste_response": "Riparazione H2H manuale da dashboard"
+        }
+
+        if h2h_esistente.data:
+            h2h_id = h2h_esistente.data[0].get("id")
+
+            try:
+                supabase.table("poste_h2h_orders") \
+                    .update(payload_full) \
+                    .eq("id", h2h_id) \
+                    .execute()
+            except Exception:
+                supabase.table("poste_h2h_orders") \
+                    .update(payload_light) \
+                    .eq("id", h2h_id) \
+                    .execute()
+
+        else:
+            try:
+                supabase.table("poste_h2h_orders") \
+                    .insert(payload_full) \
+                    .execute()
+            except Exception:
+                supabase.table("poste_h2h_orders") \
+                    .insert(payload_light) \
+                    .execute()
+
+        return RedirectResponse(
+            url="/dashboard/pratiche",
+            status_code=302
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "order_key": order_key
+        }
+
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
     filtro_stato = stato
