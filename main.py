@@ -1938,13 +1938,11 @@ def ricalcola_prezzo_poste(order_id: str):
             pass
 
         costo_valorizzato = estrai_costo_valorizza(valorizza_result)
-        costo_candidates = debug_costi_valorizza(valorizza_result)
 
         poste_response_payload = {
             "step": "RICALCOLO_VALORIZZA",
             "raw": str(valorizza_result),
-            "costo_valorizzato": costo_valorizzato,
-            "costo_candidates": costo_candidates
+            "costo_valorizzato": costo_valorizzato
         }
 
         supabase.table("poste_h2h_orders") \
