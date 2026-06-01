@@ -5303,6 +5303,139 @@ async def shopify_raccomandata_order(request: Request):
             "error": str(e)
         }
 
+@app.get("/dashboard/pratiche/invia-diretto-poste/{pratica_id}")
+def dashboard_invia_diretto_poste(pratica_id: str):
+    """
+    Invio diretto a Poste:
+    - calcola/prezza
+    - finalizza subito
+    - può generare costo H2H
+    """
+
+    try:
+        h2h_order_id = resolve_h2h_order_id(pratica_id)
+
+        if not h2h_order_id:
+            try:
+                supabase.table("pratiche").update({
+                    "stato": "ERRORE_POSTE",
+                    "poste_response": {
+                        "raw": "Impossibile trovare ordine H2H collegato alla pratica per invio diretto"
+                    },
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }).eq("id", pratica_id).execute()
+            except Exception:
+                pass
+
+            return RedirectResponse(
+                url="/dashboard/pratiche?stato=ERRORE_POSTE",
+                status_code=302
+            )
+
+        ordine_res = supabase.table("poste_h2h_orders") \
+            .select("*") \
+            .eq("id", h2h_order_id) \
+            .single() \
+            .execute()
+
+        if not ordine_res.data:
+            return RedirectResponse(
+                url="/dashboard/pratiche?stato=ERRORE_POSTE",
+                status_code=302
+            )
+
+        stato_attuale = ordine_res.data.get("stato")
+
+        if stato_attuale not in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"]:
+            return RedirectResponse(
+                url="/dashboard/pratiche",
+                status_code=302
+            )
+
+        # 1. Prima invia tecnicamente a Poste e recupera/prepara la prezzatura
+        process_result = process_poste_order(h2h_order_id)
+
+        if not process_result.get("success"):
+            errore = process_result.get("error") or str(process_result)
+
+            try:
+                supabase.table("poste_h2h_orders").update({
+                    "stato": "ERRORE_POSTE",
+                    "poste_response": errore
+                }).eq("id", h2h_order_id).execute()
+            except Exception:
+                pass
+
+            try:
+                supabase.table("pratiche").update({
+                    "stato": "ERRORE_POSTE",
+                    "poste_response": {
+                        "raw": errore
+                    },
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }).eq("id", pratica_id).execute()
+            except Exception:
+                pass
+
+            return RedirectResponse(
+                url="/dashboard/pratiche?stato=ERRORE_POSTE",
+                status_code=302
+            )
+
+        # 2. Poi finalizza realmente a Poste
+        confirm_result = confirm_poste_order(h2h_order_id)
+
+        if isinstance(confirm_result, dict) and not confirm_result.get("success"):
+            errore = confirm_result.get("error") or str(confirm_result)
+
+            try:
+                supabase.table("poste_h2h_orders").update({
+                    "stato": "ERRORE_POSTE",
+                    "poste_response": errore
+                }).eq("id", h2h_order_id).execute()
+            except Exception:
+                pass
+
+            try:
+                supabase.table("pratiche").update({
+                    "stato": "ERRORE_POSTE",
+                    "poste_response": {
+                        "raw": errore
+                    },
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }).eq("id", pratica_id).execute()
+            except Exception:
+                pass
+
+            return RedirectResponse(
+                url="/dashboard/pratiche?stato=ERRORE_POSTE",
+                status_code=302
+            )
+
+        return RedirectResponse(
+            url="/dashboard/pratiche?stato=INVIATO_POSTE",
+            status_code=302
+        )
+
+    except Exception as e:
+        print("ERRORE dashboard_invia_diretto_poste:", str(e))
+
+        try:
+            supabase.table("pratiche").update({
+                "stato": "ERRORE_POSTE",
+                "poste_response": {
+                    "raw": str(e)
+                },
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }).eq("id", pratica_id).execute()
+        except Exception:
+            pass
+
+        return RedirectResponse(
+            url="/dashboard/pratiche?stato=ERRORE_POSTE",
+            status_code=302
+        )
+
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
     filtro_stato = stato
@@ -5494,12 +5627,18 @@ def dashboard_pratiche(stato: str = None):
                 </span>
             """
 
-        elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
+        if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
             invia_poste_html = (
                 '<a class="btn-action" '
                 f'href="/dashboard/pratiche/invia-poste/{pratica_id}" '
                 'onclick="return confirm(\'Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.\')">'
                 '💶 Calcola prezzo Poste'
+                '</a>'
+
+                '<a class="btn-action btn-send" '
+                f'href="/dashboard/pratiche/invia-diretto-poste/{pratica_id}" '
+                'onclick="return confirm(\'ATTENZIONE: questa azione invia realmente la raccomandata a Poste e può generare costo H2H. Confermi di voler procedere?\')">'
+                '🚀 Invia diretto Poste'
                 '</a>'
             )
 
