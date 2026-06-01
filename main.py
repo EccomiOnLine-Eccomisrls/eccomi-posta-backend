@@ -5820,7 +5820,7 @@ else:
         </tr>
         """
 
-        h2h_led = "🟢" if POSTE_INVIO_AUTO else "🔴"
+    h2h_led = "🟢" if POSTE_INVIO_AUTO else "🔴"
     h2h_mode_label = "H2H AUTO" if POSTE_INVIO_AUTO else "H2H MANUALE"
     h2h_mode_bg = "#16a34a" if POSTE_INVIO_AUTO else "#dc2626"
 
