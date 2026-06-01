@@ -5494,7 +5494,7 @@ def dashboard_pratiche(stato: str = None):
         </span>
     """
 
-          if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
+            if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
             invia_poste_html = f"""
                 <a class="btn-action"
                    href="/dashboard/pratiche/invia-poste/{pratica_id}"
@@ -5544,6 +5544,7 @@ def dashboard_pratiche(stato: str = None):
                     🔒 Invia Poste bloccato
                 </span>
             """
+
 
         rows += f"""
         <tr class="main-row searchable-row" style="background:{row_bg};">
