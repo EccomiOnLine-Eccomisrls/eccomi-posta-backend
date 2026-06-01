@@ -5494,23 +5494,41 @@ def dashboard_pratiche(stato: str = None):
         if h.get("pdf_url")
     }
 
+        counter_result = (
+        supabase
+        .table("pratiche")
+        .select("stato")
+        .order("created_at", desc=True)
+        .limit(500)
+        .execute()
+    )
+
+    counter_pratiche = counter_result.data or []
+
+    counter_visibili = [
+        p for p in counter_pratiche
+        if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
+    ]
+
+    tot_tutti = len(counter_visibili)
+
     tot_errori = len([
-        p for p in pratiche
+        p for p in counter_visibili
         if p.get("stato") == "ERRORE_POSTE"
     ])
 
     tot_inviati = len([
-        p for p in pratiche
+        p for p in counter_visibili
         if p.get("stato") == "INVIATO_POSTE"
     ])
 
     tot_manuali = len([
-        p for p in pratiche
+        p for p in counter_visibili
         if p.get("stato") in ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"]
     ])
 
     tot_completati = len([
-        p for p in pratiche
+        p for p in counter_visibili
         if p.get("stato") == "COMPLETATO"
     ])
 
@@ -6062,6 +6080,10 @@ def dashboard_pratiche(stato: str = None):
                     {h2h_led} Modalità: {h2h_mode_label}
                 </div>
             </div>
+                        <a href="/dashboard/pratiche"
+               style="background:#111827;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
+                ⚫ Tutti: {tot_tutti}
+            </a>
 
             <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
                style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
