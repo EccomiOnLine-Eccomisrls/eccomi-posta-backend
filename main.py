@@ -6028,9 +6028,16 @@ def dashboard_pratiche(stato: str = None):
         <div class="topbar-sticky">
 
 <div style="margin-bottom:18px;">
-    <h1 style="margin:0 0 18px 0;">
-        📬 Eccomi Posta — Dashboard Pratiche
-    </h1>
+
+<h1 style="
+    margin:0 0 18px 0;
+    text-align:center;
+    width:100%;
+    font-size:34px;
+    font-weight:800;
+">
+    📬 Eccomi Posta — Dashboard Pratiche
+</h1>
 
     <div style="
         width:100%;
