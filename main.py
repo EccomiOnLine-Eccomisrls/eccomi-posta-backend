@@ -5438,7 +5438,7 @@ def dashboard_invia_diretto_poste(pratica_id: str):
 
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
-    filtro_stato = stato
+        filtro_stato = (stato or "").strip()
 
     query = (
         supabase
@@ -5449,17 +5449,25 @@ def dashboard_pratiche(stato: str = None):
             "id_richiesta,ricevuta_ritorno,created_at,updated_at"
         )
         .order("created_at", desc=True)
-        .limit(50)
+        .limit(80)
     )
 
-    if filtro_stato:
+    # Filtri singoli reali
+    if filtro_stato and filtro_stato not in ["TUTTI", "MANUALI"]:
         query = query.eq("stato", filtro_stato)
 
     result = query.execute()
     pratiche = result.data or []
 
-    # Nasconde dalla dashboard principale le pratiche non pagate o solo compilate
-    if not filtro_stato:
+    # Filtro gruppo Manuali
+    if filtro_stato == "MANUALI":
+        pratiche = [
+            p for p in pratiche
+            if p.get("stato") in ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"]
+        ]
+
+    # Dashboard principale: nasconde bozze e non pagati
+    elif not filtro_stato or filtro_stato == "TUTTI":
         pratiche = [
             p for p in pratiche
             if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
@@ -5493,6 +5501,10 @@ def dashboard_pratiche(stato: str = None):
         for h in h2h_rows
         if h.get("pdf_url")
     }
+
+        # ============================================================
+    # CONTATORI DASHBOARD
+    # ============================================================
 
     counter_result = (
         supabase
@@ -6081,32 +6093,38 @@ def dashboard_pratiche(stato: str = None):
                 </div>
             </div>
                         <a href="/dashboard/pratiche"
-               style="background:#111827;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                ⚫ Tutti: {tot_tutti}
-            </a>
+                           <div style="display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 14px 0;">
 
-            <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
-               style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                🔴 Errori: {tot_errori}
-            </a>
+                <a href="/dashboard/pratiche"
+                   style="background:#111827;color:white;padding:14px 18px;border-radius:14px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
+                    ⚫ Tutti: {tot_tutti}
+                </a>
 
-            <a href="/dashboard/pratiche?stato=INVIATO_POSTE"
-               style="background:#27ae60;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                🟢 Inviati: {tot_inviati}
-            </a>
+                <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
+                   style="background:#e74c3c;color:white;padding:14px 18px;border-radius:14px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
+                    🔴 Errori: {tot_errori}
+                </a>
 
-            <a href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE"
-               style="background:#f39c12;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                🟠 Manuali: {tot_manuali}
-            </a>
+                <a href="/dashboard/pratiche?stato=INVIATO_POSTE"
+                   style="background:#27ae60;color:white;padding:14px 18px;border-radius:14px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
+                    🟢 Inviati: {tot_inviati}
+                </a>
 
-            <a href="/dashboard/pratiche?stato=COMPLETATO"
-               style="background:#8e44ad;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                🟣 Completati: {tot_completati}
-            </a>
+                <a href="/dashboard/pratiche?stato=MANUALI"
+                   style="background:#f39c12;color:white;padding:14px 18px;border-radius:14px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
+                    🟠 Manuali: {tot_manuali}
+                </a>
 
-            <div style="display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 25px 0;">
-                <a class="btn-action {'btn-filter-active' if not filtro_stato else ''}"
+                <a href="/dashboard/pratiche?stato=COMPLETATO"
+                   style="background:#8e44ad;color:white;padding:14px 18px;border-radius:14px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
+                    🟣 Completati: {tot_completati}
+                </a>
+
+            </div>
+
+            <div style="display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 25px 0;">
+
+                <a class="btn-action {'btn-filter-active' if not filtro_stato or filtro_stato == 'TUTTI' else ''}"
                    href="/dashboard/pratiche">
                     Tutti
                 </a>
@@ -6121,8 +6139,8 @@ def dashboard_pratiche(stato: str = None):
                     Inviati
                 </a>
 
-                <a class="btn-action {'btn-filter-active' if filtro_stato == 'LAVORAZIONE_MANUALE' else ''}"
-                   href="/dashboard/pratiche?stato=LAVORAZIONE_MANUALE">
+                <a class="btn-action {'btn-filter-active' if filtro_stato == 'MANUALI' else ''}"
+                   href="/dashboard/pratiche?stato=MANUALI">
                     Manuali
                 </a>
 
