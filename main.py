@@ -3504,8 +3504,36 @@ def split_nome_cognome(full_name):
 
     return parts[0], " ".join(parts[1:])
 
-
 def parse_indirizzo_h2h(via):
+    via = clean_h2h_text(via)
+    via = (via or "").strip()
+    parts = via.split()
+
+    if not parts:
+        return "VIA", ""
+
+    dug_list = [
+        "VIA",
+        "VIALE",
+        "PIAZZA",
+        "PIAZZALE",
+        "VICOLO",
+        "VICO",
+        "STRADA",
+        "CORSO",
+        "LOCALITÀ",
+        "LOCALITA",
+        "CIRCONVALLAZIONE"
+    ]
+
+    first = parts[0].upper()
+
+    if first in dug_list:
+        return first, " ".join(parts[1:]).upper()
+
+    return "VIA", via.upper()
+
+
 def build_nominativo_h2h_from_data(data, NominativoType, IndirizzoType, label="indirizzo"):
     """
     Costruisce un Nominativo Poste partendo da:
@@ -3566,21 +3594,8 @@ def build_nominativo_h2h_from_data(data, NominativoType, IndirizzoType, label="i
         InesitateDigitali=False,
         CodiceFiscaleResult=0
     )
-    via = clean_h2h_text(via)
-    via = (via or "").strip()
-    parts = via.split()
 
-    if not parts:
-        return "VIA", ""
 
-    dug_list = ["VIA", "VIALE", "PIAZZA", "PIAZZALE", "VICOLO", "VICO", "STRADA", "CORSO", "LOCALITÀ", "LOCALITA", "CIRCONVALLAZIONE"]
-
-    first = parts[0].upper()
-
-    if first in dug_list:
-        return first, " ".join(parts[1:]).upper()
-
-    return "VIA", via.upper()
 
 @app.get("/shopify/telegramma/order")
 def shopify_telegramma_order_info():
