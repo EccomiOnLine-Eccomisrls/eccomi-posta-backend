@@ -5502,7 +5502,7 @@ def dashboard_pratiche(stato: str = None):
         if h.get("pdf_url")
     }
 
-        # ============================================================
+    # ============================================================
     # CONTATORI DASHBOARD
     # ============================================================
 
@@ -5987,6 +5987,22 @@ def dashboard_pratiche(stato: str = None):
                 box-shadow:0 2px 8px rgba(0,0,0,.10);
                 text-align:center;
             }}
+            
+             .mode-bar {{
+                width:100%;
+                box-sizing:border-box;
+                background:{h2h_mode_bg};
+                color:white;
+                padding:18px 24px;
+                border-radius:18px;
+                font-weight:bold;
+                font-size:22px;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                box-shadow:0 2px 8px rgba(0,0,0,.10);
+                text-align:center;
+            }}
 
             @media (max-width: 700px) {{
                 body {{
@@ -6082,7 +6098,7 @@ def dashboard_pratiche(stato: str = None):
         </style>
     </head>
 
-    <body>
+        <body>
         <div class="topbar-sticky">
 
             <div style="margin-bottom:18px;">
@@ -6092,8 +6108,8 @@ def dashboard_pratiche(stato: str = None):
                     {h2h_led} Modalità: {h2h_mode_label}
                 </div>
             </div>
-                        <a href="/dashboard/pratiche"
-                           <div style="display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 14px 0;">
+
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 14px 0;">
 
                 <a href="/dashboard/pratiche"
                    style="background:#111827;color:white;padding:14px 18px;border-radius:14px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
@@ -6175,6 +6191,7 @@ def dashboard_pratiche(stato: str = None):
                     "
                 >
             </div>
+
         </div>
 
         <table>
