@@ -2046,26 +2046,17 @@ def process_poste_order(order_id: str):
         DatiRicevutaType = client.get_type("ns0:DatiRicevuta")
 
         # =====================================================
-        # MITTENTE - struttura stabile testata
+        # MITTENTE / DESTINATARIO DINAMICI DA ORDINE SUPABASE
         # =====================================================
 
-        indirizzo_mitt = IndirizzoType(
-            DUG="VIALE",
-            Toponimo="STEFANO D'ARRIGO",
-            NumeroCivico="321"
-        )
+        mittente_data = ordine.get("mittente") or {}
+        destinatario_data = ordine.get("destinatario") or {}
 
-        nom_mitt = NominativoType(
-            Nome="SALVATORE",
-            Cognome="DEL LIBANO",
-            CAP="00131",
-            Citta="ROMA",
-            Provincia="RM",
-            Indirizzo=indirizzo_mitt,
-            TipoIndirizzo="NORMALE",
-            ForzaDestinazione=True,
-            InesitateDigitali=False,
-            CodiceFiscaleResult=0
+        nom_mitt = build_nominativo_h2h_from_data(
+            mittente_data,
+            NominativoType,
+            IndirizzoType,
+            label="mittente"
         )
 
         mittente = MittenteType(
@@ -2077,27 +2068,11 @@ def process_poste_order(order_id: str):
             Nominativo=nom_mitt
         ) if has_rr else None
 
-        # =====================================================
-        # DESTINATARIO - struttura stabile testata
-        # =====================================================
-
-        indirizzo_dest = IndirizzoType(
-            DUG="VIA",
-            Toponimo="PRAGA",
-            NumeroCivico="7"
-        )
-
-        nom_dest = NominativoType(
-            Nome="PIETRO",
-            Cognome="DEL LIBANO",
-            CAP="88842",
-            Citta="CUTRO",
-            Provincia="KR",
-            Indirizzo=indirizzo_dest,
-            TipoIndirizzo="NORMALE",
-            ForzaDestinazione=True,
-            InesitateDigitali=False,
-            CodiceFiscaleResult=0
+        nom_dest = build_nominativo_h2h_from_data(
+            destinatario_data,
+            NominativoType,
+            IndirizzoType,
+            label="destinatario"
         )
 
         destinatario = DestinatarioType(
@@ -3531,6 +3506,66 @@ def split_nome_cognome(full_name):
 
 
 def parse_indirizzo_h2h(via):
+def build_nominativo_h2h_from_data(data, NominativoType, IndirizzoType, label="indirizzo"):
+    """
+    Costruisce un Nominativo Poste partendo da:
+    - dict con raw: "NOME - Via Roma 1, 00100 Roma (RM)"
+    - dict strutturato: nome, via, civico, cap, comune, provincia
+    """
+
+    data = data or {}
+
+    if isinstance(data, str):
+        data = {"raw": data}
+
+    raw = str(data.get("raw") or "").strip()
+
+    if raw:
+        parsed = estrai_dati_rubrica_da_raw(raw)
+    else:
+        parsed = {
+            "nome": str(data.get("nome") or "").strip(),
+            "via": str(data.get("via") or "").strip(),
+            "civico": str(data.get("civico") or "").strip(),
+            "cap": str(data.get("cap") or "").strip(),
+            "comune": str(data.get("comune") or "").strip(),
+            "provincia": str(data.get("provincia") or "").strip().upper()[:2],
+        }
+
+    nome_completo = clean_h2h_text(parsed.get("nome") or "")
+    nome, cognome = split_nome_cognome(nome_completo)
+
+    via = clean_h2h_text(parsed.get("via") or "")
+    civico = clean_h2h_text(parsed.get("civico") or "")
+    cap = normalizza_cap(parsed.get("cap") or "")
+    comune = clean_h2h_text(parsed.get("comune") or "").upper()
+    provincia = normalizza_provincia(parsed.get("provincia") or "")
+
+    if not nome_completo or not via or not cap or not comune or not provincia:
+        raise ValueError(
+            f"Dati {label} incompleti: "
+            f"nome={nome_completo}, via={via}, civico={civico}, "
+            f"cap={cap}, comune={comune}, provincia={provincia}"
+        )
+
+    dug, toponimo = parse_indirizzo_h2h(via)
+
+    return NominativoType(
+        Nome=clean_h2h_text(nome).upper(),
+        Cognome=clean_h2h_text(cognome).upper(),
+        CAP=cap,
+        Citta=comune,
+        Provincia=provincia,
+        Indirizzo=IndirizzoType(
+            DUG=clean_h2h_text(dug).upper(),
+            Toponimo=clean_h2h_text(toponimo).upper(),
+            NumeroCivico=civico
+        ),
+        TipoIndirizzo="NORMALE",
+        ForzaDestinazione=True,
+        InesitateDigitali=False,
+        CodiceFiscaleResult=0
+    )
     via = clean_h2h_text(via)
     via = (via or "").strip()
     parts = via.split()
