@@ -5482,18 +5482,19 @@ def dashboard_pratiche(stato: str = None):
             row_bg = "#f9fafb"
 
         if stato_pratica == "BOZZA_CHECKOUT":
-    invia_poste_html = f"""
-        <a class="btn-action"
-           href="/dashboard/pratiche/marca-pagata/{pratica_id}"
-           onclick="return confirm('Confermi che questa pratica è stata pagata su Shopify? Questa azione NON invia a Poste.')">
-            💳 Segna pagata
-        </a>
+            invia_poste_html = f"""
+                <a class="btn-action"
+                   href="/dashboard/pratiche/marca-pagata/{pratica_id}"
+                   onclick="return confirm('Confermi che questa pratica è stata pagata su Shopify? Questa azione NON invia a Poste.')">
+                    💳 Segna pagata
+                </a>
 
-        <span class="btn-action btn-disabled">
-            🔒 Poste bloccato
-        </span>
-    """
-            if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
+                <span class="btn-action btn-disabled">
+                    🔒 Poste bloccato
+                </span>
+            """
+
+        elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
             invia_poste_html = (
                 '<a class="btn-action" '
                 f'href="/dashboard/pratiche/invia-poste/{pratica_id}" '
@@ -5541,8 +5542,6 @@ def dashboard_pratiche(stato: str = None):
                 '🔒 Invia Poste bloccato'
                 '</span>'
             )
-
-
         rows += f"""
         <tr class="main-row searchable-row" style="background:{row_bg};">
             <td>{clean_order_display(order_display)}</td>
