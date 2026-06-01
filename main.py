@@ -4950,6 +4950,359 @@ def dashboard_ripara_h2h_order(order_key: str, order_name: str = ""):
             "order_key": order_key
         }
 
+# ============================================================
+# PATCH RACCOMANDATA - PAGAMENTO SHOPIFY -> RICEVUTO_PAGATO + H2H
+# ============================================================
+
+def prop_value(props: dict, names, default=""):
+    """
+    Cerca una proprietà Shopify anche se il nome contiene emoji/spazi.
+    """
+    if not props:
+        return default
+
+    lowered = {
+        str(k).strip().lower(): v
+        for k, v in props.items()
+    }
+
+    for name in names:
+        key = str(name).strip().lower()
+        if key in lowered:
+            return lowered[key]
+
+    for k, v in props.items():
+        k_low = str(k).lower()
+        for name in names:
+            if str(name).lower() in k_low:
+                return v
+
+    return default
+
+
+def extract_racc_token_from_props(props: dict):
+    text = " ".join([
+        str(k) + " " + str(v)
+        for k, v in (props or {}).items()
+    ])
+
+    match = re.search(r"RACC-\d{4}-SHOPIFY-\d+", text)
+
+    if match:
+        return match.group(0)
+
+    return ""
+
+
+def crea_o_aggiorna_h2h_da_pratica(pratica: dict, stato="RICEVUTO_PAGATO", note=""):
+    """
+    Crea o aggiorna la riga tecnica poste_h2h_orders collegata alla pratica.
+    NON invia nulla a Poste.
+    NON genera costi.
+    """
+    pdf_url = pratica.get("pdf_url")
+
+    if not pdf_url:
+        return None
+
+    has_rr = bool_from_any(pratica.get("ricevuta_ritorno"))
+
+    order_name = (
+        pratica.get("shopify_order_name")
+        or pratica.get("order_name")
+        or pratica.get("order_id")
+        or ""
+    )
+
+    payload_full = {
+        "pdf_url": pdf_url,
+        "shopify_order_name": order_name,
+        "stato": stato,
+        "ricevuta_ritorno": has_rr,
+        "mittente": pratica.get("mittente") or {},
+        "destinatario": pratica.get("destinatario") or {},
+        "poste_response": note or "Preparazione H2H da pagamento Shopify"
+    }
+
+    payload_light = {
+        "pdf_url": pdf_url,
+        "shopify_order_name": order_name,
+        "stato": stato,
+        "poste_response": note or "Preparazione H2H da pagamento Shopify"
+    }
+
+    existing = supabase.table("poste_h2h_orders") \
+        .select("id") \
+        .eq("pdf_url", pdf_url) \
+        .limit(1) \
+        .execute()
+
+    if existing.data:
+        h2h_id = existing.data[0].get("id")
+
+        try:
+            supabase.table("poste_h2h_orders") \
+                .update(payload_full) \
+                .eq("id", h2h_id) \
+                .execute()
+        except Exception as e:
+            print("H2H update full fallito, provo light:", str(e))
+
+            supabase.table("poste_h2h_orders") \
+                .update(payload_light) \
+                .eq("id", h2h_id) \
+                .execute()
+
+        return h2h_id
+
+    try:
+        inserted = supabase.table("poste_h2h_orders") \
+            .insert(payload_full) \
+            .execute()
+    except Exception as e:
+        print("H2H insert full fallito, provo light:", str(e))
+
+        inserted = supabase.table("poste_h2h_orders") \
+            .insert(payload_light) \
+            .execute()
+
+    if inserted.data:
+        return inserted.data[0].get("id")
+
+    return None
+
+
+@app.get("/dashboard/pratiche/marca-pagata/{pratica_id}")
+def dashboard_marca_pratica_pagata(pratica_id: str, order_name: str = ""):
+    """
+    Ripara una pratica pagata rimasta in BOZZA_CHECKOUT.
+    NON chiama Poste.
+    NON genera costi.
+    """
+    try:
+        result = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not result.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = result.data
+
+        order_name_finale = (
+            order_name
+            or pratica.get("shopify_order_name")
+            or pratica.get("order_name")
+            or pratica.get("order_id")
+            or ""
+        )
+
+        update_data = {
+            "stato": "RICEVUTO_PAGATO",
+            "order_name": order_name_finale,
+            "shopify_order_name": order_name_finale,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+
+        supabase.table("pratiche") \
+            .update(update_data) \
+            .eq("id", pratica_id) \
+            .execute()
+
+        pratica.update(update_data)
+
+        h2h_id = crea_o_aggiorna_h2h_da_pratica(
+            pratica=pratica,
+            stato="RICEVUTO_PAGATO",
+            note="Pratica marcata pagata manualmente da dashboard"
+        )
+
+        return RedirectResponse(
+            url="/dashboard/pratiche",
+            status_code=302
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "pratica_id": pratica_id
+        }
+
+
+@app.post("/shopify/raccomandata/order")
+async def shopify_raccomandata_order(request: Request):
+    """
+    Webhook Shopify per ordini Raccomandata.
+    Da collegare a Shopify su ORDINE PAGATO.
+    Aggiorna BOZZA_CHECKOUT -> RICEVUTO_PAGATO e prepara H2H.
+    NON invia a Poste.
+    NON genera costi.
+    """
+    try:
+        order = await request.json()
+
+        order_id_raw = str(order.get("id") or "").strip()
+        order_key = f"SHOPIFY-{order_id_raw}" if order_id_raw else ""
+        order_name = str(order.get("name") or order_key).strip()
+        email = order.get("email") or order.get("contact_email") or ""
+
+        financial_status = str(order.get("financial_status") or "").lower().strip()
+
+        is_paid = financial_status in [
+            "paid",
+            "authorized",
+            "partially_paid"
+        ]
+
+        nuovo_stato = "RICEVUTO_PAGATO" if is_paid else "NON_PAGATO"
+
+        risultati = []
+
+        for item in order.get("line_items", []) or []:
+            title = str(item.get("title") or "")
+
+            if "RACCOMANDATA" not in title.upper():
+                continue
+
+            props = {}
+
+            for p in item.get("properties", []) or []:
+                name = str(p.get("name") or "").strip()
+                value = p.get("value")
+
+                if name:
+                    props[name] = value
+
+            token = extract_racc_token_from_props(props)
+
+            pratica = None
+
+            # 1. Cerca per order_id SHOPIFY
+            if order_key:
+                res = supabase.table("pratiche") \
+                    .select("*") \
+                    .or_(
+                        f"order_id.eq.{order_key},order_name.eq.{order_key},shopify_order_name.eq.{order_key}"
+                    ) \
+                    .order("created_at", desc=True) \
+                    .limit(1) \
+                    .execute()
+
+                if res.data:
+                    pratica = res.data[0]
+
+            # 2. Cerca per token nel pdf_url
+            if not pratica and token:
+                res = supabase.table("pratiche") \
+                    .select("*") \
+                    .ilike("pdf_url", f"%{token}%") \
+                    .order("created_at", desc=True) \
+                    .limit(1) \
+                    .execute()
+
+                if res.data:
+                    pratica = res.data[0]
+
+            # 3. Cerca fallback per numero ordine raw
+            if not pratica and order_id_raw:
+                res = supabase.table("pratiche") \
+                    .select("*") \
+                    .ilike("order_id", f"%{order_id_raw}%") \
+                    .order("created_at", desc=True) \
+                    .limit(1) \
+                    .execute()
+
+                if res.data:
+                    pratica = res.data[0]
+
+            if not pratica:
+                risultati.append({
+                    "success": False,
+                    "error": "Pratica raccomandata non trovata",
+                    "order_id": order_key,
+                    "order_name": order_name,
+                    "token": token
+                })
+                continue
+
+            pratica_id = pratica.get("id")
+
+            mittente_raw = prop_value(props, ["Mittente", "mittente"], "")
+            destinatario_raw = prop_value(props, ["Destinatario", "destinatario"], "")
+            testo_racc = prop_value(props, ["Testo raccomandata", "testo"], "")
+
+            has_rr = (
+                detect_ricevuta_ritorno(props)
+                or bool_from_any(pratica.get("ricevuta_ritorno"))
+            )
+
+            update_data = {
+                "stato": nuovo_stato,
+                "order_id": order_key or pratica.get("order_id"),
+                "order_name": order_name,
+                "shopify_order_name": order_name,
+                "cliente_email": email or pratica.get("cliente_email") or "",
+                "ricevuta_ritorno": has_rr,
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }
+
+            if mittente_raw:
+                update_data["mittente"] = {"raw": mittente_raw}
+
+            if destinatario_raw:
+                update_data["destinatario"] = {"raw": destinatario_raw}
+
+            if testo_racc:
+                update_data["testo"] = testo_racc
+
+            supabase.table("pratiche") \
+                .update(update_data) \
+                .eq("id", pratica_id) \
+                .execute()
+
+            pratica.update(update_data)
+
+            h2h_id = None
+
+            if nuovo_stato == "RICEVUTO_PAGATO":
+                h2h_id = crea_o_aggiorna_h2h_da_pratica(
+                    pratica=pratica,
+                    stato="RICEVUTO_PAGATO",
+                    note=f"Webhook Shopify ordine pagato {order_name}"
+                )
+
+            risultati.append({
+                "success": True,
+                "pratica_id": pratica_id,
+                "order_id": order_key,
+                "order_name": order_name,
+                "stato": nuovo_stato,
+                "ricevuta_ritorno": has_rr,
+                "h2h_id": h2h_id
+            })
+
+        return {
+            "success": True,
+            "order_id": order_key,
+            "order_name": order_name,
+            "financial_status": financial_status,
+            "raccomandate_processate": len(risultati),
+            "risultati": risultati
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
     filtro_stato = stato
@@ -5128,14 +5481,28 @@ def dashboard_pratiche(stato: str = None):
         elif stato_pratica in ["BOZZA_CHECKOUT", "NON_PAGATO"]:
             row_bg = "#f9fafb"
 
-        if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
-            invia_poste_html = f"""
-                <a class="btn-action"
-                   href="/dashboard/pratiche/invia-poste/{pratica_id}"
-                   onclick="return confirm('Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.')">
-                    💶 Calcola prezzo Poste
-                </a>
-            """
+        if stato_pratica == "BOZZA_CHECKOUT":
+    invia_poste_html = f"""
+        <a class="btn-action"
+           href="/dashboard/pratiche/marca-pagata/{pratica_id}"
+           onclick="return confirm('Confermi che questa pratica è stata pagata su Shopify? Questa azione NON invia a Poste.')">
+            💳 Segna pagata
+        </a>
+
+        <span class="btn-action btn-disabled">
+            🔒 Poste bloccato
+        </span>
+    """
+
+elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
+    invia_poste_html = f"""
+        <a class="btn-action"
+           href="/dashboard/pratiche/invia-poste/{pratica_id}"
+           onclick="return confirm('Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.')">
+            💶 Calcola prezzo Poste
+        </a>
+    """
+
 
         elif stato_pratica == "PREZZATA_DA_CONFERMARE" and h2h_order_id:
             if costo_display:
