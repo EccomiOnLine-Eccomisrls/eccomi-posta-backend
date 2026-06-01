@@ -5494,15 +5494,14 @@ def dashboard_pratiche(stato: str = None):
         </span>
     """
 
-  if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
-    invia_poste_html = f"""
-        <a class="btn-action"
-           href="/dashboard/pratiche/invia-poste/{pratica_id}"
-           onclick="return confirm('Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.')">
-            💶 Calcola prezzo Poste
-        </a>
-    """
-
+          if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
+            invia_poste_html = f"""
+                <a class="btn-action"
+                   href="/dashboard/pratiche/invia-poste/{pratica_id}"
+                   onclick="return confirm('Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.')">
+                    💶 Calcola prezzo Poste
+                </a>
+            """
 
         elif stato_pratica == "PREZZATA_DA_CONFERMARE" and h2h_order_id:
             if costo_display:
@@ -5520,8 +5519,10 @@ def dashboard_pratiche(stato: str = None):
                 """
             else:
                 invia_poste_html = f"""
-                    <a class="btn-action" href="/poste/h2h/ricalcola-prezzo/{h2h_order_id}" target="_blank"
-                    onclick="return confirm('Vuoi ricalcolare il prezzo Poste senza finalizzare la raccomandata?')">
+                    <a class="btn-action"
+                       href="/poste/h2h/ricalcola-prezzo/{h2h_order_id}"
+                       target="_blank"
+                       onclick="return confirm('Vuoi ricalcolare il prezzo Poste senza finalizzare la raccomandata?')">
                         🔁 Ricalcola prezzo
                     </a>
 
