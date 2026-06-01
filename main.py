@@ -5435,40 +5435,81 @@ def dashboard_invia_diretto_poste(pratica_id: str):
             url="/dashboard/pratiche?stato=ERRORE_POSTE",
             status_code=302
         )
+        
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
-    filtro_stato = stato
+    filtro_stato = (stato or "").strip().upper() or None
 
-    # ============================================================
-    # QUERY PRINCIPALE PRATICHE
-    # ============================================================
-
-    query = (
-        supabase
-        .table("pratiche")
-        .select(
-            "id,order_id,order_name,shopify_order_name,tipo_servizio,"
-            "cliente_email,stato,numero_raccomandata,pdf_url,"
-            "id_richiesta,ricevuta_ritorno,created_at,updated_at"
-        )
-        .order("created_at", desc=True)
-        .limit(50)
+result = (
+    supabase
+    .table("pratiche")
+    .select(
+        "id,order_id,order_name,shopify_order_name,tipo_servizio,"
+        "cliente_email,stato,numero_raccomandata,pdf_url,"
+        "id_richiesta,ricevuta_ritorno,created_at,updated_at"
     )
+    .order("created_at", desc=True)
+    .limit(100)
+    .execute()
+)
 
-    if filtro_stato == "MANUALI":
-        query = query.in_("stato", ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"])
-    elif filtro_stato:
-        query = query.eq("stato", filtro_stato)
+tutte_pratiche = result.data or []
 
-    result = query.execute()
-    pratiche = result.data or []
+# Home / Tutti: nasconde bozze e non pagati
+if not filtro_stato or filtro_stato == "TUTTI":
+    pratiche = [
+        p for p in tutte_pratiche
+        if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
+    ]
 
-    # Nasconde dalla dashboard principale le pratiche non pagate o solo compilate
-    if not filtro_stato:
-        pratiche = [
-            p for p in pratiche
-            if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
-        ]
+# Errori
+elif filtro_stato in ["ERRORI", "ERRORE_POSTE"]:
+    pratiche = [
+        p for p in tutte_pratiche
+        if p.get("stato") == "ERRORE_POSTE"
+    ]
+
+# Inviati
+elif filtro_stato in ["INVIATI", "INVIATO_POSTE"]:
+    pratiche = [
+        p for p in tutte_pratiche
+        if p.get("stato") == "INVIATO_POSTE"
+    ]
+
+# Manuali: qui ci sono 2 stati reali
+elif filtro_stato == "MANUALI":
+    pratiche = [
+        p for p in tutte_pratiche
+        if p.get("stato") in ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"]
+    ]
+
+# Completati
+elif filtro_stato in ["COMPLETATI", "COMPLETATO"]:
+    pratiche = [
+        p for p in tutte_pratiche
+        if p.get("stato") == "COMPLETATO"
+    ]
+
+# Bozze checkout
+elif filtro_stato == "BOZZA_CHECKOUT":
+    pratiche = [
+        p for p in tutte_pratiche
+        if p.get("stato") == "BOZZA_CHECKOUT"
+    ]
+
+# Non pagati
+elif filtro_stato == "NON_PAGATO":
+    pratiche = [
+        p for p in tutte_pratiche
+        if p.get("stato") == "NON_PAGATO"
+    ]
+
+# Fallback
+else:
+    pratiche = [
+        p for p in tutte_pratiche
+        if p.get("stato") == filtro_stato
+    ]
 
     h2h_result = (
         supabase
