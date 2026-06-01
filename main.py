@@ -5493,57 +5493,54 @@ def dashboard_pratiche(stato: str = None):
             🔒 Poste bloccato
         </span>
     """
-
             if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
-            invia_poste_html = f"""
-                <a class="btn-action"
-                   href="/dashboard/pratiche/invia-poste/{pratica_id}"
-                   onclick="return confirm('Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.')">
-                    💶 Calcola prezzo Poste
-                </a>
-            """
+            invia_poste_html = (
+                '<a class="btn-action" '
+                f'href="/dashboard/pratiche/invia-poste/{pratica_id}" '
+                'onclick="return confirm(\'Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.\')">'
+                '💶 Calcola prezzo Poste'
+                '</a>'
+            )
 
         elif stato_pratica == "PREZZATA_DA_CONFERMARE" and h2h_order_id:
             if costo_display:
-                invia_poste_html = f"""
-                    <span class="btn-price">
-                        💶 Prezzo Poste: {costo_display}
-                    </span>
-
-                    <a class="btn-action btn-send"
-                       href="/poste/h2h/finalizza/{h2h_order_id}"
-                       target="_blank"
-                       onclick="return confirm('Confermi finalizzazione Poste al prezzo indicato? Questa operazione può generare costo H2H.')">
-                        ✅ Finalizza Poste
-                    </a>
-                """
+                invia_poste_html = (
+                    '<span class="btn-price">'
+                    f'💶 Prezzo Poste: {costo_display}'
+                    '</span>'
+                    '<a class="btn-action btn-send" '
+                    f'href="/poste/h2h/finalizza/{h2h_order_id}" '
+                    'target="_blank" '
+                    'onclick="return confirm(\'Confermi finalizzazione Poste al prezzo indicato? Questa operazione può generare costo H2H.\')">'
+                    '✅ Finalizza Poste'
+                    '</a>'
+                )
             else:
-                invia_poste_html = f"""
-                    <a class="btn-action"
-                       href="/poste/h2h/ricalcola-prezzo/{h2h_order_id}"
-                       target="_blank"
-                       onclick="return confirm('Vuoi ricalcolare il prezzo Poste senza finalizzare la raccomandata?')">
-                        🔁 Ricalcola prezzo
-                    </a>
-
-                    <span class="btn-action btn-disabled">
-                        ✅ Finalizza bloccato
-                    </span>
-                """
+                invia_poste_html = (
+                    '<a class="btn-action" '
+                    f'href="/poste/h2h/ricalcola-prezzo/{h2h_order_id}" '
+                    'target="_blank" '
+                    'onclick="return confirm(\'Vuoi ricalcolare il prezzo Poste senza finalizzare la raccomandata?\')">'
+                    '🔁 Ricalcola prezzo'
+                    '</a>'
+                    '<span class="btn-action btn-disabled">'
+                    '✅ Finalizza bloccato'
+                    '</span>'
+                )
 
         elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE", "PREZZATA_DA_CONFERMARE"] and not h2h_order_id:
-            invia_poste_html = """
-                <span class="btn-action btn-disabled">
-                    ⚠️ H2H non pronto
-                </span>
-            """
+            invia_poste_html = (
+                '<span class="btn-action btn-disabled">'
+                '⚠️ H2H non pronto'
+                '</span>'
+            )
 
         else:
-            invia_poste_html = """
-                <span class="btn-action btn-disabled">
-                    🔒 Invia Poste bloccato
-                </span>
-            """
+            invia_poste_html = (
+                '<span class="btn-action btn-disabled">'
+                '🔒 Invia Poste bloccato'
+                '</span>'
+            )
 
 
         rows += f"""
