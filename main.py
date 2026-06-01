@@ -5435,10 +5435,55 @@ def dashboard_invia_diretto_poste(pratica_id: str):
             url="/dashboard/pratiche?stato=ERRORE_POSTE",
             status_code=302
         )
-
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
-        filtro_stato = (stato or "").strip()
+    filtro_stato = stato
+
+    # ============================================================
+    # CONTATORI DASHBOARD
+    # ============================================================
+
+    counter_result = (
+        supabase
+        .table("pratiche")
+        .select("id,stato")
+        .order("created_at", desc=True)
+        .limit(500)
+        .execute()
+    )
+
+    counter_rows = counter_result.data or []
+
+    counter_visibili = [
+        p for p in counter_rows
+        if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
+    ]
+
+    tot_tutti = len(counter_visibili)
+
+    tot_errori = len([
+        p for p in counter_visibili
+        if p.get("stato") == "ERRORE_POSTE"
+    ])
+
+    tot_inviati = len([
+        p for p in counter_visibili
+        if p.get("stato") == "INVIATO_POSTE"
+    ])
+
+    tot_manuali = len([
+        p for p in counter_visibili
+        if p.get("stato") in ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"]
+    ])
+
+    tot_completati = len([
+        p for p in counter_visibili
+        if p.get("stato") == "COMPLETATO"
+    ])
+
+    # ============================================================
+    # QUERY PRINCIPALE PRATICHE
+    # ============================================================
 
     query = (
         supabase
@@ -5449,25 +5494,19 @@ def dashboard_pratiche(stato: str = None):
             "id_richiesta,ricevuta_ritorno,created_at,updated_at"
         )
         .order("created_at", desc=True)
-        .limit(80)
+        .limit(50)
     )
 
-    # Filtri singoli reali
-    if filtro_stato and filtro_stato not in ["TUTTI", "MANUALI"]:
+    if filtro_stato == "MANUALI":
+        query = query.in_("stato", ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"])
+    elif filtro_stato:
         query = query.eq("stato", filtro_stato)
 
     result = query.execute()
     pratiche = result.data or []
 
-    # Filtro gruppo Manuali
-    if filtro_stato == "MANUALI":
-        pratiche = [
-            p for p in pratiche
-            if p.get("stato") in ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"]
-        ]
-
-    # Dashboard principale: nasconde bozze e non pagati
-    elif not filtro_stato or filtro_stato == "TUTTI":
+    # Nasconde dalla dashboard principale le pratiche non pagate o solo compilate
+    if not filtro_stato:
         pratiche = [
             p for p in pratiche
             if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
