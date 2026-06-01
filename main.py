@@ -5752,7 +5752,7 @@ def dashboard_pratiche(stato: str = None):
         </tr>
         """
 
-    h2h_led = "🟢" if POSTE_INVIO_AUTO else "🔴"
+        h2h_led = "🟢" if POSTE_INVIO_AUTO else "🔴"
     h2h_mode_label = "H2H AUTO" if POSTE_INVIO_AUTO else "H2H MANUALE"
     h2h_mode_bg = "#16a34a" if POSTE_INVIO_AUTO else "#dc2626"
 
@@ -5783,6 +5783,11 @@ def dashboard_pratiche(stato: str = None):
 
             h1 {{
                 color:#222;
+                text-align:center;
+                margin:0 0 18px 0;
+                width:100%;
+                font-size:34px;
+                font-weight:800;
             }}
 
             table {{
@@ -5937,16 +5942,38 @@ def dashboard_pratiche(stato: str = None):
                 padding-bottom: 10px;
             }}
 
+            .mode-bar {{
+                width:100%;
+                box-sizing:border-box;
+                background:{h2h_mode_bg};
+                color:white;
+                padding:18px 24px;
+                border-radius:18px;
+                font-weight:bold;
+                font-size:22px;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                box-shadow:0 2px 8px rgba(0,0,0,.10);
+                text-align:center;
+            }}
+
             @media (max-width: 700px) {{
                 body {{
                     padding:14px !important;
                 }}
 
-h1 {
-    font-size:24px !important;
-    line-height:1.2 !important;
-    text-align:center !important;
-}
+                h1 {{
+                    font-size:24px !important;
+                    line-height:1.2 !important;
+                    text-align:center !important;
+                }}
+
+                .mode-bar {{
+                    font-size:18px !important;
+                    padding:15px 16px !important;
+                    border-radius:16px !important;
+                }}
 
                 table, thead, tbody, th, td, tr {{
                     display:block !important;
@@ -6028,36 +6055,13 @@ h1 {
     <body>
         <div class="topbar-sticky">
 
-<div style="margin-bottom:18px;">
+            <div style="margin-bottom:18px;">
+                <h1>📬 Eccomi Posta — Dashboard Pratiche</h1>
 
-<h1 style="
-    margin:0 0 18px 0;
-    text-align:center;
-    width:100%;
-    font-size:34px;
-    font-weight:800;
-">
-    📬 Eccomi Posta — Dashboard Pratiche
-</h1>
-
-    <div style="
-        width:100%;
-        box-sizing:border-box;
-        background:{h2h_mode_bg};
-        color:white;
-        padding:18px 24px;
-        border-radius:18px;
-        font-weight:bold;
-        font-size:22px;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        box-shadow:0 2px 8px rgba(0,0,0,.10);
-        text-align:center;
-    ">
-        {h2h_led} Modalità: {h2h_mode_label}
-    </div>
-</div>
+                <div class="mode-bar">
+                    {h2h_led} Modalità: {h2h_mode_label}
+                </div>
+            </div>
 
             <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
                style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
