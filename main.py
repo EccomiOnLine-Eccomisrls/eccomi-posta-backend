@@ -6026,37 +6026,30 @@ def dashboard_pratiche(stato: str = None):
 
     <body>
         <div class="topbar-sticky">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;">
-                <h1 style="margin:0;">📬 Eccomi Posta — Dashboard Pratiche</h1>
 
-                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-                    <div style="
-                        background:{h2h_mode_bg};
-                        color:white;
-                        padding:14px 20px;
-                        border-radius:16px;
-                        font-weight:bold;
-                        font-size:18px;
-                        display:inline-block;
-                        box-shadow:0 2px 8px rgba(0,0,0,.10);
-                    ">
-                        {h2h_led} Modalità: {h2h_mode_label}
-                    </div>
+<div style="margin-bottom:18px;">
+    <h1 style="margin:0 0 18px 0;">
+        📬 Eccomi Posta — Dashboard Pratiche
+    </h1>
 
-                    <div style="
-                        background:#111827;
-                        color:white;
-                        padding:14px 20px;
-                        border-radius:16px;
-                        font-weight:bold;
-                        font-size:18px;
-                        display:inline-block;
-                        box-shadow:0 2px 8px rgba(0,0,0,.10);
-                    ">
-                        🔄 Auto-refresh: 15s
-                    </div>
-                </div>
-            </div>
+    <div style="
+        width:100%;
+        box-sizing:border-box;
+        background:{h2h_mode_bg};
+        color:white;
+        padding:18px 24px;
+        border-radius:18px;
+        font-weight:bold;
+        font-size:22px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        box-shadow:0 2px 8px rgba(0,0,0,.10);
+        text-align:center;
+    ">
+        {h2h_led} Modalità: {h2h_mode_label}
+    </div>
+</div>
 
             <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
                style="background:#e74c3c;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
