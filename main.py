@@ -5440,48 +5440,6 @@ def dashboard_pratiche(stato: str = None):
     filtro_stato = stato
 
     # ============================================================
-    # CONTATORI DASHBOARD
-    # ============================================================
-
-    counter_result = (
-        supabase
-        .table("pratiche")
-        .select("id,stato")
-        .order("created_at", desc=True)
-        .limit(500)
-        .execute()
-    )
-
-    counter_rows = counter_result.data or []
-
-    counter_visibili = [
-        p for p in counter_rows
-        if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
-    ]
-
-    tot_tutti = len(counter_visibili)
-
-    tot_errori = len([
-        p for p in counter_visibili
-        if p.get("stato") == "ERRORE_POSTE"
-    ])
-
-    tot_inviati = len([
-        p for p in counter_visibili
-        if p.get("stato") == "INVIATO_POSTE"
-    ])
-
-    tot_manuali = len([
-        p for p in counter_visibili
-        if p.get("stato") in ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"]
-    ])
-
-    tot_completati = len([
-        p for p in counter_visibili
-        if p.get("stato") == "COMPLETATO"
-    ])
-
-    # ============================================================
     # QUERY PRINCIPALE PRATICHE
     # ============================================================
 
@@ -6146,35 +6104,6 @@ def dashboard_pratiche(stato: str = None):
                 <div class="mode-bar">
                     {h2h_led} Modalità: {h2h_mode_label}
                 </div>
-            </div>
-
-            <div style="display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 14px 0;">
-
-                <a href="/dashboard/pratiche"
-                   style="background:#111827;color:white;padding:14px 18px;border-radius:14px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                    ⚫ Tutti: {tot_tutti}
-                </a>
-
-                <a href="/dashboard/pratiche?stato=ERRORE_POSTE"
-                   style="background:#e74c3c;color:white;padding:14px 18px;border-radius:14px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                    🔴 Errori: {tot_errori}
-                </a>
-
-                <a href="/dashboard/pratiche?stato=INVIATO_POSTE"
-                   style="background:#27ae60;color:white;padding:14px 18px;border-radius:14px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                    🟢 Inviati: {tot_inviati}
-                </a>
-
-                <a href="/dashboard/pratiche?stato=MANUALI"
-                   style="background:#f39c12;color:white;padding:14px 18px;border-radius:14px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                    🟠 Manuali: {tot_manuali}
-                </a>
-
-                <a href="/dashboard/pratiche?stato=COMPLETATO"
-                   style="background:#8e44ad;color:white;padding:14px 18px;border-radius:14px;font-weight:bold;font-size:18px;text-decoration:none;display:inline-block;">
-                    🟣 Completati: {tot_completati}
-                </a>
-
             </div>
 
             <div style="display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 25px 0;">
