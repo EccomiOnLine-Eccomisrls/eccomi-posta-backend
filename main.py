@@ -5494,7 +5494,7 @@ def dashboard_pratiche(stato: str = None):
         if h.get("pdf_url")
     }
 
-        counter_result = (
+    counter_result = (
         supabase
         .table("pratiche")
         .select("stato")
