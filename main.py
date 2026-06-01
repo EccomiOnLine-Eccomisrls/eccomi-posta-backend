@@ -5440,76 +5440,68 @@ def dashboard_invia_diretto_poste(pratica_id: str):
 def dashboard_pratiche(stato: str = None):
     filtro_stato = (stato or "").strip().upper() or None
 
-result = (
-    supabase
-    .table("pratiche")
-    .select(
-        "id,order_id,order_name,shopify_order_name,tipo_servizio,"
-        "cliente_email,stato,numero_raccomandata,pdf_url,"
-        "id_richiesta,ricevuta_ritorno,created_at,updated_at"
+    result = (
+        supabase
+        .table("pratiche")
+        .select(
+            "id,order_id,order_name,shopify_order_name,tipo_servizio,"
+            "cliente_email,stato,numero_raccomandata,pdf_url,"
+            "id_richiesta,ricevuta_ritorno,created_at,updated_at"
+        )
+        .order("created_at", desc=True)
+        .limit(100)
+        .execute()
     )
-    .order("created_at", desc=True)
-    .limit(100)
-    .execute()
-)
 
-tutte_pratiche = result.data or []
+    tutte_pratiche = result.data or []
 
-# Home / Tutti: nasconde bozze e non pagati
-if not filtro_stato or filtro_stato == "TUTTI":
-    pratiche = [
-        p for p in tutte_pratiche
-        if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
-    ]
+    if not filtro_stato or filtro_stato == "TUTTI":
+        pratiche = [
+            p for p in tutte_pratiche
+            if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
+        ]
 
-# Errori
-elif filtro_stato in ["ERRORI", "ERRORE_POSTE"]:
-    pratiche = [
-        p for p in tutte_pratiche
-        if p.get("stato") == "ERRORE_POSTE"
-    ]
+    elif filtro_stato in ["ERRORI", "ERRORE_POSTE"]:
+        pratiche = [
+            p for p in tutte_pratiche
+            if p.get("stato") == "ERRORE_POSTE"
+        ]
 
-# Inviati
-elif filtro_stato in ["INVIATI", "INVIATO_POSTE"]:
-    pratiche = [
-        p for p in tutte_pratiche
-        if p.get("stato") == "INVIATO_POSTE"
-    ]
+    elif filtro_stato in ["INVIATI", "INVIATO_POSTE"]:
+        pratiche = [
+            p for p in tutte_pratiche
+            if p.get("stato") == "INVIATO_POSTE"
+        ]
 
-# Manuali: qui ci sono 2 stati reali
-elif filtro_stato == "MANUALI":
-    pratiche = [
-        p for p in tutte_pratiche
-        if p.get("stato") in ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"]
-    ]
+    elif filtro_stato == "MANUALI":
+        pratiche = [
+            p for p in tutte_pratiche
+            if p.get("stato") in ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"]
+        ]
 
-# Completati
-elif filtro_stato in ["COMPLETATI", "COMPLETATO"]:
-    pratiche = [
-        p for p in tutte_pratiche
-        if p.get("stato") == "COMPLETATO"
-    ]
+    elif filtro_stato in ["COMPLETATI", "COMPLETATO"]:
+        pratiche = [
+            p for p in tutte_pratiche
+            if p.get("stato") == "COMPLETATO"
+        ]
 
-# Bozze checkout
-elif filtro_stato == "BOZZA_CHECKOUT":
-    pratiche = [
-        p for p in tutte_pratiche
-        if p.get("stato") == "BOZZA_CHECKOUT"
-    ]
+    elif filtro_stato == "BOZZA_CHECKOUT":
+        pratiche = [
+            p for p in tutte_pratiche
+            if p.get("stato") == "BOZZA_CHECKOUT"
+        ]
 
-# Non pagati
-elif filtro_stato == "NON_PAGATO":
-    pratiche = [
-        p for p in tutte_pratiche
-        if p.get("stato") == "NON_PAGATO"
-    ]
+    elif filtro_stato == "NON_PAGATO":
+        pratiche = [
+            p for p in tutte_pratiche
+            if p.get("stato") == "NON_PAGATO"
+        ]
 
-# Fallback
-else:
-    pratiche = [
-        p for p in tutte_pratiche
-        if p.get("stato") == filtro_stato
-    ]
+    else:
+        pratiche = [
+            p for p in tutte_pratiche
+            if p.get("stato") == filtro_stato
+        ]
 
     h2h_result = (
         supabase
@@ -5540,47 +5532,12 @@ else:
         if h.get("pdf_url")
     }
 
-    # ============================================================
-    # CONTATORI DASHBOARD
-    # ============================================================
-
-    counter_result = (
-        supabase
-        .table("pratiche")
-        .select("stato")
-        .order("created_at", desc=True)
-        .limit(500)
-        .execute()
-    )
-
-    counter_pratiche = counter_result.data or []
-
     counter_visibili = [
-        p for p in counter_pratiche
+        p for p in tutte_pratiche
         if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
     ]
 
     tot_tutti = len(counter_visibili)
-
-    tot_errori = len([
-        p for p in counter_visibili
-        if p.get("stato") == "ERRORE_POSTE"
-    ])
-
-    tot_inviati = len([
-        p for p in counter_visibili
-        if p.get("stato") == "INVIATO_POSTE"
-    ])
-
-    tot_manuali = len([
-        p for p in counter_visibili
-        if p.get("stato") in ["LAVORAZIONE_MANUALE", "RICEVUTO_MANUALE"]
-    ])
-
-    tot_completati = len([
-        p for p in counter_visibili
-        if p.get("stato") == "COMPLETATO"
-    ])
 
     rows = ""
 
@@ -5695,7 +5652,7 @@ else:
                 </span>
             """
 
-        if stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
+        elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
             invia_poste_html = (
                 '<a class="btn-action" '
                 f'href="/dashboard/pratiche/invia-poste/{pratica_id}" '
@@ -5749,6 +5706,7 @@ else:
                 '🔒 Invia Poste bloccato'
                 '</span>'
             )
+
         rows += f"""
         <tr class="main-row searchable-row" style="background:{row_bg};">
             <td>{clean_order_display(order_display)}</td>
@@ -5792,13 +5750,12 @@ else:
 
                     <a class="btn-action"
                        href="/dashboard/pratiche/manuale/{pratica_id}"
-                       target="_blank">
+                       onclick="return confirm('Spostare questa pratica in lavorazione manuale?')">
                         Manuale
                     </a>
 
                     <a class="btn-action"
                        href="/dashboard/pratiche/completa/{pratica_id}"
-                       target="_blank"
                        onclick="return confirm('Confermi di voler COMPLETARE questa pratica?')">
                         Completa
                     </a>
@@ -5811,7 +5768,6 @@ else:
 
                     <a class="btn-action btn-delete"
                        href="/dashboard/pratiche/elimina/{pratica_id}"
-                       target="_blank"
                        onclick="return confirm('Confermi di voler eliminare questa pratica?')">
                         Elimina
                     </a>
@@ -6025,22 +5981,6 @@ else:
                 box-shadow:0 2px 8px rgba(0,0,0,.10);
                 text-align:center;
             }}
-            
-             .mode-bar {{
-                width:100%;
-                box-sizing:border-box;
-                background:{h2h_mode_bg};
-                color:white;
-                padding:18px 24px;
-                border-radius:18px;
-                font-weight:bold;
-                font-size:22px;
-                display:flex;
-                align-items:center;
-                justify-content:center;
-                box-shadow:0 2px 8px rgba(0,0,0,.10);
-                text-align:center;
-            }}
 
             @media (max-width: 700px) {{
                 body {{
@@ -6136,7 +6076,7 @@ else:
         </style>
     </head>
 
-        <body>
+    <body>
         <div class="topbar-sticky">
 
             <div style="margin-bottom:18px;">
@@ -6151,7 +6091,7 @@ else:
 
                 <a class="btn-action {'btn-filter-active' if not filtro_stato or filtro_stato == 'TUTTI' else ''}"
                    href="/dashboard/pratiche">
-                    Tutti
+                    Tutti ({tot_tutti})
                 </a>
 
                 <a class="btn-action {'btn-filter-active' if filtro_stato == 'ERRORE_POSTE' else ''}"
@@ -6390,11 +6330,11 @@ def dashboard_pratica_manuale(pratica_id: str):
         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
     }).eq("id", pratica_id).execute()
 
-    return {
-        "success": True,
-        "pratica_id": pratica_id,
-        "nuovo_stato": "LAVORAZIONE_MANUALE"
-    }
+    return RedirectResponse(
+        url="/dashboard/pratiche?stato=MANUALI",
+        status_code=302
+    )
+
 
 @app.get("/dashboard/pratiche/completa/{pratica_id}")
 def dashboard_pratica_completa(pratica_id: str):
@@ -6404,11 +6344,10 @@ def dashboard_pratica_completa(pratica_id: str):
         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
     }).eq("id", pratica_id).execute()
 
-    return {
-        "success": True,
-        "pratica_id": pratica_id,
-        "nuovo_stato": "COMPLETATO"
-    }
+    return RedirectResponse(
+        url="/dashboard/pratiche?stato=COMPLETATO",
+        status_code=302
+    )
 
 @app.get("/dashboard/pratiche/elimina/{pratica_id}")
 def dashboard_pratica_elimina(pratica_id: str):
