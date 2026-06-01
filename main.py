@@ -5942,10 +5942,11 @@ def dashboard_pratiche(stato: str = None):
                     padding:14px !important;
                 }}
 
-                h1 {{
-                    font-size:24px !important;
-                    line-height:1.2 !important;
-                }}
+h1 {
+    font-size:24px !important;
+    line-height:1.2 !important;
+    text-align:center !important;
+}
 
                 table, thead, tbody, th, td, tr {{
                     display:block !important;
