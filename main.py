@@ -3535,12 +3535,6 @@ def parse_indirizzo_h2h(via):
 
 
 def build_nominativo_h2h_from_data(data, NominativoType, IndirizzoType, label="indirizzo"):
-    """
-    Costruisce un Nominativo Poste partendo da:
-    - dict con raw: "NOME - Via Roma 1, 00100 Roma (RM)"
-    - dict strutturato: nome, via, civico, cap, comune, provincia
-    """
-
     data = data or {}
 
     if isinstance(data, str):
@@ -3594,8 +3588,6 @@ def build_nominativo_h2h_from_data(data, NominativoType, IndirizzoType, label="i
         InesitateDigitali=False,
         CodiceFiscaleResult=0
     )
-
-
 
 @app.get("/shopify/telegramma/order")
 def shopify_telegramma_order_info():
