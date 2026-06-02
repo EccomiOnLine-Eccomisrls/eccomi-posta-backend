@@ -5814,6 +5814,18 @@ def dashboard_pratiche(stato: str = None):
                 '</span>'
             )
 
+                ricevuta_poste_html = ""
+
+        if stato_pratica == "INVIATO_POSTE":
+            ricevuta_poste_html = f"""
+                <a class="btn-action btn-send"
+                   href="/dashboard/pratiche/ricevuta-poste/{pratica_id}"
+                   target="_blank"
+                   onclick="return confirm('Vuoi recuperare e salvare la ricevuta ufficiale Poste? Non verrà spedito nulla di nuovo.')">
+                    📥 Ricevuta Poste
+                </a>
+            """
+
         rows += f"""
         <tr class="main-row searchable-row" style="background:{row_bg};">
             <td>{clean_order_display(order_display)}</td>
@@ -5872,6 +5884,8 @@ def dashboard_pratiche(stato: str = None):
                        target="_blank">
                         PDF Cliente
                     </a>
+        
+                    {ricevuta_poste_html}
 
                     <a class="btn-action btn-delete"
                        href="/dashboard/pratiche/elimina/{pratica_id}"
