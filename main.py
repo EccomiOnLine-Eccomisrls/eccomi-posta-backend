@@ -548,6 +548,63 @@ def debug_email_function():
         "cta_url": os.getenv("ECCOMI_POSTA_CTA_URL", "")
     }
 
+@app.get("/debug/send-email-test")
+@app.get("/poste/debug/send-email-test")
+def debug_send_email_test(to: str = ""):
+    """
+    Invia una email di test Eccomi Posta senza chiamare Poste.
+    NON invia raccomandate.
+    NON genera costi H2H.
+    Serve solo per testare Resend + template email cliente.
+    """
+
+    to = str(to or "").strip().lower()
+
+    if not to:
+        return {
+            "success": False,
+            "error": "Parametro email mancante. Usa: /debug/send-email-test?to=tuaemail@email.com"
+        }
+
+    fn = globals().get("invia_email_cliente_raccomandata")
+
+    if not callable(fn):
+        return {
+            "success": False,
+            "error": "Funzione invia_email_cliente_raccomandata non caricata"
+        }
+
+    ordine_test = {
+        "id": "TEST-EMAIL-ECCOMI-POSTA",
+        "cliente_email": to,
+        "shopify_order_name": "#TEST-EMAIL",
+        "numero_raccomandata": "619999999999",
+        "pdf_ricevuta_cliente_url": "https://www.eccomionline.com/pages/eccomi-posta",
+        "pdf_ricevuta_url": "",
+        "email_sent": False
+    }
+
+    pratica_test = {
+        "id": "",
+        "cliente_email": to,
+        "shopify_order_name": "#TEST-EMAIL",
+        "numero_raccomandata": "619999999999",
+        "email_sent": False
+    }
+
+    result = fn(
+        ordine=ordine_test,
+        pratica=pratica_test,
+        pdf_cliente_url="https://www.eccomionline.com/pages/eccomi-posta"
+    )
+
+    return {
+        "success": True,
+        "test": "EMAIL_TEST_NO_POSTE",
+        "to": to,
+        "result": result
+    }
+
 @app.get("/supabase/test")
 def supabase_test():
     try:
