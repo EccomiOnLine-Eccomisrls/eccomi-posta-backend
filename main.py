@@ -6132,7 +6132,7 @@ def dashboard_pratiche(stato: str = None):
         .select(
             "id,order_id,order_name,shopify_order_name,tipo_servizio,"
             "cliente_email,stato,numero_raccomandata,pdf_url,"
-            "id_richiesta,ricevuta_ritorno,created_at,updated_at"
+            "id_richiesta,ricevuta_ritorno,created_at,updated_at,"
             "email_sent,email_sent_at,email_error,email_to,email_subject,email_resend_id"
         )
         .order("created_at", desc=True)
