@@ -5807,14 +5807,14 @@ def dashboard_pratiche(stato: str = None):
                 '</span>'
             )
 
-        else:
+                else:
             invia_poste_html = (
                 '<span class="btn-action btn-disabled">'
                 '🔒 Invia Poste bloccato'
                 '</span>'
             )
 
-                ricevuta_poste_html = ""
+        ricevuta_poste_html = ""
 
         if stato_pratica == "INVIATO_POSTE":
             ricevuta_poste_html = f"""
