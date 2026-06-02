@@ -5023,6 +5023,100 @@ def resolve_h2h_order_id(pratica_id: str):
         return None
 
 
+@app.get("/dashboard/pratiche/invia-email-cliente/{pratica_id}")
+def dashboard_invia_email_cliente(pratica_id: str):
+    """
+    Invia o reinvia email cliente per una pratica già INVIATO_POSTE.
+    NON chiama Poste.
+    NON finalizza.
+    NON genera costi.
+    """
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        if pratica.get("stato") != "INVIATO_POSTE":
+            return {
+                "success": False,
+                "error": "Email cliente disponibile solo per pratiche INVIATO_POSTE",
+                "stato": pratica.get("stato")
+            }
+
+        h2h_order_id = resolve_h2h_order_id(pratica_id)
+
+        if not h2h_order_id:
+            return {
+                "success": False,
+                "error": "Ordine H2H collegato non trovato",
+                "pratica_id": pratica_id
+            }
+
+        ordine_res = supabase.table("poste_h2h_orders") \
+            .select("*") \
+            .eq("id", h2h_order_id) \
+            .single() \
+            .execute()
+
+        if not ordine_res.data:
+            return {
+                "success": False,
+                "error": "Ordine H2H non trovato",
+                "h2h_order_id": h2h_order_id
+            }
+
+        ordine = ordine_res.data
+
+        pdf_cliente_url = (
+            ordine.get("pdf_ricevuta_cliente_url")
+            or pratica.get("pdf_ricevuta_cliente_url")
+            or pratica.get("pdf_url")
+            or ""
+        )
+
+        email_fn = globals().get("invia_email_cliente_raccomandata")
+
+        if not callable(email_fn):
+            return {
+                "success": False,
+                "error": "Funzione invia_email_cliente_raccomandata non disponibile"
+            }
+
+        email_result = email_fn(
+            ordine=ordine,
+            pratica=pratica,
+            pdf_cliente_url=pdf_cliente_url
+        )
+
+        return {
+            "success": True,
+            "step": "EMAIL_CLIENTE_GESTITA",
+            "pratica_id": pratica_id,
+            "h2h_order_id": h2h_order_id,
+            "email": email_result
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_INVIO_EMAIL_CLIENTE",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
+
 @app.get("/dashboard/pratiche/invia-poste/{pratica_id}")
 def dashboard_invia_poste(pratica_id: str):
     """
