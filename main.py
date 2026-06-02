@@ -6314,6 +6314,210 @@ def dashboard_pratiche(stato: str = None):
     </html>
     """
 
+def estrai_pdf_bytes_ricevuta_poste(poste_result):
+    """
+    Estrae il PDF dalla risposta RecuperaRicevutaAccettazione.
+    Gestisce bytes, stringa PDF o base64.
+    """
+
+    contenuto = None
+
+    try:
+        contenuto = poste_result["Contenuto"]
+    except Exception:
+        contenuto = getattr(poste_result, "Contenuto", None)
+
+    if contenuto is None:
+        raise ValueError("Contenuto ricevuta Poste non trovato nella risposta")
+
+    if isinstance(contenuto, bytes):
+        return contenuto
+
+    if isinstance(contenuto, bytearray):
+        return bytes(contenuto)
+
+    if isinstance(contenuto, str):
+        text = contenuto.strip()
+
+        if text.startswith("%PDF"):
+            return text.encode("latin1")
+
+        try:
+            return base64.b64decode(text, validate=True)
+        except Exception:
+            return text.encode("latin1")
+
+    raise ValueError(f"Formato ricevuta non gestito: {type(contenuto)}")
+
+
+@app.get("/dashboard/pratiche/ricevuta-poste/{pratica_id}")
+def dashboard_salva_ricevuta_poste(pratica_id: str):
+    """
+    Recupera la ricevuta ufficiale Poste di una pratica già INVIATO_POSTE.
+    NON invia una nuova raccomandata.
+    NON finalizza nulla.
+    Recupera solo la ricevuta già disponibile da Poste.
+    """
+
+    try:
+        h2h_order_id = resolve_h2h_order_id(pratica_id)
+
+        if not h2h_order_id:
+            return {
+                "success": False,
+                "error": "Ordine H2H collegato non trovato",
+                "pratica_id": pratica_id
+            }
+
+        ordine_res = supabase.table("poste_h2h_orders") \
+            .select("*") \
+            .eq("id", h2h_order_id) \
+            .single() \
+            .execute()
+
+        if not ordine_res.data:
+            return {
+                "success": False,
+                "error": "Ordine H2H non trovato",
+                "h2h_order_id": h2h_order_id
+            }
+
+        ordine = ordine_res.data
+
+        id_richiesta = ordine.get("id_richiesta")
+
+        if not id_richiesta:
+            return {
+                "success": False,
+                "error": "id_richiesta mancante: impossibile recuperare ricevuta Poste",
+                "h2h_order_id": h2h_order_id
+            }
+
+        pdf_esistente = ordine.get("pdf_ricevuta_url")
+
+        if pdf_esistente:
+            return RedirectResponse(
+                url=pdf_esistente,
+                status_code=302
+            )
+
+        history = HistoryPlugin()
+
+        client, service = poste_client(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        poste_result = service.RecuperaRicevutaAccettazione(
+            IDRichiesta=id_richiesta
+        )
+
+        pdf_bytes = estrai_pdf_bytes_ricevuta_poste(poste_result)
+
+        file_path = f"ricevute-poste/{h2h_order_id}/ricevuta_accettazione.pdf"
+
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            file_path,
+            pdf_bytes,
+            {
+                "content-type": "application/pdf",
+                "upsert": "true"
+            }
+        )
+
+        pdf_public_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
+            file_path
+        )
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        supabase.table("poste_h2h_orders") \
+            .update({
+                "pdf_ricevuta_url": pdf_public_url,
+                "ricevuta_salvata_at": now_iso,
+                "poste_response": str(poste_result)
+            }) \
+            .eq("id", h2h_order_id) \
+            .execute()
+
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .limit(1) \
+            .execute()
+
+        pratica = pratica_res.data[0] if pratica_res.data else {}
+
+        receipt_payload = {
+            "pratica_id": str(pratica_id),
+            "h2h_order_id": str(h2h_order_id),
+            "shopify_order_name": (
+                ordine.get("shopify_order_name")
+                or pratica.get("shopify_order_name")
+                or pratica.get("order_name")
+                or ""
+            ),
+            "id_richiesta": str(id_richiesta),
+            "guid_utente": str(ordine.get("guid_utente") or ""),
+            "id_ricevuta": str(ordine.get("id_ricevuta") or ""),
+            "numero_raccomandata": str(ordine.get("numero_raccomandata") or pratica.get("numero_raccomandata") or ""),
+            "costo": ordine.get("costo"),
+            "pdf_ricevuta_url": pdf_public_url,
+            "tipo_ricevuta": "ACCETTAZIONE_POSTE",
+            "poste_response": str(poste_result),
+            "updated_at": now_iso
+        }
+
+        existing_receipt = supabase.table("poste_h2h_ricevute") \
+            .select("id") \
+            .eq("h2h_order_id", str(h2h_order_id)) \
+            .limit(1) \
+            .execute()
+
+        if existing_receipt.data:
+            supabase.table("poste_h2h_ricevute") \
+                .update(receipt_payload) \
+                .eq("id", existing_receipt.data[0].get("id")) \
+                .execute()
+        else:
+            supabase.table("poste_h2h_ricevute") \
+                .insert(receipt_payload) \
+                .execute()
+
+        return RedirectResponse(
+            url=pdf_public_url,
+            status_code=302
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_RECUPERO_RICEVUTA_POSTE",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
 @app.get("/dashboard/pratiche/{pratica_id}", response_class=HTMLResponse)
 def dashboard_pratica_dettaglio(pratica_id: str):
 
