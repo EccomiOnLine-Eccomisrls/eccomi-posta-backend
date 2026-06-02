@@ -46,6 +46,21 @@ POSTE_H2H_PASSWORD = os.getenv("POSTE_H2H_PASSWORD")
 POSTE_H2H_CONTRACT_ID = os.getenv("POSTE_H2H_CONTRACT_ID")
 POSTE_INVIO_MODE = os.getenv("POSTE_INVIO_MODE", "manual").strip().lower()
 POSTE_INVIO_AUTO = POSTE_INVIO_MODE in ["auto", "automatico", "on", "true", "1"]
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
+FROM_EMAIL = os.getenv(
+    "FROM_EMAIL",
+    "Eccomi Posta <info@eccomionline.com>"
+).strip()
+
+EMAIL_RACCOMANDATA_ENABLED = os.getenv(
+    "EMAIL_RACCOMANDATA_ENABLED",
+    "false"
+).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+
+ECCOMI_POSTA_CTA_URL = os.getenv(
+    "ECCOMI_POSTA_CTA_URL",
+    "https://www.eccomionline.com/pages/eccomi-posta"
+).strip()
 
 def bool_from_any(value):
     if isinstance(value, bool):
@@ -491,6 +506,27 @@ def poste_client(timeout=60, extra_plugins=None):
 @app.get("/")
 def home():
     return {"status": "Eccomi Posta Backend OK 🚀"}
+
+@app.get("/debug/email-function")
+@app.get("/poste/debug/email-function")
+def debug_email_function():
+    """
+    Verifica configurazione email Raccomandata.
+    Non invia email.
+    Non chiama Poste.
+    Serve solo per controllare che la funzione e le variabili ENV siano caricate.
+    """
+
+    fn = globals().get("invia_email_cliente_raccomandata")
+
+    return {
+        "success": True,
+        "function_defined": callable(fn),
+        "resend_api_key_present": bool(os.getenv("RESEND_API_KEY")),
+        "from_email": os.getenv("FROM_EMAIL", ""),
+        "email_enabled": os.getenv("EMAIL_RACCOMANDATA_ENABLED", ""),
+        "cta_url": os.getenv("ECCOMI_POSTA_CTA_URL", "")
+    }
 
 @app.get("/supabase/test")
 def supabase_test():
@@ -2272,6 +2308,321 @@ def process_poste_order(order_id: str):
             "xml_received": xml_received
         }
 
+def aggiorna_esito_email_raccomandata(
+    h2h_order_id=None,
+    pratica_id=None,
+    pdf_url=None,
+    data=None
+):
+    data = data or {}
+
+    try:
+        if h2h_order_id:
+            supabase.table("poste_h2h_orders") \
+                .update(data) \
+                .eq("id", h2h_order_id) \
+                .execute()
+    except Exception as e:
+        print("ERRORE UPDATE EMAIL H2H:", str(e))
+
+    try:
+        if pratica_id:
+            supabase.table("pratiche") \
+                .update(data) \
+                .eq("id", pratica_id) \
+                .execute()
+        elif pdf_url:
+            supabase.table("pratiche") \
+                .update(data) \
+                .eq("pdf_url", pdf_url) \
+                .execute()
+    except Exception as e:
+        print("ERRORE UPDATE EMAIL PRATICA:", str(e))
+
+
+def invia_email_cliente_raccomandata(ordine: dict, pratica: dict, pdf_cliente_url: str):
+    """
+    Invia email al cliente dopo INVIATO_POSTE.
+    Protezione anti doppio invio tramite email_sent.
+    """
+
+    ordine = ordine or {}
+    pratica = pratica or {}
+
+    h2h_order_id = ordine.get("id")
+    pratica_id = pratica.get("id")
+    pdf_url = ordine.get("pdf_url") or pratica.get("pdf_url")
+
+    cliente_email = (
+        pratica.get("cliente_email")
+        or ordine.get("cliente_email")
+        or ordine.get("email_to")
+        or ""
+    )
+
+    cliente_email = str(cliente_email or "").strip().lower()
+
+    numero_raccomandata = (
+        ordine.get("numero_raccomandata")
+        or pratica.get("numero_raccomandata")
+        or ""
+    )
+
+    shopify_order_name = (
+        ordine.get("shopify_order_name")
+        or pratica.get("shopify_order_name")
+        or pratica.get("order_name")
+        or ordine.get("order_name")
+        or ""
+    )
+
+    gia_inviata = (
+        bool_from_any(ordine.get("email_sent"))
+        or bool_from_any(pratica.get("email_sent"))
+    )
+
+    if gia_inviata:
+        return {
+            "success": True,
+            "skipped": True,
+            "reason": "Email già inviata in precedenza"
+        }
+
+    subject = f"La tua raccomandata Eccomi Posta è stata inviata"
+
+    if numero_raccomandata:
+        subject += f" - {numero_raccomandata}"
+
+    base_update = {
+        "email_to": cliente_email,
+        "email_subject": subject
+    }
+
+    if not EMAIL_RACCOMANDATA_ENABLED:
+        return {
+            "success": True,
+            "skipped": True,
+            "reason": "Invio email disattivato da ENV"
+        }
+
+    if not RESEND_API_KEY:
+        errore = "RESEND_API_KEY mancante"
+
+        aggiorna_esito_email_raccomandata(
+            h2h_order_id=h2h_order_id,
+            pratica_id=pratica_id,
+            pdf_url=pdf_url,
+            data={
+                **base_update,
+                "email_sent": False,
+                "email_error": errore
+            }
+        )
+
+        return {
+            "success": False,
+            "error": errore
+        }
+
+    if not cliente_email:
+        errore = "Email cliente mancante"
+
+        aggiorna_esito_email_raccomandata(
+            h2h_order_id=h2h_order_id,
+            pratica_id=pratica_id,
+            pdf_url=pdf_url,
+            data={
+                **base_update,
+                "email_sent": False,
+                "email_error": errore
+            }
+        )
+
+        return {
+            "success": False,
+            "error": errore
+        }
+
+    tracking_url = ""
+
+    if numero_raccomandata:
+        tracking_url = (
+            "https://www.poste.it/cerca/index.html#/risultati-spedizioni/"
+            + str(numero_raccomandata)
+        )
+
+    pdf_ricevuta_poste_url = ordine.get("pdf_ricevuta_url") or ""
+
+    tracking_button = ""
+
+    if tracking_url:
+        tracking_button = f"""
+        <p style="margin:22px 0;">
+            <a href="{tracking_url}"
+               style="background:#2563eb;color:white;padding:12px 18px;
+                      border-radius:10px;text-decoration:none;font-weight:bold;">
+                Traccia la raccomandata
+            </a>
+        </p>
+        """
+
+    pdf_cliente_button = ""
+
+    if pdf_cliente_url:
+        pdf_cliente_button = f"""
+        <p style="margin:22px 0;">
+            <a href="{pdf_cliente_url}"
+               style="background:#16a34a;color:white;padding:12px 18px;
+                      border-radius:10px;text-decoration:none;font-weight:bold;">
+                Scarica ricevuta Eccomi Posta
+            </a>
+        </p>
+        """
+
+    pdf_poste_button = ""
+
+    if pdf_ricevuta_poste_url:
+        pdf_poste_button = f"""
+        <p style="margin:22px 0;">
+            <a href="{pdf_ricevuta_poste_url}"
+               style="background:#0f172a;color:white;padding:12px 18px;
+                      border-radius:10px;text-decoration:none;font-weight:bold;">
+                Scarica ricevuta ufficiale Poste
+            </a>
+        </p>
+        """
+
+    html = f"""
+    <div style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f9;
+                padding:24px;color:#111827;">
+        <div style="max-width:640px;margin:0 auto;background:white;
+                    border-radius:16px;padding:26px;">
+            <h1 style="margin-top:0;color:#0f172a;">
+                La tua raccomandata è stata inviata
+            </h1>
+
+            <p>
+                Ciao,<br>
+                la tua pratica Eccomi Posta è stata lavorata correttamente
+                e la raccomandata è stata inviata tramite Poste Italiane.
+            </p>
+
+            <div style="background:#f8fafc;border-radius:12px;padding:16px;margin:20px 0;">
+                <p><strong>Ordine:</strong> {shopify_order_name or "-"}</p>
+                <p><strong>Numero raccomandata:</strong> {numero_raccomandata or "-"}</p>
+            </div>
+
+            {tracking_button}
+            {pdf_cliente_button}
+            {pdf_poste_button}
+
+            <hr style="border:none;border-top:1px solid #e5e7eb;margin:26px 0;">
+
+            <p>
+                Hai bisogno di inviare un nuovo documento, una raccomandata,
+                un telegramma, Posta1 o Posta4?
+            </p>
+
+            <p style="margin:22px 0;">
+                <a href="{ECCOMI_POSTA_CTA_URL}"
+                   style="background:#f97316;color:white;padding:12px 18px;
+                          border-radius:10px;text-decoration:none;font-weight:bold;">
+                    Vai a Eccomi Posta
+                </a>
+            </p>
+
+            <p style="font-size:12px;color:#6b7280;margin-top:28px;">
+                Eccomi Posta — Servizi postali digitali<br>
+                www.eccomionline.com
+            </p>
+        </div>
+    </div>
+    """
+
+    try:
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "from": FROM_EMAIL,
+                "to": [cliente_email],
+                "subject": subject,
+                "html": html
+            },
+            timeout=30
+        )
+
+        response_text = response.text
+
+        try:
+            response_json = response.json()
+        except Exception:
+            response_json = {}
+
+        if response.status_code < 200 or response.status_code >= 300:
+            errore = f"Errore Resend {response.status_code}: {response_text}"
+
+            aggiorna_esito_email_raccomandata(
+                h2h_order_id=h2h_order_id,
+                pratica_id=pratica_id,
+                pdf_url=pdf_url,
+                data={
+                    **base_update,
+                    "email_sent": False,
+                    "email_error": errore
+                }
+            )
+
+            return {
+                "success": False,
+                "error": errore
+            }
+
+        resend_id = response_json.get("id", "")
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        aggiorna_esito_email_raccomandata(
+            h2h_order_id=h2h_order_id,
+            pratica_id=pratica_id,
+            pdf_url=pdf_url,
+            data={
+                **base_update,
+                "email_sent": True,
+                "email_sent_at": now_iso,
+                "email_error": None,
+                "email_resend_id": resend_id
+            }
+        )
+
+        return {
+            "success": True,
+            "email_to": cliente_email,
+            "resend_id": resend_id
+        }
+
+    except Exception as e:
+        errore = str(e)
+
+        aggiorna_esito_email_raccomandata(
+            h2h_order_id=h2h_order_id,
+            pratica_id=pratica_id,
+            pdf_url=pdf_url,
+            data={
+                **base_update,
+                "email_sent": False,
+                "email_error": errore
+            }
+        )
+
+        return {
+            "success": False,
+            "error": errore
+        }
+
 @app.get("/poste/h2h/finalizza/{order_id}")
 def confirm_poste_order(order_id: str):
 
@@ -2365,24 +2716,57 @@ def confirm_poste_order(order_id: str):
         )
 
         supabase.table("poste_h2h_orders") \
-            .update({
-                "stato": "INVIATO_POSTE",
-                "numero_raccomandata": numero_racc,
-                "id_ricevuta": id_ricevuta,
-                "id_ordine_poste": str(pre_result.IdOrdine),
-                "costo": costo,
-                "poste_response": str(pre_result),
-                "pdf_ricevuta_cliente_url": cliente_pdf_url
-            }) \
+                    update_h2h_finale = {
+            "stato": "INVIATO_POSTE",
+            "numero_raccomandata": numero_racc,
+            "id_ricevuta": id_ricevuta,
+            "id_ordine_poste": str(pre_result.IdOrdine),
+            "costo": costo,
+            "poste_response": str(pre_result),
+            "pdf_ricevuta_cliente_url": cliente_pdf_url
+        }
+
+        supabase.table("poste_h2h_orders") \
+            .update(update_h2h_finale) \
             .eq("id", order_id) \
             .execute()
 
-        # Aggiorna anche la pratica visibile nella dashboard
-        supabase.table("pratiche").update({
+        pratica_collegata = {}
+
+        if ordine.get("pdf_url"):
+            pratica_res = supabase.table("pratiche") \
+                .select("*") \
+                .eq("pdf_url", ordine.get("pdf_url")) \
+                .limit(1) \
+                .execute()
+
+            if pratica_res.data:
+                pratica_collegata = pratica_res.data[0]
+
+        update_pratica_finale = {
             "numero_raccomandata": numero_racc,
             "stato": "INVIATO_POSTE",
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-        }).eq("pdf_url", ordine.get("pdf_url")).execute()
+        }
+
+        if ordine.get("pdf_url"):
+            supabase.table("pratiche") \
+                .update(update_pratica_finale) \
+                .eq("pdf_url", ordine.get("pdf_url")) \
+                .execute()
+
+        if pratica_collegata:
+            pratica_collegata.update(update_pratica_finale)
+
+        ordine_email = dict(ordine)
+        ordine_email.update(update_h2h_finale)
+        ordine_email["id"] = order_id
+
+        email_result = invia_email_cliente_raccomandata(
+            ordine=ordine_email,
+            pratica=pratica_collegata,
+            pdf_cliente_url=cliente_pdf_url
+        )
 
         return {
             "success": True,
@@ -2394,7 +2778,8 @@ def confirm_poste_order(order_id: str):
             "id_ricevuta": id_ricevuta,
             "costo": costo,
             "pdf_cliente_url": cliente_pdf_url,
-            "message": "Ordine confermato, raccomandata generata e PDF cliente salvato"
+            "email": email_result,
+            "message": "Ordine confermato, raccomandata generata, PDF cliente salvato ed email cliente gestita"
         }
 
     except Exception as e:
