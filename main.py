@@ -6296,6 +6296,8 @@ def dashboard_pratiche(stato: str = None):
                 </span>
             """
 
+        email_cliente_html = ""
+        
         email_sent = bool_from_any(p.get("email_sent"))
         email_error = p.get("email_error")
         email_to_val = p.get("email_to") or p.get("cliente_email") or ""
@@ -6309,7 +6311,7 @@ def dashboard_pratiche(stato: str = None):
                 """
             elif email_error:
                 email_cliente_html = f"""
-                    <span class="receipt-pill receipt-error" title="{email_error}">
+                    <span class="receipt-pill receipt-error" title="{str(email_error).replace('"', '')}">
                         ⚠️ Email errore
                     </span>
 
