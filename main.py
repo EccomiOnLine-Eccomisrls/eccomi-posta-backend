@@ -5613,7 +5613,7 @@ def dashboard_pratiche(stato: str = None):
     h2h_result = (
         supabase
         .table("poste_h2h_orders")
-        .select("id,pdf_url,shopify_order_name,costo")
+        .select("id,pdf_url,shopify_order_name,costo,pdf_ricevuta_url")
         .order("created_at", desc=True)
         .limit(100)
         .execute()
@@ -5638,7 +5638,13 @@ def dashboard_pratiche(stato: str = None):
         for h in h2h_rows
         if h.get("pdf_url")
     }
-
+    
+    h2h_ricevuta_poste_by_pdf = {
+        h.get("pdf_url"): h.get("pdf_ricevuta_url")
+        for h in h2h_rows
+        if h.get("pdf_url")
+    }
+    
     counter_visibili = [
         p for p in tutte_pratiche
         if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
@@ -5661,6 +5667,33 @@ def dashboard_pratiche(stato: str = None):
         pdf_url_pratica = p.get("pdf_url")
         h2h_order_id = h2h_id_by_pdf.get(pdf_url_pratica)
         costo_valorizzato = h2h_costo_by_pdf.get(pdf_url_pratica)
+        ricevuta_poste_url = h2h_ricevuta_poste_by_pdf.get(pdf_url_pratica)
+
+if stato_pratica == "INVIATO_POSTE":
+    if ricevuta_poste_url:
+        ricevuta_indicator_html = """
+            <span class="receipt-pill receipt-ok">
+                Ricevuta: ✅ Salvata
+            </span>
+        """
+    elif h2h_order_id:
+        ricevuta_indicator_html = """
+            <span class="receipt-pill receipt-wait">
+                Ricevuta: 📥 Da recuperare
+            </span>
+        """
+    else:
+        ricevuta_indicator_html = """
+            <span class="receipt-pill receipt-error">
+                Ricevuta: ⚠️ H2H non pronto
+            </span>
+        """
+else:
+    ricevuta_indicator_html = """
+        <span class="receipt-pill receipt-na">
+            Ricevuta: —
+        </span>
+    """
 
         if costo_valorizzato is not None:
             try:
@@ -5833,6 +5866,10 @@ def dashboard_pratiche(stato: str = None):
             <td>
                 {servizio_display}
                 {"<span class='badge-rr'>📬 RR</span>" if has_rr else ""}
+
+                <div style="margin-top:7px;">
+                    {ricevuta_indicator_html}
+                </div>
             </td>
 
             <td class="email-cell" title="{cliente_email}">
@@ -5972,6 +6009,35 @@ def dashboard_pratiche(stato: str = None):
                 font-size:12px;
                 font-weight:bold;
                 display:inline-block;
+            }}
+            
+            .receipt-pill {{
+                display:inline-block;
+                padding:5px 9px;
+                border-radius:999px;
+                font-size:12px;
+                font-weight:bold;
+                margin-top:4px;
+            }}
+
+           .receipt-ok {{
+                background:#dcfce7;
+                color:#15803d;
+            }}
+
+            .receipt-wait {{
+                background:#fff7ed;
+                color:#c2410c;
+            }}
+
+            .receipt-error {{
+                background:#fee2e2;
+                color:#b91c1c;
+            }}
+
+            .receipt-na {{
+                background:#f3f4f6;
+                color:#6b7280;
             }}
 
             .main-row td {{
