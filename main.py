@@ -5807,7 +5807,7 @@ def dashboard_pratiche(stato: str = None):
                 '</span>'
             )
 
-                else:
+        else:
             invia_poste_html = (
                 '<span class="btn-action btn-disabled">'
                 '🔒 Invia Poste bloccato'
