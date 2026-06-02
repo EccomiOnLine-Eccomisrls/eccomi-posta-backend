@@ -2421,6 +2421,7 @@ def invia_email_cliente_raccomandata(ordine: dict, pratica: dict, pdf_cliente_ur
     """
     Invia email al cliente dopo INVIATO_POSTE.
     Protezione anti doppio invio tramite email_sent.
+    La ricevuta ufficiale Poste NON viene mai inviata al cliente.
     """
 
     ordine = ordine or {}
@@ -2432,33 +2433,13 @@ def invia_email_cliente_raccomandata(ordine: dict, pratica: dict, pdf_cliente_ur
 
     cliente_email = (
         pratica.get("cliente_email")
+        or pratica.get("email_to")
         or ordine.get("cliente_email")
         or ordine.get("email_to")
         or ""
     )
 
     cliente_email = str(cliente_email or "").strip().lower()
-    email_regex = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
-
-if cliente_email and not re.match(email_regex, cliente_email):
-    errore = f"Email cliente non valida: {cliente_email}"
-
-    aggiorna_esito_email_raccomandata(
-        h2h_order_id=h2h_order_id,
-        pratica_id=pratica_id,
-        pdf_url=pdf_url,
-        data={
-            "email_to": cliente_email,
-            "email_subject": subject if "subject" in locals() else "",
-            "email_sent": False,
-            "email_error": errore
-        }
-    )
-
-    return {
-        "success": False,
-        "error": errore
-    }
 
     numero_raccomandata = (
         ordine.get("numero_raccomandata")
@@ -2474,6 +2455,16 @@ if cliente_email and not re.match(email_regex, cliente_email):
         or ""
     )
 
+    subject = "La tua raccomandata Eccomi Posta è stata inviata"
+
+    if numero_raccomandata:
+        subject += f" - {numero_raccomandata}"
+
+    base_update = {
+        "email_to": cliente_email,
+        "email_subject": subject
+    }
+
     gia_inviata = (
         bool_from_any(ordine.get("email_sent"))
         or bool_from_any(pratica.get("email_sent"))
@@ -2485,16 +2476,6 @@ if cliente_email and not re.match(email_regex, cliente_email):
             "skipped": True,
             "reason": "Email già inviata in precedenza"
         }
-
-    subject = f"La tua raccomandata Eccomi Posta è stata inviata"
-
-    if numero_raccomandata:
-        subject += f" - {numero_raccomandata}"
-
-    base_update = {
-        "email_to": cliente_email,
-        "email_subject": subject
-    }
 
     if not EMAIL_RACCOMANDATA_ENABLED:
         return {
@@ -2541,7 +2522,28 @@ if cliente_email and not re.match(email_regex, cliente_email):
             "error": errore
         }
 
-        tracking_url = ""
+    email_regex = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+    if not re.match(email_regex, cliente_email):
+        errore = f"Email cliente non valida: {cliente_email}"
+
+        aggiorna_esito_email_raccomandata(
+            h2h_order_id=h2h_order_id,
+            pratica_id=pratica_id,
+            pdf_url=pdf_url,
+            data={
+                **base_update,
+                "email_sent": False,
+                "email_error": errore
+            }
+        )
+
+        return {
+            "success": False,
+            "error": errore
+        }
+
+    tracking_url = ""
 
     if numero_raccomandata:
         tracking_url = (
