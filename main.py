@@ -505,7 +505,26 @@ def poste_client(timeout=60, extra_plugins=None):
 
 @app.get("/")
 def home():
-    return {"status": "Eccomi Posta Backend OK 🚀"}
+    return {
+        "status": "Eccomi Posta Backend OK 🚀",
+        "version": "EMAIL_DEBUG_V2_ATTIVO",
+        "debug_email": "/debug/email-function"
+    }
+
+
+@app.get("/debug")
+@app.get("/debug/")
+def debug_index():
+    return {
+        "success": True,
+        "version": "EMAIL_DEBUG_V2_ATTIVO",
+        "available_endpoints": [
+            "/debug/email-function",
+            "/poste/debug/email-function",
+            "/poste/h2h/debug-email-function"
+        ]
+    }
+
 
 @app.get("/debug/email-function")
 @app.get("/poste/debug/email-function")
@@ -515,13 +534,13 @@ def debug_email_function():
     Verifica configurazione email Raccomandata.
     Non invia email.
     Non chiama Poste.
-    Serve solo per controllare che la funzione e le variabili ENV siano caricate.
     """
 
     fn = globals().get("invia_email_cliente_raccomandata")
 
     return {
         "success": True,
+        "version": "EMAIL_DEBUG_V2_ATTIVO",
         "function_defined": callable(fn),
         "resend_api_key_present": bool(os.getenv("RESEND_API_KEY")),
         "from_email": os.getenv("FROM_EMAIL", ""),
