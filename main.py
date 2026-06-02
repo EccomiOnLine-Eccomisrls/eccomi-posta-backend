@@ -6131,6 +6131,7 @@ def dashboard_pratiche(stato: str = None):
             "id,order_id,order_name,shopify_order_name,tipo_servizio,"
             "cliente_email,stato,numero_raccomandata,pdf_url,"
             "id_richiesta,ricevuta_ritorno,created_at,updated_at"
+            "email_sent,email_sent_at,email_error,email_to,email_subject,email_resend_id"
         )
         .order("created_at", desc=True)
         .limit(100)
@@ -6290,6 +6291,56 @@ def dashboard_pratiche(stato: str = None):
             ricevuta_poste_html = """
                 <span class="receipt-pill receipt-na">
                     Ricevuta non ancora prevista
+                </span>
+            """
+
+        email_sent = bool_from_any(p.get("email_sent"))
+        email_error = p.get("email_error")
+        email_to_val = p.get("email_to") or p.get("cliente_email") or ""
+
+        if stato_pratica == "INVIATO_POSTE":
+            if email_sent:
+                email_cliente_html = """
+                    <span class="receipt-pill receipt-ok">
+                        ✅ Email inviata
+                    </span>
+                """
+            elif email_error:
+                email_cliente_html = f"""
+                    <span class="receipt-pill receipt-error" title="{email_error}">
+                        ⚠️ Email errore
+                    </span>
+
+                    <a class="btn-action"
+                       href="/dashboard/pratiche/invia-email-cliente/{pratica_id}"
+                       target="_blank"
+                       onclick="return confirm('Riprovo a inviare la mail al cliente? Non verrà chiamata Poste.')">
+                        📧 Riprova email
+                    </a>
+                """
+            elif email_to_val:
+                email_cliente_html = f"""
+                    <span class="receipt-pill receipt-wait">
+                        📧 Email da inviare
+                    </span>
+
+                    <a class="btn-action"
+                       href="/dashboard/pratiche/invia-email-cliente/{pratica_id}"
+                       target="_blank"
+                       onclick="return confirm('Inviare email al cliente per questa raccomandata? Non verrà chiamata Poste.')">
+                        📧 Email cliente
+                    </a>
+                """
+            else:
+                email_cliente_html = """
+                    <span class="receipt-pill receipt-error">
+                        ⚠️ Email mancante
+                    </span>
+                """
+        else:
+            email_cliente_html = """
+                <span class="btn-action btn-disabled">
+                    📧 Email non pronta
                 </span>
             """
 
@@ -6494,6 +6545,8 @@ def dashboard_pratiche(stato: str = None):
                        target="_blank">
                         PDF Cliente
                     </a>
+
+                    {email_cliente_html
 
                     {ricevuta_poste_html}
 
