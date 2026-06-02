@@ -2715,8 +2715,7 @@ def confirm_poste_order(order_id: str):
             cliente_pdf_path
         )
 
-        supabase.table("poste_h2h_orders") \
-                    update_h2h_finale = {
+        update_h2h_finale = {
             "stato": "INVIATO_POSTE",
             "numero_raccomandata": numero_racc,
             "id_ricevuta": id_ricevuta,
@@ -2762,11 +2761,20 @@ def confirm_poste_order(order_id: str):
         ordine_email.update(update_h2h_finale)
         ordine_email["id"] = order_id
 
-        email_result = invia_email_cliente_raccomandata(
-            ordine=ordine_email,
-            pratica=pratica_collegata,
-            pdf_cliente_url=cliente_pdf_url
-        )
+        email_result = {
+            "success": False,
+            "skipped": True,
+            "reason": "Funzione email non disponibile"
+        }
+
+        email_fn = globals().get("invia_email_cliente_raccomandata")
+
+        if callable(email_fn):
+            email_result = email_fn(
+                ordine=ordine_email,
+                pratica=pratica_collegata,
+                pdf_cliente_url=cliente_pdf_url
+            )
 
         return {
             "success": True,
@@ -2793,7 +2801,7 @@ def confirm_poste_order(order_id: str):
                 pretty_print=True,
                 encoding="unicode"
             )
-        except:
+        except Exception:
             pass
 
         try:
@@ -2802,11 +2810,13 @@ def confirm_poste_order(order_id: str):
                 pretty_print=True,
                 encoding="unicode"
             )
-        except:
+        except Exception:
             pass
 
         return {
             "success": False,
+            "step": "ERRORE_FINALIZZA_POSTE",
+            "order_id": order_id,
             "error": str(e),
             "xml_sent": xml_sent,
             "xml_received": xml_received
