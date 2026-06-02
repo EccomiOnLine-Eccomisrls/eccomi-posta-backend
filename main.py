@@ -6546,7 +6546,7 @@ def dashboard_pratiche(stato: str = None):
                         PDF Cliente
                     </a>
 
-                    {email_cliente_html
+                    {email_cliente_html}
 
                     {ricevuta_poste_html}
 
