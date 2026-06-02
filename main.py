@@ -2520,7 +2520,7 @@ def invia_email_cliente_raccomandata(ordine: dict, pratica: dict, pdf_cliente_ur
             "error": errore
         }
 
-    tracking_url = ""
+        tracking_url = ""
 
     if numero_raccomandata:
         tracking_url = (
@@ -2528,10 +2528,18 @@ def invia_email_cliente_raccomandata(ordine: dict, pratica: dict, pdf_cliente_ur
             + str(numero_raccomandata)
         )
 
-# Ricevuta ufficiale Poste:
-# NON deve mai essere inviata al cliente perché contiene dati interni/costi H2H.
-# Rimane disponibile solo in dashboard e database.
-pdf_poste_button = ""
+    tracking_button = ""
+
+    if tracking_url:
+        tracking_button = f"""
+        <p style="margin:22px 0;">
+            <a href="{tracking_url}"
+               style="background:#2563eb;color:white;padding:12px 18px;
+                      border-radius:10px;text-decoration:none;font-weight:bold;">
+                Traccia la raccomandata
+            </a>
+        </p>
+        """
 
     pdf_cliente_button = ""
 
@@ -2546,18 +2554,10 @@ pdf_poste_button = ""
         </p>
         """
 
+    # Ricevuta ufficiale Poste:
+    # NON deve mai essere inviata al cliente perché contiene dati interni/costi H2H.
+    # Rimane disponibile solo in dashboard e database.
     pdf_poste_button = ""
-
-    if pdf_ricevuta_poste_url:
-        pdf_poste_button = f"""
-        <p style="margin:22px 0;">
-            <a href="{pdf_ricevuta_poste_url}"
-               style="background:#0f172a;color:white;padding:12px 18px;
-                      border-radius:10px;text-decoration:none;font-weight:bold;">
-                Scarica ricevuta ufficiale Poste
-            </a>
-        </p>
-        """
 
     html = f"""
     <div style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f9;
