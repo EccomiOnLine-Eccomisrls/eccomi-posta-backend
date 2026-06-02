@@ -2438,6 +2438,27 @@ def invia_email_cliente_raccomandata(ordine: dict, pratica: dict, pdf_cliente_ur
     )
 
     cliente_email = str(cliente_email or "").strip().lower()
+    email_regex = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+if cliente_email and not re.match(email_regex, cliente_email):
+    errore = f"Email cliente non valida: {cliente_email}"
+
+    aggiorna_esito_email_raccomandata(
+        h2h_order_id=h2h_order_id,
+        pratica_id=pratica_id,
+        pdf_url=pdf_url,
+        data={
+            "email_to": cliente_email,
+            "email_subject": subject if "subject" in locals() else "",
+            "email_sent": False,
+            "email_error": errore
+        }
+    )
+
+    return {
+        "success": False,
+        "error": errore
+    }
 
     numero_raccomandata = (
         ordine.get("numero_raccomandata")
