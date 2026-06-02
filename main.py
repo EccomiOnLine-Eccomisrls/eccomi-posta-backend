@@ -5638,13 +5638,13 @@ def dashboard_pratiche(stato: str = None):
         for h in h2h_rows
         if h.get("pdf_url")
     }
-    
-    h2h_ricevuta_poste_by_pdf = {
+
+    h2h_ricevuta_by_pdf = {
         h.get("pdf_url"): h.get("pdf_ricevuta_url")
         for h in h2h_rows
         if h.get("pdf_url")
     }
-    
+
     counter_visibili = [
         p for p in tutte_pratiche
         if p.get("stato") not in ["BOZZA_CHECKOUT", "NON_PAGATO"]
@@ -5667,33 +5667,7 @@ def dashboard_pratiche(stato: str = None):
         pdf_url_pratica = p.get("pdf_url")
         h2h_order_id = h2h_id_by_pdf.get(pdf_url_pratica)
         costo_valorizzato = h2h_costo_by_pdf.get(pdf_url_pratica)
-        ricevuta_poste_url = h2h_ricevuta_poste_by_pdf.get(pdf_url_pratica)
-
-if stato_pratica == "INVIATO_POSTE":
-    if ricevuta_poste_url:
-        ricevuta_indicator_html = """
-            <span class="receipt-pill receipt-ok">
-                Ricevuta: ✅ Salvata
-            </span>
-        """
-    elif h2h_order_id:
-        ricevuta_indicator_html = """
-            <span class="receipt-pill receipt-wait">
-                Ricevuta: 📥 Da recuperare
-            </span>
-        """
-    else:
-        ricevuta_indicator_html = """
-            <span class="receipt-pill receipt-error">
-                Ricevuta: ⚠️ H2H non pronto
-            </span>
-        """
-else:
-    ricevuta_indicator_html = """
-        <span class="receipt-pill receipt-na">
-            Ricevuta: —
-        </span>
-    """
+        ricevuta_poste_url = h2h_ricevuta_by_pdf.get(pdf_url_pratica)
 
         if costo_valorizzato is not None:
             try:
@@ -5703,6 +5677,44 @@ else:
                 costo_display = f"€ {costo_valorizzato}"
         else:
             costo_display = None
+
+        if stato_pratica == "INVIATO_POSTE":
+            if ricevuta_poste_url:
+                ricevuta_poste_html = f"""
+                    <span class="receipt-pill receipt-ok">
+                        ✅ Ricevuta salvata
+                    </span>
+
+                    <a class="btn-action"
+                       href="{ricevuta_poste_url}"
+                       target="_blank">
+                        Apri ricevuta Poste
+                    </a>
+                """
+            else:
+                ricevuta_poste_html = f"""
+                    <span class="receipt-pill receipt-wait">
+                        📥 Ricevuta da recuperare
+                    </span>
+
+                    <a class="btn-action"
+                       href="/dashboard/pratiche/ricevuta-poste/{pratica_id}"
+                       target="_blank">
+                        Recupera ricevuta Poste
+                    </a>
+                """
+        elif stato_pratica == "ERRORE_POSTE":
+            ricevuta_poste_html = """
+                <span class="receipt-pill receipt-error">
+                    ⚠️ Ricevuta non disponibile
+                </span>
+            """
+        else:
+            ricevuta_poste_html = """
+                <span class="receipt-pill receipt-na">
+                    Ricevuta non ancora prevista
+                </span>
+            """
 
         order_display = (
             p.get("shopify_order_name")
@@ -5847,18 +5859,6 @@ else:
                 '</span>'
             )
 
-        ricevuta_poste_html = ""
-
-        if stato_pratica == "INVIATO_POSTE":
-            ricevuta_poste_html = f"""
-                <a class="btn-action btn-send"
-                   href="/dashboard/pratiche/ricevuta-poste/{pratica_id}"
-                   target="_blank"
-                   onclick="return confirm('Vuoi recuperare e salvare la ricevuta ufficiale Poste? Non verrà spedito nulla di nuovo.')">
-                    📥 Ricevuta Poste
-                </a>
-            """
-
         rows += f"""
         <tr class="main-row searchable-row" style="background:{row_bg};">
             <td>{clean_order_display(order_display)}</td>
@@ -5866,10 +5866,6 @@ else:
             <td>
                 {servizio_display}
                 {"<span class='badge-rr'>📬 RR</span>" if has_rr else ""}
-
-                <div style="margin-top:7px;">
-                    {ricevuta_indicator_html}
-                </div>
             </td>
 
             <td class="email-cell" title="{cliente_email}">
@@ -5921,7 +5917,7 @@ else:
                        target="_blank">
                         PDF Cliente
                     </a>
-        
+
                     {ricevuta_poste_html}
 
                     <a class="btn-action btn-delete"
