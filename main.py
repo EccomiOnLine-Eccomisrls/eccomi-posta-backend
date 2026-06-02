@@ -4653,6 +4653,14 @@ def preview_xml_h2h_pratica(pratica_id: str):
         pratica = result.data
         has_rr = bool_from_any(pratica.get("ricevuta_ritorno"))
 
+        def safe_html(value):
+            return (
+                str(value or "-")
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+
         history = HistoryPlugin()
         client, service = poste_client(timeout=60, extra_plugins=[history])
 
@@ -4663,24 +4671,20 @@ def preview_xml_h2h_pratica(pratica_id: str):
         DocumentoType = client.get_type("ns1:Documento")
         DatiRicevutaType = client.get_type("ns0:DatiRicevuta")
 
-        # Anteprima tecnica: dati semplificati, NON invia nulla a Poste.
-        indirizzo_mitt = IndirizzoType(
-            DUG="VIALE",
-            Toponimo="STEFANO D'ARRIGO",
-            NumeroCivico="321"
-        )
+        # =====================================================
+        # MITTENTE / DESTINATARIO DINAMICI DALLA PRATICA
+        # NON USA DATI FISSI DI TEST
+        # NON INVIA NULLA A POSTE
+        # =====================================================
 
-        nom_mitt = NominativoType(
-            Nome="SALVATORE",
-            Cognome="DEL LIBANO",
-            CAP="00131",
-            Citta="ROMA",
-            Provincia="RM",
-            Indirizzo=indirizzo_mitt,
-            TipoIndirizzo="NORMALE",
-            ForzaDestinazione=True,
-            InesitateDigitali=False,
-            CodiceFiscaleResult=0
+        mittente_data = pratica.get("mittente") or {}
+        destinatario_data = pratica.get("destinatario") or {}
+
+        nom_mitt = build_nominativo_h2h_from_data(
+            mittente_data,
+            NominativoType,
+            IndirizzoType,
+            label="mittente"
         )
 
         mittente = MittenteType(
@@ -4692,28 +4696,20 @@ def preview_xml_h2h_pratica(pratica_id: str):
             Nominativo=nom_mitt
         ) if has_rr else None
 
-        indirizzo_dest = IndirizzoType(
-            DUG="VIA",
-            Toponimo="PRAGA",
-            NumeroCivico="7"
-        )
-
-        nom_dest = NominativoType(
-            Nome="TEST",
-            Cognome="DESTINATARIO",
-            CAP="88842",
-            Citta="CUTRO",
-            Provincia="KR",
-            Indirizzo=indirizzo_dest,
-            TipoIndirizzo="NORMALE",
-            ForzaDestinazione=True,
-            InesitateDigitali=False,
-            CodiceFiscaleResult=0
+        nom_dest = build_nominativo_h2h_from_data(
+            destinatario_data,
+            NominativoType,
+            IndirizzoType,
+            label="destinatario"
         )
 
         destinatario = DestinatarioType(
             Nominativo=nom_dest
         )
+
+        # =====================================================
+        # PDF FAKE SOLO PER ANTEPRIMA XML
+        # =====================================================
 
         pdf_bytes = b"%PDF-1.4 PREVIEW ECCOMI POSTA\n%%EOF"
         pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
@@ -4773,26 +4769,42 @@ def preview_xml_h2h_pratica(pratica_id: str):
             encoding="unicode"
         )
 
-        xml_safe = (
-            xml_string
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
+        xml_safe = safe_html(xml_string)
 
         rr_status = "SÌ" if has_rr else "NO"
         rr_color = "#16a34a" if has_rr else "#dc2626"
+
+        mittente_raw = ""
+        destinatario_raw = ""
+
+        if isinstance(mittente_data, dict):
+            mittente_raw = mittente_data.get("raw") or json.dumps(
+                mittente_data,
+                ensure_ascii=False
+            )
+        else:
+            mittente_raw = str(mittente_data or "")
+
+        if isinstance(destinatario_data, dict):
+            destinatario_raw = destinatario_data.get("raw") or json.dumps(
+                destinatario_data,
+                ensure_ascii=False
+            )
+        else:
+            destinatario_raw = str(destinatario_data or "")
 
         return f"""
         <html>
         <head>
             <title>Anteprima XML H2H</title>
+            <meta charset="utf-8">
             <style>
                 body {{
                     font-family: Arial;
                     background:#f4f6f9;
                     padding:30px;
                 }}
+
                 .card {{
                     background:white;
                     border-radius:14px;
@@ -4800,6 +4812,7 @@ def preview_xml_h2h_pratica(pratica_id: str):
                     margin-bottom:20px;
                     box-shadow:0 2px 10px rgba(0,0,0,.06);
                 }}
+
                 pre {{
                     background:#111827;
                     color:#d1d5db;
@@ -4809,7 +4822,10 @@ def preview_xml_h2h_pratica(pratica_id: str):
                     max-height:650px;
                     white-space:pre-wrap;
                     word-break:break-word;
+                    font-size:13px;
+                    line-height:1.35;
                 }}
+
                 .badge {{
                     display:inline-block;
                     background:{rr_color};
@@ -4818,13 +4834,34 @@ def preview_xml_h2h_pratica(pratica_id: str):
                     border-radius:999px;
                     font-weight:bold;
                 }}
+
+                .raw-box {{
+                    background:#f9fafb;
+                    border:1px solid #e5e7eb;
+                    padding:12px;
+                    border-radius:10px;
+                    margin-top:8px;
+                    line-height:1.5;
+                }}
+
                 a {{
                     color:#2563eb;
                     font-weight:bold;
                     text-decoration:none;
                 }}
+
+                .ok {{
+                    color:#16a34a;
+                    font-weight:bold;
+                }}
+
+                .warn {{
+                    color:#dc2626;
+                    font-weight:bold;
+                }}
             </style>
         </head>
+
         <body>
             <h1>🧪 Anteprima XML H2H</h1>
 
@@ -4834,18 +4871,39 @@ def preview_xml_h2h_pratica(pratica_id: str):
 
             <div class="card">
                 <h2>Pratica</h2>
-                <p><strong>ID:</strong> {pratica.get("id")}</p>
-                <p><strong>Ordine:</strong> {pratica.get("shopify_order_name") or pratica.get("order_name") or "-"}</p>
-                <p><strong>Servizio:</strong> {pratica.get("tipo_servizio")}</p>
+
+                <p><strong>ID:</strong> {safe_html(pratica.get("id"))}</p>
+                <p><strong>Ordine:</strong> {safe_html(pratica.get("shopify_order_name") or pratica.get("order_name") or "-")}</p>
+                <p><strong>Servizio:</strong> {safe_html(pratica.get("tipo_servizio"))}</p>
                 <p><strong>Ricevuta di ritorno:</strong> <span class="badge">{rr_status}</span></p>
                 <p><strong>Invio reale a Poste:</strong> NO — questa è solo anteprima XML.</p>
             </div>
 
             <div class="card">
+                <h2>Dati pratica letti da Supabase</h2>
+
+                <p><strong>Mittente:</strong></p>
+                <div class="raw-box">
+                    {safe_html(mittente_raw)}
+                </div>
+
+                <p><strong>Destinatario:</strong></p>
+                <div class="raw-box">
+                    {safe_html(destinatario_raw)}
+                </div>
+            </div>
+
+            <div class="card">
                 <h2>Controllo rapido</h2>
+
                 <p>
                     Se la pratica è RR, qui sotto deve comparire:
                     <strong>&lt;DatiRicevuta&gt;</strong>
+                </p>
+
+                <p>
+                    Stato RR:
+                    {"<span class='ok'>DatiRicevuta attiva</span>" if has_rr else "<span class='warn'>DatiRicevuta non attiva</span>"}
                 </p>
             </div>
 
@@ -4858,11 +4916,18 @@ def preview_xml_h2h_pratica(pratica_id: str):
         """
 
     except Exception as e:
+        errore = (
+            str(e)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+
         return f"""
         <html>
         <body style="font-family:Arial;padding:30px;">
             <h1>Errore anteprima XML</h1>
-            <pre>{str(e)}</pre>
+            <pre>{errore}</pre>
             <a href="/dashboard/pratiche">← Torna alla dashboard</a>
         </body>
         </html>
