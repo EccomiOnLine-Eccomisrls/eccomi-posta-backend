@@ -509,6 +509,7 @@ def home():
 
 @app.get("/debug/email-function")
 @app.get("/poste/debug/email-function")
+@app.get("/poste/h2h/debug-email-function")
 def debug_email_function():
     """
     Verifica configurazione email Raccomandata.
