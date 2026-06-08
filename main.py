@@ -1371,7 +1371,8 @@ def poste_valorizza_test():
 
 @app.get("/poste/h2h/preconferma-test")
 def poste_preconferma_test():
-
+    require_h2h_debug_enabled()
+    
     history = HistoryPlugin()
 
     try:
