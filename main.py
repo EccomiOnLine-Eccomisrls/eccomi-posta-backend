@@ -4035,6 +4035,101 @@ def genera_pdf_telegramma(pdf_path, telegramma):
 
     c.save()
 
+@app.get("/dashboard/pratiche/telegramma-pdf/{pratica_id}")
+def dashboard_telegramma_pdf(pratica_id: str):
+    """
+    Genera il PDF cliente del Telegramma partendo dalla pratica salvata.
+    NON chiama Poste.
+    NON genera costi.
+    Serve per lavorazione manuale e archivio cliente.
+    """
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica Telegramma non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        if pratica.get("tipo_servizio") != "TELEGRAMMA":
+            return {
+                "success": False,
+                "error": "Questa pratica non è un Telegramma",
+                "tipo_servizio": pratica.get("tipo_servizio"),
+                "pratica_id": pratica_id
+            }
+
+        telegramma = {
+            "mittente": pratica.get("mittente") or {},
+            "destinatario": pratica.get("destinatario") or {},
+            "testo": pratica.get("testo") or ""
+        }
+
+        order_name_clean = str(
+            pratica.get("shopify_order_name")
+            or pratica.get("order_name")
+            or pratica_id
+        ).replace("#", "").replace("/", "-")
+
+        os.makedirs("data/telegrammi_pdf", exist_ok=True)
+
+        pdf_path = f"data/telegrammi_pdf/telegramma_{order_name_clean}.pdf"
+
+        genera_pdf_telegramma(
+            pdf_path=pdf_path,
+            telegramma=telegramma
+        )
+
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+
+        storage_path = f"telegrammi/{pratica_id}/telegramma_cliente.pdf"
+
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            storage_path,
+            pdf_bytes,
+            {
+                "content-type": "application/pdf",
+                "upsert": "true"
+            }
+        )
+
+        pdf_public_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
+            storage_path
+        )
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        supabase.table("pratiche") \
+            .update({
+                "pdf_url": pdf_public_url,
+                "updated_at": now_iso
+            }) \
+            .eq("id", pratica_id) \
+            .execute()
+
+        return RedirectResponse(
+            url=pdf_public_url,
+            status_code=302
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_GENERA_PDF_TELEGRAMMA",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
 def split_nome_cognome(full_name):
     parts = (full_name or "").strip().split()
 
