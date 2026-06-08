@@ -140,6 +140,31 @@ POSTE_H2H_BINDING = "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_R
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # ============================================================
+# SICUREZZA H2H - BLOCCO ENDPOINT DI TEST IN PRODUZIONE
+# ============================================================
+
+def h2h_debug_enabled():
+    return os.getenv(
+        "POSTE_DEBUG_H2H_ENABLED",
+        "false"
+    ).strip().lower() in [
+        "true",
+        "1",
+        "yes",
+        "si",
+        "sì",
+        "on"
+    ]
+
+
+def require_h2h_debug_enabled():
+    if not h2h_debug_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail="Endpoint H2H di test disattivato in produzione"
+        )
+
+# ============================================================
 # RUBRICA POSTA - MITTENTI / DESTINATARI SALVATI
 # ============================================================
 
@@ -1093,6 +1118,7 @@ def poste_test_submit():
 
 @app.get("/poste/h2h/invio-test")
 def poste_invio_test():
+    require_h2h_debug_enabled()
     history = HistoryPlugin()
 
     try:
