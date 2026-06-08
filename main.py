@@ -2737,6 +2737,32 @@ def confirm_poste_order(order_id: str):
             }
 
         ordine = ordine_res.data
+        
+        # =====================================================
+        # BLOCCO SICUREZZA: evita doppia finalizzazione Poste
+        # =====================================================
+
+        stato_corrente = ordine.get("stato")
+        numero_esistente = ordine.get("numero_raccomandata")
+
+        if stato_corrente in ["INVIATO_POSTE", "RICEVUTA_SALVATA", "COMPLETATO"] or numero_esistente:
+            return {
+                "success": False,
+                "blocked": True,
+                "error": "Pratica già inviata a Poste: finalizzazione bloccata",
+                "stato": stato_corrente,
+                "numero_raccomandata": numero_esistente,
+                "order_id": order_id
+            }
+
+        if stato_corrente != "PREZZATA_DA_CONFERMARE":
+            return {
+                "success": False,
+                "blocked": True,
+                "error": "Finalizzazione consentita solo per pratiche PREZZATA_DA_CONFERMARE",
+                "stato": stato_corrente,
+                "order_id": order_id
+            }
 
         id_richiesta = ordine.get("id_richiesta")
         guid_utente = ordine.get("guid_utente")
