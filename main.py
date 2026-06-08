@@ -5841,11 +5841,10 @@ async def shopify_raccomandata_order(request: Request):
 
         financial_status = str(order.get("financial_status") or "").lower().strip()
 
-        is_paid = financial_status in [
-            "paid",
-            "authorized",
-            "partially_paid"
-        ]
+        # Sicurezza Eccomi Posta:
+        # la raccomandata diventa lavorabile solo se Shopify conferma pagamento incassato.
+        # Stati come "authorized" o "partially_paid" NON devono abilitare l'invio Poste.
+        is_paid = financial_status == "paid"
 
         nuovo_stato = "RICEVUTO_PAGATO" if is_paid else "NON_PAGATO"
 
