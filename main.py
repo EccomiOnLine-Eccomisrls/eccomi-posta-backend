@@ -7420,15 +7420,56 @@ def dashboard_pratica_manuale(pratica_id: str):
 @app.get("/dashboard/pratiche/completa/{pratica_id}")
 def dashboard_pratica_completa(pratica_id: str):
 
-    supabase.table("pratiche").update({
-        "stato": "COMPLETATO",
-        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-    }).eq("id", pratica_id).execute()
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("id,stato,tipo_servizio,numero_raccomandata") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
 
-    return RedirectResponse(
-        url="/dashboard/pratiche?stato=COMPLETATO",
-        status_code=302
-    )
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        stato = pratica.get("stato")
+        tipo_servizio = pratica.get("tipo_servizio")
+        numero_raccomandata = pratica.get("numero_raccomandata")
+
+        # Sicurezza:
+        # una Raccomandata non può essere marcata COMPLETATA
+        # se prima non è stata realmente inviata a Poste.
+        if tipo_servizio == "RACCOMANDATA":
+            if stato != "INVIATO_POSTE" and not numero_raccomandata:
+                return {
+                    "success": False,
+                    "blocked": True,
+                    "error": "Una raccomandata può essere completata solo dopo INVIATO_POSTE",
+                    "stato": stato,
+                    "numero_raccomandata": numero_raccomandata,
+                    "pratica_id": pratica_id
+                }
+
+        supabase.table("pratiche").update({
+            "stato": "COMPLETATO",
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }).eq("id", pratica_id).execute()
+
+        return RedirectResponse(
+            url="/dashboard/pratiche?stato=COMPLETATO",
+            status_code=302
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "pratica_id": pratica_id
+        }
 
 @app.get("/dashboard/pratiche/elimina/{pratica_id}")
 def dashboard_pratica_elimina(pratica_id: str):
