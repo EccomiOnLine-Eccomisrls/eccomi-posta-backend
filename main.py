@@ -1595,6 +1595,7 @@ def poste_ricevuta_test():
 
 @app.get("/poste/h2h/full-cycle-v7")
 def poste_full_cycle_v7():
+    require_h2h_debug_enabled()
 
     history = HistoryPlugin()
 
