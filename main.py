@@ -6394,6 +6394,13 @@ def dashboard_pratiche(stato: str = None):
         stato_pratica = p.get("stato", "-")
         has_rr = bool_from_any(p.get("ricevuta_ritorno"))
 
+        if p.get("tipo_servizio") == "TELEGRAMMA":
+            pdf_cliente_href = f"/dashboard/pratiche/telegramma-pdf/{pratica_id}"
+            pdf_cliente_label = "PDF Telegramma"
+        else:
+            pdf_cliente_href = f"/dashboard/pratiche/pdf/{p.get('id_richiesta') or pratica_id}"
+            pdf_cliente_label = "PDF Cliente"
+
         servizio_display = p.get("tipo_servizio") or "-"
 
         if has_rr:
@@ -6700,9 +6707,9 @@ def dashboard_pratiche(stato: str = None):
                     </a>
 
                     <a class="btn-action"
-                       href="/dashboard/pratiche/pdf/{p.get('id_richiesta') or pratica_id}"
+                       href="{pdf_cliente_href}"
                        target="_blank">
-                        PDF Cliente
+                        {pdf_cliente_label}
                     </a>
 
                     {email_cliente_html}
