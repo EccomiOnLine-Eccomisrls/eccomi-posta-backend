@@ -4479,6 +4479,8 @@ def shopify_telegramma_test_h2h_xml_last():
 
 @app.get("/shopify/telegramma/send-last")
 def shopify_telegramma_send_last():
+    require_h2h_debug_enabled()
+    
     history = HistoryPlugin()
 
     try:
