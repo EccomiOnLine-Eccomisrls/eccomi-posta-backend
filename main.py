@@ -771,6 +771,60 @@ def telegramma_operations():
             "wsdl": POSTE_H2H_TOL_WSDL
         }
 
+@app.get("/poste/h2h/telegramma/signatures")
+def telegramma_signatures():
+    """
+    Legge firme input/output delle operazioni Telegramma.
+    NON invia Telegrammi.
+    NON genera costi.
+    Serve per costruire correttamente Preventivo, Submit, PreConfirm e Confirm.
+    """
+
+    try:
+        client = telegramma_client(timeout=30)
+
+        wanted_ops = [
+            "GetIdRequest",
+            "RecipientValidation",
+            "RecipientsValidation",
+            "Preventivo",
+            "Submit",
+            "PreConfirm",
+            "Confirm",
+            "GetStatus"
+        ]
+
+        result = {}
+
+        for service_name, srv in client.wsdl.services.items():
+            for port_name, port in srv.ports.items():
+                operations = port.binding._operations
+
+                for op_name in wanted_ops:
+                    if op_name in operations:
+                        op = operations[op_name]
+
+                        result[op_name] = {
+                            "input": str(op.input.signature()),
+                            "output": str(op.output.signature())
+                        }
+
+                break
+            break
+
+        return {
+            "success": True,
+            "service": "Telegramma H2H Poste",
+            "operations": result
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_SIGNATURES",
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/operations")
 def poste_operations():
