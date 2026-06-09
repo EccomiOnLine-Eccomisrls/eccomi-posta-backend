@@ -7130,7 +7130,6 @@ def dashboard_pratiche(stato: str = None):
             if len(cliente_email) <= 14
             else cliente_email[:11] + "..."
         )
-
                 numero_raccomandata = p.get("numero_raccomandata")
 
         colore = "#999"
@@ -7218,7 +7217,7 @@ def dashboard_pratiche(stato: str = None):
         except Exception:
             prezzo_poste_html = ""
 
-        if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "RICEVUTO_MANUALE":            invia_poste_html = f"""
+                    invia_poste_html = f"""
                 <a class="btn-action"
                    href="/dashboard/pratiche/telegramma-preventivo/{pratica_id}"
                    onclick="return confirm('Vuoi richiedere il preventivo reale Poste per questo Telegramma? Non verrà inviato nulla.')">
