@@ -1239,6 +1239,105 @@ def telegramma_normalizza_dati_indirizzo(data):
         "telefono": clean_h2h_text(parsed.get("contatto") or data.get("contatto") or "")
     }
 
+@app.get("/poste/h2h/telegramma/enum-values/{enum_name}")
+def telegramma_enum_values(enum_name: str):
+    """
+    Cerca nel WSDL/XSD i valori ammessi per un enum Telegramma.
+    NON invia Telegrammi.
+    NON genera costi.
+    """
+
+    import re
+    from urllib.parse import urljoin
+
+    try:
+        session = Session()
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_TOL_USERID,
+            POSTE_H2H_TOL_PASSWORD
+        )
+        session.verify = False
+
+        start_urls = [
+            POSTE_H2H_TOL_WSDL,
+            POSTE_H2H_TOL_SERVICE_URL + "?wsdl",
+            POSTE_H2H_TOL_SERVICE_URL + "?singleWsdl"
+        ]
+
+        visited = set()
+        queue = list(dict.fromkeys(start_urls))
+        snippets = []
+        enum_values = []
+
+        while queue and len(visited) < 40:
+            url = queue.pop(0)
+
+            if url in visited:
+                continue
+
+            visited.add(url)
+
+            try:
+                r = session.get(url, timeout=30)
+                text = r.text or ""
+            except Exception:
+                continue
+
+            if enum_name in text:
+                idx = text.find(enum_name)
+                start = max(0, idx - 1500)
+                end = min(len(text), idx + 3000)
+                snippets.append({
+                    "url": url,
+                    "snippet": text[start:end]
+                })
+
+                pattern = (
+                    r'<[^>]*(?:simpleType|SimpleType)[^>]*name=["\']'
+                    + re.escape(enum_name)
+                    + r'["\'][\s\S]*?</[^>]*(?:simpleType|SimpleType)>'
+                )
+
+                matches = re.findall(pattern, text)
+
+                for m in matches:
+                    values = re.findall(
+                        r'<[^>]*(?:enumeration|Enumeration)[^>]*value=["\']([^"\']+)["\']',
+                        m
+                    )
+
+                    for v in values:
+                        if v not in enum_values:
+                            enum_values.append(v)
+
+            links = re.findall(
+                r'(?:schemaLocation|location)=["\']([^"\']+)["\']',
+                text
+            )
+
+            for link in links:
+                full = urljoin(url, link)
+
+                if full not in visited and full not in queue:
+                    queue.append(full)
+
+        return {
+            "success": True,
+            "enum_name": enum_name,
+            "values": enum_values,
+            "visited_count": len(visited),
+            "visited": list(visited),
+            "snippets_count": len(snippets),
+            "snippets": snippets[:5]
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "enum_name": enum_name,
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/telegramma/submit-preview/{pratica_id}")
 def telegramma_submit_preview(pratica_id: str):
@@ -1492,11 +1591,11 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
 
         stato = pratica.get("stato")
 
-        if stato != "PREZZATA_DA_CONFERMARE":
+        if stato not in ["PREZZATA_DA_CONFERMARE", "ERRORE_POSTE"]:
             return {
                 "success": False,
                 "blocked": True,
-                "error": "Submit Telegramma consentito solo da PREZZATA_DA_CONFERMARE",
+                "error": "Submit Telegramma consentito solo da PREZZATA_DA_CONFERMARE o ERRORE_POSTE",
                 "stato": stato,
                 "pratica_id": pratica_id
             }
