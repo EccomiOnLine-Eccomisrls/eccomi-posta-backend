@@ -7174,7 +7174,7 @@ def dashboard_pratiche(stato: str = None):
             </a>
             """
 
-        row_bg = "#ffffff"
+                row_bg = "#ffffff"
 
         if stato_pratica == "ERRORE_POSTE":
             row_bg = "#fff5f5"
@@ -7186,37 +7186,37 @@ def dashboard_pratiche(stato: str = None):
             row_bg = "#eff6ff"
         elif stato_pratica == "PREZZATA_DA_CONFERMARE":
             row_bg = "#eef2ff"
-                elif stato_pratica in ["BOZZA_CHECKOUT", "NON_PAGATO"]:
-                    row_bg = "#f9fafb"
+        elif stato_pratica in ["BOZZA_CHECKOUT", "NON_PAGATO"]:
+            row_bg = "#f9fafb"
 
-                prezzo_poste_html = ""
+        prezzo_poste_html = ""
 
+        try:
+            poste_response_prezzo = p.get("poste_response") or {}
+
+            if isinstance(poste_response_prezzo, str):
                 try:
-                    poste_response_prezzo = p.get("poste_response") or {}
-
-                    if isinstance(poste_response_prezzo, str):
-                        try:
-                            poste_response_prezzo = json.loads(poste_response_prezzo)
-                        except Exception:
-                            poste_response_prezzo = {}
-
-                    prezzo_poste = (
-                        poste_response_prezzo.get("prezzo_totale")
-                        or poste_response_prezzo.get("prezzoTotale")
-                    )
-
-                    if prezzo_poste is not None:
-                        prezzo_poste = float(prezzo_poste)
-                        prezzo_formattato = f"{prezzo_poste:.2f}".replace(".", ",")
-
-                        prezzo_poste_html = f"""
-                            <span class="btn-action"
-                                  style="background:#fff7e6;color:#c2410c;font-weight:900;">
-                                💶 Prezzo Poste: € {prezzo_formattato}
-                            </span>
-                        """
+                    poste_response_prezzo = json.loads(poste_response_prezzo)
                 except Exception:
-                    prezzo_poste_html = ""
+                    poste_response_prezzo = {}
+
+            prezzo_poste = (
+                poste_response_prezzo.get("prezzo_totale")
+                or poste_response_prezzo.get("prezzoTotale")
+            )
+
+            if prezzo_poste is not None:
+                prezzo_poste = float(prezzo_poste)
+                prezzo_formattato = f"{prezzo_poste:.2f}".replace(".", ",")
+
+                prezzo_poste_html = f"""
+                    <span class="btn-action"
+                          style="background:#fff7e6;color:#c2410c;font-weight:900;">
+                        💶 Prezzo Poste: € {prezzo_formattato}
+                    </span>
+                """
+        except Exception:
+            prezzo_poste_html = ""
 
                 if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "RICEVUTO_MANUALE":
             invia_poste_html = f"""
