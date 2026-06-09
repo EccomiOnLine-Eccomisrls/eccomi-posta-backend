@@ -800,6 +800,180 @@ def telegramma_operations():
             "wsdl": POSTE_H2H_TOL_WSDL
         }
 
+@app.get("/dashboard/pratiche/telegramma-preventivo/{pratica_id}")
+def dashboard_telegramma_preventivo(pratica_id: str):
+    """
+    Recupera il prezzo reale Poste del Telegramma tramite Preventivo.
+    NON invia Telegrammi.
+    NON finalizza.
+    NON genera costo H2H di invio.
+    """
+
+    history = HistoryPlugin()
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        if pratica.get("tipo_servizio") != "TELEGRAMMA":
+            return {
+                "success": False,
+                "error": "Questa pratica non è un Telegramma",
+                "tipo_servizio": pratica.get("tipo_servizio"),
+                "pratica_id": pratica_id
+            }
+
+        parole = pratica.get("parole") or 0
+
+        try:
+            parole = int(parole)
+        except Exception:
+            parole = 0
+
+        if parole <= 0:
+            testo = pratica.get("testo") or ""
+            parole = len([w for w in testo.split() if w.strip()])
+
+        if parole <= 0:
+            return {
+                "success": False,
+                "error": "Numero parole non valido per il preventivo Telegramma",
+                "parole": parole,
+                "pratica_id": pratica_id
+            }
+
+        client, service = telegramma_service(
+            timeout=60,
+            extra_plugins=[history]
+        )
+
+        TOLPricingRequest = client.get_type("ns0:TOLPricingRequest")
+
+        request_preventivo = TOLPricingRequest(
+            AnticipazioneTelefonica=False,
+            CopiaMittente=False,
+            Coupon=None,
+            JoikidElettronico=False,
+            Jokid=False,
+            Nazionale=True,
+            NumeroDestinatari=1,
+            Parole=parole,
+            StatoDestinazione="ITALIA"
+        )
+
+        result = service.Preventivo(
+            request=request_preventivo
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        plain = zeep_to_plain(result)
+
+        prezzo_totale = None
+
+        try:
+            prezzo_totale = float(plain.get("prezzoTotale"))
+        except Exception:
+            try:
+                prezzo_totale = float(result.prezzoTotale)
+            except Exception:
+                prezzo_totale = None
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        poste_payload = {
+            "step": "TELEGRAMMA_PREVENTIVO_POSTE",
+            "note": "Preventivo reale Poste Telegramma recuperato",
+            "parole": parole,
+            "prezzo_totale": prezzo_totale,
+            "raw": str(result),
+            "preventivo_at": now_iso
+        }
+
+        supabase.table("pratiche") \
+            .update({
+                "stato": "PREZZATA_DA_CONFERMARE",
+                "poste_response": poste_payload,
+                "xml_sent": xml_sent,
+                "xml_received": xml_received,
+                "updated_at": now_iso
+            }) \
+            .eq("id", pratica_id) \
+            .execute()
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_PREVENTIVO_POSTE",
+            "pratica_id": pratica_id,
+            "parole": parole,
+            "prezzo_totale": prezzo_totale,
+            "poste_response": str(result),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+    except Exception as e:
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_PREVENTIVO",
+            "pratica_id": pratica_id,
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
 @app.get("/poste/h2h/telegramma/signatures")
 def telegramma_signatures():
     """
