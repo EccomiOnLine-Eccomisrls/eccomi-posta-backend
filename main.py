@@ -1086,6 +1086,55 @@ def telegramma_types():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/telegramma/deep-types")
+def telegramma_deep_types():
+    """
+    Legge tutti i tipi disponibili nel WSDL Telegramma Poste.
+    NON invia Telegrammi.
+    NON genera costi.
+    Serve per costruire correttamente Submit / PreConfirm / Confirm.
+    """
+
+    try:
+        client = telegramma_client(timeout=30)
+
+        keywords = [
+            "Telegramma",
+            "Mittente",
+            "Recipient",
+            "Destinat",
+            "Testo",
+            "Parti",
+            "Opzioni",
+            "Valorizzazione",
+            "Confirm",
+            "Order",
+            "Submit",
+            "TOL"
+        ]
+
+        found = []
+
+        for t in client.wsdl.types.types:
+            text = str(t)
+
+            if any(k.lower() in text.lower() for k in keywords):
+                found.append(text)
+
+        return {
+            "success": True,
+            "service": "Telegramma H2H Poste",
+            "count": len(found),
+            "types": found
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_DEEP_TYPES",
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/operations")
 def poste_operations():
