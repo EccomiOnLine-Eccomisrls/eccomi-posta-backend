@@ -516,6 +516,16 @@ app.add_middleware(
 
 
 class ForcePosteAddressPlugin(Plugin):
+class ForceTelegrammaAddressPlugin(Plugin):
+    def egress(self, envelope, http_headers, operation, binding_options):
+        fix_telegramma_wsa_to(envelope)
+        return envelope, http_headers
+
+
+def fix_telegramma_wsa_to(envelope):
+    for el in envelope.xpath("//*[local-name()='To']"):
+        el.text = POSTE_H2H_TOL_SERVICE_URL
+    return envelope
     def egress(self, envelope, http_headers, operation, binding_options):
         fix_wsa_to(envelope)
         return envelope, http_headers
@@ -566,7 +576,9 @@ def telegramma_client(timeout=60, extra_plugins=None):
 
     transport = Transport(session=session, timeout=timeout)
 
-    plugins = []
+    plugins = [
+        ForceTelegrammaAddressPlugin()
+    ]
 
     if extra_plugins:
         plugins.extend(extra_plugins)
@@ -1268,7 +1280,14 @@ def telegramma_submit_preview(pratica_id: str):
             pratica.get("destinatario") or {}
         )
 
-        testo = clean_h2h_text(pratica.get("testo") or "").upper()
+        testo = (
+            clean_h2h_text(pratica.get("testo") or "")
+            .replace("Ã™", "U'")
+            .replace("Ãš", "U'")
+            .replace("Ù", "U'")
+            .replace("ù", "u'")
+            .upper()
+        )
 
         if not testo:
             return {
