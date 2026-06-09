@@ -1762,7 +1762,7 @@ def telegramma_submit_preview(pratica_id: str):
             Opzioni=opzioni,
             PartiTesto=info_testo,
             TipoRecapitoMod60=None,
-            TipoTelegramma="TOLNAZIO",
+            TipoTelegramma="",
             Valorizzazione=valorizzazione_obj
         )
 
@@ -2008,7 +2008,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             Opzioni=opzioni,
             PartiTesto=info_testo,
             TipoRecapitoMod60=None,
-            TipoTelegramma="TOLNAZIO",
+            TipoTelegramma="",
             Valorizzazione=valorizzazione_obj
         )
         
