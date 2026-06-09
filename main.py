@@ -1196,6 +1196,32 @@ def telegramma_split_nome_cognome(full_name):
 
     return parts[0], " ".join(parts[1:])
 
+def telegramma_clean_telefono(value):
+    """
+    Poste si aspetta un telefono, non una email.
+    Se arriva una email o testo non telefonico, restituisce stringa vuota.
+    """
+
+    value = str(value or "").strip()
+
+    if not value:
+        return ""
+
+    if "@" in value:
+        return ""
+
+    allowed = "+0123456789"
+
+    cleaned = "".join(
+        ch for ch in value
+        if ch in allowed
+    )
+
+    if len(cleaned.replace("+", "")) < 6:
+        return ""
+
+    return cleaned
+
 
 def telegramma_normalizza_dati_indirizzo(data):
     """
@@ -1236,7 +1262,9 @@ def telegramma_normalizza_dati_indirizzo(data):
         "cap": normalizza_cap(parsed.get("cap") or ""),
         "comune": clean_h2h_text(parsed.get("comune") or "").upper(),
         "provincia": normalizza_provincia(parsed.get("provincia") or ""),
-        "telefono": clean_h2h_text(parsed.get("contatto") or data.get("contatto") or "")
+        "telefono": telegramma_clean_telefono(
+            parsed.get("contatto") or data.get("contatto") or ""
+        )
     }
 
 @app.get("/poste/h2h/telegramma/enum-values/{enum_name}")
@@ -1879,7 +1907,9 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
         except Exception:
             pass
 
-        plain_result = zeep_to_plain(submit_result)
+        plain_result = make_json_safe(
+            zeep_to_plain(submit_result)
+        )
 
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -3156,6 +3186,42 @@ def zeep_to_plain(obj):
             return obj
 
         return str(obj)
+
+def make_json_safe(obj):
+    """
+    Converte oggetti non JSON serializzabili:
+    datetime, date, Decimal, bytes, ecc.
+    Serve prima di salvare poste_response su Supabase.
+    """
+
+    import datetime as _dt
+    import decimal as _decimal
+
+    if obj is None:
+        return None
+
+    if isinstance(obj, (_dt.datetime, _dt.date)):
+        return obj.isoformat()
+
+    if isinstance(obj, _decimal.Decimal):
+        return float(obj)
+
+    if isinstance(obj, bytes):
+        return obj.decode("utf-8", errors="ignore")
+
+    if isinstance(obj, dict):
+        return {
+            str(k): make_json_safe(v)
+            for k, v in obj.items()
+        }
+
+    if isinstance(obj, list):
+        return [
+            make_json_safe(v)
+            for v in obj
+        ]
+
+    return obj
 
 
 def parse_amount_value(value):
