@@ -7192,9 +7192,9 @@ def dashboard_pratiche(stato: str = None):
         if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "RICEVUTO_MANUALE":
             invia_poste_html = f"""
                 <a class="btn-action"
-                   href="/dashboard/pratiche/telegramma-prezza/{pratica_id}"
-                  onclick="return confirm('Confermi controllo e prezzatura manuale del Telegramma? Non verrà chiamata Poste.')">
-                    💶 Prezza Telegramma
+                   href="/dashboard/pratiche/telegramma-preventivo/{pratica_id}"
+                   onclick="return confirm('Vuoi richiedere il preventivo reale Poste per questo Telegramma? Non verrà inviato nulla.')">
+                    💶 Preventivo Poste
                 </a>
             """
 
