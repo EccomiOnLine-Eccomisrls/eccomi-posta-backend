@@ -7255,14 +7255,18 @@ def dashboard_pratiche(stato: str = None):
                 '</a>'
             )
 
-        elif p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "PREZZATA_DA_CONFERMARE":
+                elif p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "PREZZATA_DA_CONFERMARE":
             invia_poste_html = f"""
                 {prezzo_poste_html}
 
-                <a class="btn-action btn-send"
+                <span class="btn-action btn-disabled">
+                    🚀 Invio Poste H2H in preparazione
+                </span>
+
+                <a class="btn-action"
                    href="/dashboard/pratiche/telegramma-finalizza/{pratica_id}"
-                   onclick="return confirm('Confermi finalizzazione del Telegramma? Attenzione: questo è il passaggio successivo dopo il preventivo Poste.')">
-                    ✅ Finalizza Poste
+                   onclick="return confirm('Attenzione: questa azione NON invia ancora il Telegramma tramite Poste H2H. Serve solo per segnare la pratica come lavorata manualmente. Confermi?')">
+                    📝 Segna inviato manuale
                 </a>
             """
 
