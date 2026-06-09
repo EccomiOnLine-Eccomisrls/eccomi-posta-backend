@@ -4295,6 +4295,123 @@ def dashboard_telegramma_prezza(pratica_id: str):
             "error": str(e)
         }
 
+@app.get("/dashboard/pratiche/telegramma-finalizza/{pratica_id}")
+def dashboard_telegramma_finalizza(pratica_id: str):
+    """
+    Finalizza manualmente un Telegramma già controllato/prezzato.
+    NON chiama Poste H2H.
+    NON genera costi.
+    Porta la pratica a INVIATO_POSTE e garantisce il PDF Telegramma.
+    """
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        if pratica.get("tipo_servizio") != "TELEGRAMMA":
+            return {
+                "success": False,
+                "error": "Questa pratica non è un Telegramma",
+                "tipo_servizio": pratica.get("tipo_servizio"),
+                "pratica_id": pratica_id
+            }
+
+        stato = pratica.get("stato")
+
+        if stato != "PREZZATA_DA_CONFERMARE":
+            return {
+                "success": False,
+                "blocked": True,
+                "error": "Il Telegramma può essere finalizzato solo da PREZZATA_DA_CONFERMARE",
+                "stato": stato,
+                "pratica_id": pratica_id
+            }
+
+        pdf_public_url = pratica.get("pdf_url") or ""
+
+        # Se il PDF Telegramma non esiste ancora, lo genera e lo salva
+        if not pdf_public_url:
+            telegramma = {
+                "mittente": pratica.get("mittente") or {},
+                "destinatario": pratica.get("destinatario") or {},
+                "testo": pratica.get("testo") or ""
+            }
+
+            order_name_clean = str(
+                pratica.get("shopify_order_name")
+                or pratica.get("order_name")
+                or pratica_id
+            ).replace("#", "").replace("/", "-")
+
+            os.makedirs("data/telegrammi_pdf", exist_ok=True)
+
+            pdf_path = f"data/telegrammi_pdf/telegramma_{order_name_clean}.pdf"
+
+            genera_pdf_telegramma(
+                pdf_path=pdf_path,
+                telegramma=telegramma
+            )
+
+            with open(pdf_path, "rb") as f:
+                pdf_bytes = f.read()
+
+            storage_path = f"telegrammi/{pratica_id}/telegramma_cliente.pdf"
+
+            supabase.storage.from_(SUPABASE_BUCKET).upload(
+                storage_path,
+                pdf_bytes,
+                {
+                    "content-type": "application/pdf",
+                    "upsert": "true"
+                }
+            )
+
+            pdf_public_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
+                storage_path
+            )
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        supabase.table("pratiche") \
+            .update({
+                "stato": "INVIATO_POSTE",
+                "pdf_url": pdf_public_url,
+                "pdf_ricevuta_cliente_url": pdf_public_url,
+                "poste_response": {
+                    "step": "TELEGRAMMA_FINALIZZATO_MANUALE",
+                    "note": "Telegramma finalizzato manualmente da dashboard",
+                    "finalizzato_at": now_iso
+                },
+                "updated_at": now_iso
+            }) \
+            .eq("id", pratica_id) \
+            .execute()
+
+        return RedirectResponse(
+            url="/dashboard/pratiche?stato=INVIATO_POSTE",
+            status_code=302
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_FINALIZZA",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
 @app.get("/shopify/telegramma/order")
 def shopify_telegramma_order_info():
     return {
