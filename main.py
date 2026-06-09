@@ -7124,7 +7124,7 @@ def dashboard_pratiche(stato: str = None):
         created_raw = p.get("created_at") or ""
         data_breve = created_raw.replace("T", " ")[:16]
 
-                cliente_email = p.get("cliente_email") or "-"
+        cliente_email = p.get("cliente_email") or "-"
         email_breve = (
             cliente_email
             if len(cliente_email) <= 14
