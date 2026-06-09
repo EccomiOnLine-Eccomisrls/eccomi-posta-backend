@@ -2018,14 +2018,26 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             "Telegramma.WS"
         )
 
+        ArrayOfRecipientType = telegramma_find_type(
+            client,
+            "ArrayOfRecipient",
+            "Telegramma.WS"
+        )
+
         recipient_obj = RecipientType(
             ClientIDRecipient="1",
             Provincia=destinatario_data.get("provincia") or "",
             destinatario=destinatario_obj
         )
 
-        validation_result = service.RecipientValidation(
-            recipient=recipient_obj,
+        recipients_obj = ArrayOfRecipientType(
+            Recipient=[
+                recipient_obj
+            ]
+        )
+
+        validation_result = service.RecipientsValidation(
+            recipients=recipients_obj,
             idRequest=id_request
         )
 
