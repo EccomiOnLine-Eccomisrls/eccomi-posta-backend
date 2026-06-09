@@ -2011,10 +2011,31 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             TipoTelegramma="TOLNAZIO",
             Valorizzazione=valorizzazione_obj
         )
+        
+        RecipientType = telegramma_find_type(
+            client,
+            "Recipient",
+            "Telegramma.WS"
+        )
+
+        recipient_obj = RecipientType(
+            ClientIDRecipient="1",
+            Provincia=destinatario_data.get("provincia") or "",
+            destinatario=destinatario_obj
+        )
+
+        validation_result = service.RecipientValidation(
+            recipient=recipient_obj,
+            idRequest=id_request
+        )
+
+        validation_plain = make_json_safe(
+            zeep_to_plain(validation_result)
+        )
 
         submit_result = service.Submit(
             telegramma=telegramma_obj,
-            Customer=POSTE_H2H_TOL_CONTRACT_ID,
+            Customer=POSTE_H2H_TOL_USERID,
             idRequest=id_request,
             CodiceContratto=POSTE_H2H_TOL_CONTRACT_ID
         )
@@ -2062,6 +2083,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             "poste_description": poste_description,
             "submit_ok": submit_ok,
             "pricing": pricing_plain,
+            "validation_same_id_request": validation_plain,
             "submit_result": plain_result,
             "raw": str(submit_result),
             "submit_at": now_iso
