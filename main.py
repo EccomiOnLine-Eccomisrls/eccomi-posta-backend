@@ -1762,7 +1762,7 @@ def telegramma_submit_preview(pratica_id: str):
             Nazionale=True,
             Opzioni=opzioni,
             PartiTesto=info_testo,
-            TipoRecapitoMod60="None",
+            TipoRecapitoMod60=None,
             TipoTelegramma="TOLNAZIO",
             Valorizzazione=valorizzazione_obj
         )
