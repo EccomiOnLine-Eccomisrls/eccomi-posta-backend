@@ -2008,7 +2008,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             Nazionale=True,
             Opzioni=opzioni,
             PartiTesto=info_testo,
-            TipoRecapitoMod60="None",
+            TipoRecapitoMod60=None,
             TipoTelegramma="TOLNAZIO",
             Valorizzazione=valorizzazione_obj
         )
