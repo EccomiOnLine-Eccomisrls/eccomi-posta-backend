@@ -6890,7 +6890,7 @@ def dashboard_pratiche(stato: str = None):
         .table("pratiche")
         .select(
             "id,order_id,order_name,shopify_order_name,tipo_servizio,"
-            "cliente_email,stato,numero_raccomandata,pdf_url,"
+            "cliente_email,stato,numero_raccomandata,pdf_url,poste_response,"
             "id_richiesta,ricevuta_ritorno,created_at,updated_at,"
             "email_sent,email_sent_at,email_error,email_to,email_subject,email_resend_id"
         )
@@ -7186,10 +7186,39 @@ def dashboard_pratiche(stato: str = None):
             row_bg = "#eff6ff"
         elif stato_pratica == "PREZZATA_DA_CONFERMARE":
             row_bg = "#eef2ff"
-        elif stato_pratica in ["BOZZA_CHECKOUT", "NON_PAGATO"]:
-            row_bg = "#f9fafb"
+                elif stato_pratica in ["BOZZA_CHECKOUT", "NON_PAGATO"]:
+                    row_bg = "#f9fafb"
 
-        if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "RICEVUTO_MANUALE":
+                prezzo_poste_html = ""
+
+                try:
+                    poste_response_prezzo = p.get("poste_response") or {}
+
+                    if isinstance(poste_response_prezzo, str):
+                        try:
+                            poste_response_prezzo = json.loads(poste_response_prezzo)
+                        except Exception:
+                            poste_response_prezzo = {}
+
+                    prezzo_poste = (
+                        poste_response_prezzo.get("prezzo_totale")
+                        or poste_response_prezzo.get("prezzoTotale")
+                    )
+
+                    if prezzo_poste is not None:
+                        prezzo_poste = float(prezzo_poste)
+                        prezzo_formattato = f"{prezzo_poste:.2f}".replace(".", ",")
+
+                        prezzo_poste_html = f"""
+                            <span class="btn-action"
+                                  style="background:#fff7e6;color:#c2410c;font-weight:900;">
+                                💶 Prezzo Poste: € {prezzo_formattato}
+                            </span>
+                        """
+                except Exception:
+                    prezzo_poste_html = ""
+
+                if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "RICEVUTO_MANUALE":
             invia_poste_html = f"""
                 <a class="btn-action"
                    href="/dashboard/pratiche/telegramma-preventivo/{pratica_id}"
@@ -7228,10 +7257,11 @@ def dashboard_pratiche(stato: str = None):
             
         elif p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "PREZZATA_DA_CONFERMARE":
             invia_poste_html = f"""
+                {prezzo_poste_html}
+
                 <a class="btn-action btn-send"
                    href="/dashboard/pratiche/telegramma-finalizza/{pratica_id}"
-                   onclick="return confirm('Confermi finalizzazione manuale del Telegramma? Non verrà chiamata Poste H2H.')">
-                    ✅ Finalizza Poste
+                   onclick="return confirm('Confermi finalizzazione del Telegramma? Attenzione: questo è il passaggio successivo dopo il preventivo Poste.')">                    ✅ Finalizza Poste
                 </a>
             """
 
