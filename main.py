@@ -1338,6 +1338,112 @@ def telegramma_enum_values(enum_name: str):
             "error": str(e)
         }
 
+@app.get("/poste/h2h/telegramma/enum-values-fast/{enum_name}")
+def telegramma_enum_values_fast(enum_name: str):
+    """
+    Versione veloce per cercare enum nel WSDL/XSD Telegramma.
+    NON invia Telegrammi.
+    NON genera costi.
+    """
+
+    import re
+    from urllib.parse import urljoin
+
+    try:
+        session = Session()
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_TOL_USERID,
+            POSTE_H2H_TOL_PASSWORD
+        )
+        session.verify = False
+
+        urls = [
+            POSTE_H2H_TOL_SERVICE_URL + "?singleWsdl",
+            POSTE_H2H_TOL_SERVICE_URL + "?wsdl",
+            POSTE_H2H_TOL_WSDL
+        ]
+
+        visited = []
+        found_snippets = []
+        enum_values = []
+
+        for url in urls:
+            try:
+                r = session.get(url, timeout=8)
+                text = r.text or ""
+                visited.append(url)
+            except Exception as ex:
+                visited.append(f"{url} ERRORE: {ex}")
+                continue
+
+            if enum_name in text:
+                idx = text.find(enum_name)
+                snippet = text[max(0, idx - 2500): min(len(text), idx + 5000)]
+                found_snippets.append({
+                    "url": url,
+                    "snippet": snippet
+                })
+
+                values = re.findall(
+                    r'<[^>]*enumeration[^>]*value=["\']([^"\']+)["\']',
+                    snippet,
+                    flags=re.IGNORECASE
+                )
+
+                for v in values:
+                    if v not in enum_values:
+                        enum_values.append(v)
+
+            links = re.findall(
+                r'(?:schemaLocation|location)=["\']([^"\']+)["\']',
+                text
+            )
+
+            for link in links[:12]:
+                full = urljoin(url, link)
+
+                try:
+                    r2 = session.get(full, timeout=8)
+                    text2 = r2.text or ""
+                    visited.append(full)
+                except Exception as ex:
+                    visited.append(f"{full} ERRORE: {ex}")
+                    continue
+
+                if enum_name in text2:
+                    idx = text2.find(enum_name)
+                    snippet = text2[max(0, idx - 2500): min(len(text2), idx + 5000)]
+                    found_snippets.append({
+                        "url": full,
+                        "snippet": snippet
+                    })
+
+                    values = re.findall(
+                        r'<[^>]*enumeration[^>]*value=["\']([^"\']+)["\']',
+                        snippet,
+                        flags=re.IGNORECASE
+                    )
+
+                    for v in values:
+                        if v not in enum_values:
+                            enum_values.append(v)
+
+        return {
+            "success": True,
+            "enum_name": enum_name,
+            "values": enum_values,
+            "visited": visited,
+            "snippets_count": len(found_snippets),
+            "snippets": found_snippets[:3]
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "enum_name": enum_name,
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/telegramma/submit-preview/{pratica_id}")
 def telegramma_submit_preview(pratica_id: str):
