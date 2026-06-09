@@ -579,6 +579,35 @@ def telegramma_client(timeout=60, extra_plugins=None):
 
     return client
 
+def telegramma_service(timeout=60, extra_plugins=None):
+    """
+    Crea il service Telegramma H2H forzando l'endpoint corretto.
+    Serve per chiamate reali tipo Preventivo, Submit, PreConfirm, Confirm.
+    """
+
+    client = telegramma_client(
+        timeout=timeout,
+        extra_plugins=extra_plugins
+    )
+
+    for srv in client.wsdl.services.values():
+        for port in srv.ports.values():
+            binding_name = port.binding.name
+
+            service = client.create_service(
+                binding_name,
+                POSTE_H2H_TOL_SERVICE_URL
+            )
+
+            try:
+                service._binding_options["address"] = POSTE_H2H_TOL_SERVICE_URL
+            except Exception:
+                pass
+
+            return client, service
+
+    raise RuntimeError("Nessun binding Telegramma trovato nel WSDL")
+
 
 @app.get("/")
 def home():
