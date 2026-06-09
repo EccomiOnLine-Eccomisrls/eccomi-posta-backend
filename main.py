@@ -1453,6 +1453,312 @@ def telegramma_submit_preview(pratica_id: str):
             "error": str(e)
         }
 
+@app.get("/dashboard/pratiche/telegramma-submit-poste/{pratica_id}")
+def dashboard_telegramma_submit_poste(pratica_id: str):
+    """
+    Esegue il Submit reale Telegramma su Poste H2H TEST.
+    ATTENZIONE:
+    - chiama davvero service.Submit
+    - NON esegue PreConfirm
+    - NON esegue Confirm
+    - salva XML e risposta Poste
+    """
+
+    history = HistoryPlugin()
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        if pratica.get("tipo_servizio") != "TELEGRAMMA":
+            return {
+                "success": False,
+                "error": "Questa pratica non è un Telegramma",
+                "tipo_servizio": pratica.get("tipo_servizio"),
+                "pratica_id": pratica_id
+            }
+
+        stato = pratica.get("stato")
+
+        if stato != "PREZZATA_DA_CONFERMARE":
+            return {
+                "success": False,
+                "blocked": True,
+                "error": "Submit Telegramma consentito solo da PREZZATA_DA_CONFERMARE",
+                "stato": stato,
+                "pratica_id": pratica_id
+            }
+
+        mittente_data = telegramma_normalizza_dati_indirizzo(
+            pratica.get("mittente") or {}
+        )
+
+        destinatario_data = telegramma_normalizza_dati_indirizzo(
+            pratica.get("destinatario") or {}
+        )
+
+        testo = (
+            clean_h2h_text(pratica.get("testo") or "")
+            .replace("Ã™", "U'")
+            .replace("Ãš", "U'")
+            .replace("Ù", "U'")
+            .replace("ù", "u'")
+            .upper()
+        )
+
+        if not testo:
+            return {
+                "success": False,
+                "error": "Testo Telegramma mancante",
+                "pratica_id": pratica_id
+            }
+
+        client, service = telegramma_service(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        TelegrammaType = telegramma_find_type(
+            client,
+            "Telegramma",
+            "Telegramma.WS"
+        )
+
+        MittenteType = telegramma_find_type(
+            client,
+            "Mittente",
+            "Telegramma.Schema"
+        )
+
+        DestinatarioType = telegramma_find_type(
+            client,
+            "Destinatario",
+            "Telegramma.Schema"
+        )
+
+        TelegrammaDestinatarioType = telegramma_find_type(
+            client,
+            "TelegrammaDestinatario",
+            "Telegramma.Schema"
+        )
+
+        InfoTestoType = telegramma_find_type(
+            client,
+            "InfoTesto",
+            "Telegramma.Schema"
+        )
+
+        OpzioniType = telegramma_find_type(
+            client,
+            "Opzioni",
+            "Telegramma.WS"
+        )
+
+        TipoRecType = telegramma_find_type(
+            client,
+            "TelegrammaDestinatarioTipoRec",
+            "Telegramma.Schema"
+        )
+
+        mitt_nome, mitt_cognome = telegramma_split_nome_cognome(
+            mittente_data.get("nome")
+        )
+
+        dest_nome, dest_cognome = telegramma_split_nome_cognome(
+            destinatario_data.get("nome")
+        )
+
+        mittente_obj = MittenteType(
+            CAP=mittente_data.get("cap"),
+            Citta=mittente_data.get("comune"),
+            Cognome=mitt_cognome,
+            Indirizzo=mittente_data.get("indirizzo"),
+            InvioAlMittente=False,
+            Nome=mitt_nome,
+            RagioneSociale="",
+            Telefono=mittente_data.get("telefono")
+        )
+
+        destinatario_obj = DestinatarioType(
+            CAP=destinatario_data.get("cap"),
+            Citta=destinatario_data.get("comune"),
+            Cognome=dest_cognome,
+            Indirizzo=destinatario_data.get("indirizzo"),
+            Nome=dest_nome,
+            RagioneSociale="",
+            Stato="ITALIA",
+            Telefono=destinatario_data.get("telefono")
+        )
+
+        telegramma_destinatario = TelegrammaDestinatarioType(
+            Destinatario=destinatario_obj,
+            Frazionario="",
+            IDTelegramma="1",
+            LineaPilota="",
+            NumeroDestinatarioCorrente=1,
+            TipoRec=TipoRecType("NORMALE"),
+            TipoRecapitoJokid=None
+        )
+
+        info_testo = InfoTestoType(
+            NumeroParteCorrente=1,
+            Testo=testo
+        )
+
+        opzioni = OpzioniType(
+            CTA=False,
+            Note=""
+        )
+
+        guid_message = str(uuid.uuid4())
+        id_request = str(uuid.uuid4())
+
+        telegramma_obj = TelegrammaType(
+            Coupon=None,
+            DataTelegramma=datetime.datetime.now().replace(microsecond=0),
+            Destinatari={
+                "TelegrammaDestinatario": [
+                    telegramma_destinatario
+                ]
+            },
+            Firma=mittente_data.get("nome") or "",
+            GUIDMessage=guid_message,
+            Jokid=None,
+            Mittente=mittente_obj,
+            Mod60Elettronico=None,
+            Nazionale=True,
+            Opzioni=opzioni,
+            PartiTesto=info_testo,
+            TipoRecapitoMod60=None,
+            TipoTelegramma="TOLNAZIO",
+            Valorizzazione=None
+        )
+
+        submit_result = service.Submit(
+            telegramma=telegramma_obj,
+            Customer=POSTE_H2H_TOL_USERID,
+            idRequest=id_request,
+            CodiceContratto=POSTE_H2H_TOL_CONTRACT_ID
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        plain_result = zeep_to_plain(submit_result)
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        poste_payload = {
+            "step": "TELEGRAMMA_SUBMIT_POSTE",
+            "note": "Submit Telegramma eseguito su Poste H2H TEST. PreConfirm/Confirm non ancora eseguiti.",
+            "id_request": id_request,
+            "guid_message": guid_message,
+            "submit_result": plain_result,
+            "raw": str(submit_result),
+            "submit_at": now_iso
+        }
+
+        supabase.table("pratiche") \
+            .update({
+                "stato": "SUBMIT_POSTE_OK",
+                "id_richiesta": id_request,
+                "poste_response": poste_payload,
+                "xml_sent": xml_sent,
+                "xml_received": xml_received,
+                "updated_at": now_iso
+            }) \
+            .eq("id", pratica_id) \
+            .execute()
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_SUBMIT_POSTE",
+            "pratica_id": pratica_id,
+            "id_request": id_request,
+            "guid_message": guid_message,
+            "submit_result": plain_result,
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+    except Exception as e:
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            supabase.table("pratiche") \
+                .update({
+                    "stato": "ERRORE_POSTE",
+                    "poste_response": {
+                        "step": "ERRORE_TELEGRAMMA_SUBMIT_POSTE",
+                        "error": str(e)
+                    },
+                    "xml_sent": xml_sent,
+                    "xml_received": xml_received,
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }) \
+                .eq("id", pratica_id) \
+                .execute()
+        except Exception:
+            pass
+
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_SUBMIT_POSTE",
+            "pratica_id": pratica_id,
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
 
 @app.get("/poste/h2h/operations")
 def poste_operations():
