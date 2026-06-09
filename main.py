@@ -825,6 +825,64 @@ def telegramma_signatures():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/telegramma/types")
+def telegramma_types():
+    """
+    Legge i tipi principali del servizio Telegramma.
+    NON invia Telegrammi.
+    NON genera costi.
+    Serve per costruire Preventivo, Submit, PreConfirm e Confirm.
+    """
+
+    try:
+        client = telegramma_client(timeout=30)
+
+        types_to_check = [
+            "ns0:TOLPricingRequest",
+            "ns0:TOLPricingResponse",
+            "ns0:Telegramma",
+            "ns0:SubmitResult",
+            "ns0:PreconfirmResult",
+            "ns10:ConfirmOrder",
+            "ns0:ConfirmOrderResult",
+            "ns0:Recipient",
+            "ns0:RecipientValidationResult",
+            "ns0:GetStatusRequest",
+            "ns0:GetStatusResult",
+            "ns0:ArrayOfRecipient",
+            "ns7:ArrayOfstring"
+        ]
+
+        result = {}
+
+        for type_name in types_to_check:
+            try:
+                result[type_name] = str(client.get_type(type_name))
+            except Exception as e:
+                result[type_name] = f"ERRORE: {str(e)}"
+
+        namespaces = {}
+
+        try:
+            for prefix, namespace in client.namespaces:
+                namespaces[str(prefix)] = str(namespace)
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "service": "Telegramma H2H Poste",
+            "namespaces": namespaces,
+            "types": result
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_TYPES",
+            "error": str(e)
+        }
+
 
 @app.get("/poste/h2h/operations")
 def poste_operations():
