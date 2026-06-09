@@ -151,6 +151,21 @@ POSTE_H2H_TOL_SERVICE_URL = os.getenv(
     "https://sptest.posteitaliane.it/TelegrammaExtranet/WsTOL.svc"
 )
 
+POSTE_H2H_TOL_USERID = os.getenv(
+    "POSTE_H2H_TOL_USERID",
+    POSTE_H2H_USERID
+)
+
+POSTE_H2H_TOL_PASSWORD = os.getenv(
+    "POSTE_H2H_TOL_PASSWORD",
+    POSTE_H2H_PASSWORD
+)
+
+POSTE_H2H_TOL_CONTRACT_ID = os.getenv(
+    "POSTE_H2H_TOL_CONTRACT_ID",
+    POSTE_H2H_CONTRACT_ID
+)
+
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # ============================================================
@@ -543,7 +558,10 @@ def poste_client(timeout=60, extra_plugins=None):
 
 def telegramma_client(timeout=60, extra_plugins=None):
     session = Session()
-    session.auth = HTTPBasicAuth(POSTE_H2H_USERID, POSTE_H2H_PASSWORD)
+    session.auth = HTTPBasicAuth(
+    POSTE_H2H_TOL_USERID,
+    POSTE_H2H_TOL_PASSWORD
+)
     session.verify = False
 
     transport = Transport(session=session, timeout=timeout)
