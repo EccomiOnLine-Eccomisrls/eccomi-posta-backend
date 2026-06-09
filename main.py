@@ -516,6 +516,17 @@ app.add_middleware(
 
 
 class ForcePosteAddressPlugin(Plugin):
+    def egress(self, envelope, http_headers, operation, binding_options):
+        fix_wsa_to(envelope)
+        return envelope, http_headers
+
+
+def fix_wsa_to(envelope):
+    for el in envelope.xpath("//*[local-name()='To']"):
+        el.text = POSTE_H2H_SERVICE_URL
+    return envelope
+
+
 class ForceTelegrammaAddressPlugin(Plugin):
     def egress(self, envelope, http_headers, operation, binding_options):
         fix_telegramma_wsa_to(envelope)
@@ -525,15 +536,6 @@ class ForceTelegrammaAddressPlugin(Plugin):
 def fix_telegramma_wsa_to(envelope):
     for el in envelope.xpath("//*[local-name()='To']"):
         el.text = POSTE_H2H_TOL_SERVICE_URL
-    return envelope
-    def egress(self, envelope, http_headers, operation, binding_options):
-        fix_wsa_to(envelope)
-        return envelope, http_headers
-
-
-def fix_wsa_to(envelope):
-    for el in envelope.xpath("//*[local-name()='To']"):
-        el.text = POSTE_H2H_SERVICE_URL
     return envelope
 
 
@@ -1423,6 +1425,8 @@ def telegramma_submit_preview(pratica_id: str):
             idRequest=id_request,
             CodiceContratto=POSTE_H2H_TOL_CONTRACT_ID
         )
+        
+        fix_telegramma_wsa_to(message)
 
         xml_string = etree.tostring(
             message,
