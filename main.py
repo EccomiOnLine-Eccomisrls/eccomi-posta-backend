@@ -4223,6 +4223,78 @@ def build_nominativo_h2h_from_data(data, NominativoType, IndirizzoType, label="i
         CodiceFiscaleResult=0
     )
 
+@app.get("/dashboard/pratiche/telegramma-prezza/{pratica_id}")
+def dashboard_telegramma_prezza(pratica_id: str):
+    """
+    Porta un Telegramma da RICEVUTO_MANUALE a PREZZATA_DA_CONFERMARE.
+    NON chiama Poste.
+    NON genera costi.
+    Serve come controllo operatore prima della finalizzazione.
+    """
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        if pratica.get("tipo_servizio") != "TELEGRAMMA":
+            return {
+                "success": False,
+                "error": "Questa pratica non è un Telegramma",
+                "tipo_servizio": pratica.get("tipo_servizio"),
+                "pratica_id": pratica_id
+            }
+
+        stato = pratica.get("stato")
+
+        if stato != "RICEVUTO_MANUALE":
+            return {
+                "success": False,
+                "blocked": True,
+                "error": "Il Telegramma può essere prezzato solo da RICEVUTO_MANUALE",
+                "stato": stato,
+                "pratica_id": pratica_id
+            }
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        supabase.table("pratiche") \
+            .update({
+                "stato": "PREZZATA_DA_CONFERMARE",
+                "poste_response": {
+                    "step": "TELEGRAMMA_PREZZATO_MANUALE",
+                    "note": "Telegramma controllato manualmente e pronto per finalizzazione",
+                    "prezzato_at": now_iso
+                },
+                "updated_at": now_iso
+            }) \
+            .eq("id", pratica_id) \
+            .execute()
+
+        return RedirectResponse(
+            url="/dashboard/pratiche?stato=PREZZATA_DA_CONFERMARE",
+            status_code=302
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_PREZZA",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
 @app.get("/shopify/telegramma/order")
 def shopify_telegramma_order_info():
     return {
@@ -6585,7 +6657,16 @@ def dashboard_pratiche(stato: str = None):
         elif stato_pratica in ["BOZZA_CHECKOUT", "NON_PAGATO"]:
             row_bg = "#f9fafb"
 
-        if stato_pratica == "BOZZA_CHECKOUT":
+        if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "RICEVUTO_MANUALE":
+            invia_poste_html = f"""
+                <a class="btn-action"
+                   href="/dashboard/pratiche/telegramma-prezza/{pratica_id}"
+                  onclick="return confirm('Confermi controllo e prezzatura manuale del Telegramma? Non verrà chiamata Poste.')">
+                    💶 Prezza Telegramma
+                </a>
+            """
+
+        elif stato_pratica == "BOZZA_CHECKOUT":
             invia_poste_html = f"""
                 <a class="btn-action"
                    href="/dashboard/pratiche/marca-pagata/{pratica_id}"
