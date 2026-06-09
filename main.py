@@ -1611,7 +1611,7 @@ def telegramma_submit_preview(pratica_id: str):
             IDTelegramma="1",
             LineaPilota="",
             NumeroDestinatarioCorrente=1,
-            TipoRec=TipoRecType("Item"),
+            TipoRec=TipoRecType("TLF"),
             TipoRecapitoJokid=None
         )
 
@@ -1841,7 +1841,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             IDTelegramma="1",
             LineaPilota="",
             NumeroDestinatarioCorrente=1,
-            TipoRec=TipoRecType("Item"),
+            TipoRec=TipoRecType("TLF"),
             TipoRecapitoJokid=None
         )
 
