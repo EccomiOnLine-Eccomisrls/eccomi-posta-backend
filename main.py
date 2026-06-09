@@ -6810,6 +6810,15 @@ def dashboard_pratiche(stato: str = None):
                 '🚀 Invia diretto Poste'
                 '</a>'
             )
+            
+        elif p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "PREZZATA_DA_CONFERMARE":
+            invia_poste_html = f"""
+                <a class="btn-action btn-send"
+                   href="/dashboard/pratiche/telegramma-finalizza/{pratica_id}"
+                   onclick="return confirm('Confermi finalizzazione manuale del Telegramma? Non verrà chiamata Poste H2H.')">
+                    ✅ Finalizza Poste
+                </a>
+            """
 
         elif stato_pratica == "PREZZATA_DA_CONFERMARE" and h2h_order_id:
             if costo_display:
