@@ -137,6 +137,20 @@ POSTE_H2H_ROL_WSDL = os.getenv(
 POSTE_H2H_SERVICE_URL = "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
 POSTE_H2H_BINDING = "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_ROLServiceSoap"
 
+# ============================================================
+# POSTE H2H TELEGRAMMA - TOL
+# ============================================================
+
+POSTE_H2H_TOL_WSDL = os.getenv(
+    "POSTE_H2H_TOL_WSDL",
+    "https://sptest.posteitaliane.it/TelegrammaExtranet/WsTOL.svc?wsdl"
+)
+
+POSTE_H2H_TOL_SERVICE_URL = os.getenv(
+    "POSTE_H2H_TOL_SERVICE_URL",
+    "https://sptest.posteitaliane.it/TelegrammaExtranet/WsTOL.svc"
+)
+
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # ============================================================
@@ -527,6 +541,26 @@ def poste_client(timeout=60, extra_plugins=None):
 
     return client, service
 
+def telegramma_client(timeout=60, extra_plugins=None):
+    session = Session()
+    session.auth = HTTPBasicAuth(POSTE_H2H_USERID, POSTE_H2H_PASSWORD)
+    session.verify = False
+
+    transport = Transport(session=session, timeout=timeout)
+
+    plugins = []
+
+    if extra_plugins:
+        plugins.extend(extra_plugins)
+
+    client = Client(
+        wsdl=POSTE_H2H_TOL_WSDL,
+        transport=transport,
+        plugins=plugins
+    )
+
+    return client
+
 
 @app.get("/")
 def home():
@@ -670,6 +704,54 @@ def test_poste_h2h():
 
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+@app.get("/poste/h2h/telegramma/operations")
+def telegramma_operations():
+    """
+    Legge il WSDL Telegramma Poste.
+    NON invia Telegrammi.
+    NON genera costi.
+    Serve solo per vedere operazioni e firme disponibili.
+    """
+
+    try:
+        client = telegramma_client(timeout=30)
+
+        data = {}
+
+        for service_name, srv in client.wsdl.services.items():
+            data[service_name] = {}
+
+            for port_name, port in srv.ports.items():
+                operations = list(port.binding._operations.keys())
+
+                address = ""
+
+                try:
+                    address = port.binding_options.get("address", "")
+                except Exception:
+                    address = ""
+
+                data[service_name][port_name] = {
+                    "address": address,
+                    "operations": operations
+                }
+
+        return {
+            "success": True,
+            "service": "Telegramma H2H Poste",
+            "wsdl": POSTE_H2H_TOL_WSDL,
+            "service_url": POSTE_H2H_TOL_SERVICE_URL,
+            "services": data
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_OPERATIONS",
+            "error": str(e),
+            "wsdl": POSTE_H2H_TOL_WSDL
+        }
 
 
 @app.get("/poste/h2h/operations")
