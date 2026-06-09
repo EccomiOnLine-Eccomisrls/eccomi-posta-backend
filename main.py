@@ -1725,7 +1725,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
 
         stato = pratica.get("stato")
 
-        if stato not in ["PREZZATA_DA_CONFERMARE", "ERRORE_POSTE"]:
+        if stato not in ["PREZZATA_DA_CONFERMARE", "ERRORE_POSTE", "SUBMIT_POSTE_OK"]:
             return {
                 "success": False,
                 "blocked": True,
@@ -6631,6 +6631,161 @@ def invia_telegramma_h2h_v2_endpoint(pratica_id: str):
             "versione": "TELEGRAMMA_H2H_V2_TEST",
             "pratica_id": pratica_id,
             "error": str(e)
+        }
+
+@app.get("/poste/h2h/telegramma/recipient-validation/{pratica_id}")
+def telegramma_recipient_validation(pratica_id: str):
+    """
+    Valida il destinatario Telegramma con Poste H2H TEST.
+    NON invia Telegrammi.
+    NON fa PreConfirm.
+    NON fa Confirm.
+    Serve per capire se indirizzo/destinatario sono accettati da Poste.
+    """
+
+    history = HistoryPlugin()
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        if pratica.get("tipo_servizio") != "TELEGRAMMA":
+            return {
+                "success": False,
+                "error": "Questa pratica non è un Telegramma",
+                "tipo_servizio": pratica.get("tipo_servizio"),
+                "pratica_id": pratica_id
+            }
+
+        destinatario_data = telegramma_normalizza_dati_indirizzo(
+            pratica.get("destinatario") or {}
+        )
+
+        client, service = telegramma_service(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        RecipientType = telegramma_find_type(
+            client,
+            "Recipient",
+            "Telegramma.WS"
+        )
+
+        DestinatarioType = telegramma_find_type(
+            client,
+            "Destinatario",
+            "Telegramma.Schema"
+        )
+
+        dest_nome, dest_cognome = telegramma_split_nome_cognome(
+            destinatario_data.get("nome")
+        )
+
+        destinatario_obj = DestinatarioType(
+            CAP=destinatario_data.get("cap"),
+            Citta=destinatario_data.get("comune"),
+            Cognome=dest_cognome,
+            Indirizzo=destinatario_data.get("indirizzo"),
+            Nome=dest_nome,
+            RagioneSociale="",
+            Stato="ITALIA",
+            Telefono=destinatario_data.get("telefono") or ""
+        )
+
+        recipient_obj = RecipientType(
+            ClientIDRecipient="1",
+            Provincia=destinatario_data.get("provincia") or "",
+            destinatario=destinatario_obj
+        )
+
+        try:
+            id_request = service.GetIdRequest()
+        except Exception:
+            id_request = str(uuid.uuid4())
+
+        result = service.RecipientValidation(
+            recipient=recipient_obj,
+            idRequest=id_request
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        plain_result = make_json_safe(
+            zeep_to_plain(result)
+        )
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_RECIPIENT_VALIDATION",
+            "pratica_id": pratica_id,
+            "id_request": id_request,
+            "destinatario": destinatario_data,
+            "validation_result": plain_result,
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+    except Exception as e:
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_RECIPIENT_VALIDATION",
+            "pratica_id": pratica_id,
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
         }
 
 @app.get("/shopify/telegramma/process-pending")
