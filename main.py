@@ -1345,13 +1345,19 @@ def telegramma_submit_preview(pratica_id: str):
             Telefono=destinatario_data.get("telefono")
         )
 
+        TipoRecType = telegramma_find_type(
+            client,
+            "TelegrammaDestinatarioTipoRec",
+            "Telegramma.Schema"
+        )
+
         telegramma_destinatario = TelegrammaDestinatarioType(
             Destinatario=destinatario_obj,
             Frazionario="",
             IDTelegramma="1",
             LineaPilota="",
             NumeroDestinatarioCorrente=1,
-            TipoRec=None,
+            TipoRec=TipoRecType("NORMALE"),
             TipoRecapitoJokid=None
         )
 
