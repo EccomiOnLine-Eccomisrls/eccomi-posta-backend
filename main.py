@@ -1856,7 +1856,11 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
         )
 
         guid_message = str(uuid.uuid4())
-        id_request = str(uuid.uuid4())
+
+        try:
+            id_request = service.GetIdRequest()
+        except Exception:
+            id_request = str(uuid.uuid4())
 
         telegramma_obj = TelegrammaType(
             Coupon=None,
@@ -1910,6 +1914,13 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
         plain_result = make_json_safe(
             zeep_to_plain(submit_result)
         )
+        submit_result_block = plain_result.get("SubmitResult") or {}
+        submit_result_info = submit_result_block.get("Result") or {}
+
+        poste_res_type = submit_result_info.get("ResType")
+        poste_description = submit_result_info.get("Description")
+
+        submit_ok = poste_res_type in ["I", "W"]
 
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
