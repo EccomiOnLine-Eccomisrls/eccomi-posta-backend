@@ -1222,6 +1222,114 @@ def telegramma_clean_telefono(value):
 
     return cleaned
 
+def telegramma_build_valorizzazione(client, service, parole):
+    """
+    Costruisce la Valorizzazione Telegramma partendo dal Preventivo Poste.
+    Serve perché Submit sembra non accettare Valorizzazione vuota/nil.
+    """
+
+    from decimal import Decimal
+
+    parole = int(parole or 1)
+
+    TOLPricingRequestType = telegramma_find_type(
+        client,
+        "TOLPricingRequest",
+        "Telegramma.WS"
+    )
+
+    ValorizzazioneType = telegramma_find_type(
+        client,
+        "Valorizzazione",
+        "Telegramma.Schema"
+    )
+
+    DetailBillRowType = telegramma_find_type(
+        client,
+        "DetailBillRow",
+        "PreConfirmResponseSchema"
+    )
+
+    ArrayOfDetailBillRowType = telegramma_find_type(
+        client,
+        "ArrayOfDetailBillRow",
+        "PreConfirmResponseSchema"
+    )
+
+    pricing_request = TOLPricingRequestType(
+        AnticipazioneTelefonica=False,
+        CopiaMittente=False,
+        Coupon=None,
+        JoikidElettronico=False,
+        Jokid=False,
+        Nazionale=True,
+        NumeroDestinatari=1,
+        Parole=parole,
+        StatoDestinazione="ITALIA"
+    )
+
+    pricing_result = service.Preventivo(
+        request=pricing_request
+    )
+
+    pricing_plain = make_json_safe(
+        zeep_to_plain(pricing_result)
+    )
+
+    prezzo_totale = Decimal(
+        str(pricing_plain.get("prezzoTotale") or "0")
+    )
+
+    base_iva = Decimal(
+        str(pricing_plain.get("baseImponibileIva") or "0")
+    )
+
+    base_no_iva = Decimal(
+        str(pricing_plain.get("baseImponibileNoIva") or "0")
+    )
+
+    imponibile = base_iva + base_no_iva
+
+    importo_iva = Decimal(
+        str(pricing_plain.get("importoIva") or "0")
+    )
+
+    total_row = DetailBillRowType(
+        Currency="EUR",
+        Description="TELEGRAMMA",
+        GrossValue=prezzo_totale,
+        NetValue=imponibile,
+        TaxAmount=importo_iva,
+        GrossValuePerUnit=prezzo_totale,
+        MaterialCode="TOLNAZIO",
+        MaterialCodeDescription="TELEGRAMMI TRAFFICO NAZIONALE",
+        NetValuePerUnit=imponibile,
+        Quantity=Decimal("1"),
+        TaxAmountPerUnit=importo_iva,
+        TaxCode="22",
+        TaxPercentage=Decimal("22")
+    )
+
+    details = ArrayOfDetailBillRowType(
+        DetailBillRow=[
+            total_row
+        ]
+    )
+
+    valorizzazione_obj = ValorizzazioneType(
+        Details=details,
+        ImportoTotale=str(prezzo_totale),
+        ParoleDigitate=parole,
+        ParoleFisiche=parole,
+        ParoleSviluppate=parole,
+        ParoleTassabili=parole,
+        ParoleTassateNelRigoPreambolo=0,
+        TariffazioneManuale=False,
+        Total=total_row
+    )
+
+    return valorizzazione_obj, pricing_plain
+
 
 def telegramma_normalizza_dati_indirizzo(data):
     """
@@ -1611,7 +1719,7 @@ def telegramma_submit_preview(pratica_id: str):
             IDTelegramma="1",
             LineaPilota="",
             NumeroDestinatarioCorrente=1,
-            TipoRec=TipoRecType("TLF"),
+            TipoRec=TipoRecType(Item"),
             TipoRecapitoJokid=None
         )
 
@@ -1623,6 +1731,16 @@ def telegramma_submit_preview(pratica_id: str):
         opzioni = OpzioniType(
             CTA=False,
             Note=""
+        )
+        
+        parole = int(
+            pratica.get("parole") or len(testo.split()) or 1
+        )
+
+        valorizzazione_obj, pricing_plain = telegramma_build_valorizzazione(
+            client,
+            service,
+            parole
         )
 
         guid_message = str(uuid.uuid4())
@@ -1645,7 +1763,7 @@ def telegramma_submit_preview(pratica_id: str):
             PartiTesto=info_testo,
             TipoRecapitoMod60=None,
             TipoTelegramma="TOLNAZIO",
-            Valorizzazione=None
+            Valorizzazione=valorizzazione_obj
         )
 
         id_request = str(uuid.uuid4())
@@ -1675,6 +1793,7 @@ def telegramma_submit_preview(pratica_id: str):
             "guid_message": guid_message,
             "mittente": mittente_data,
             "destinatario": destinatario_data,
+            "pricing": pricing_plain,
             "xml_preview": xml_string
         }
 
@@ -1841,7 +1960,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             IDTelegramma="1",
             LineaPilota="",
             NumeroDestinatarioCorrente=1,
-            TipoRec=TipoRecType("TLF"),
+            TipoRec=TipoRecType("Item"),
             TipoRecapitoJokid=None
         )
 
@@ -1932,6 +2051,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             "poste_res_type": poste_res_type,
             "poste_description": poste_description,
             "submit_ok": submit_ok,
+            "pricing": pricing_plain,
             "submit_result": plain_result,
             "raw": str(submit_result),
             "submit_at": now_iso
