@@ -1715,9 +1715,9 @@ def telegramma_submit_preview(pratica_id: str):
 
         telegramma_destinatario = TelegrammaDestinatarioType(
             Destinatario=destinatario_obj,
-            Frazionario="",
-            IDTelegramma="1",
-            LineaPilota="",
+            Frazionario=None,
+            IDTelegramma=None,
+            LineaPilota=None,
             NumeroDestinatarioCorrente=1,
             TipoRec=TipoRecType("Item"),
             TipoRecapitoJokid=None
@@ -1956,9 +1956,9 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
 
         telegramma_destinatario = TelegrammaDestinatarioType(
             Destinatario=destinatario_obj,
-            Frazionario="",
-            IDTelegramma="1",
-            LineaPilota="",
+            Frazionario=None,
+            IDTelegramma=None,
+            LineaPilota=None,
             NumeroDestinatarioCorrente=1,
             TipoRec=TipoRecType("Item"),
             TipoRecapitoJokid=None
