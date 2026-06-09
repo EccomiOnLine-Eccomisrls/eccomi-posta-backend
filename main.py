@@ -10,7 +10,7 @@ from reportlab.lib.units import cm
 from supabase import create_client
 from requests import Session
 from requests.auth import HTTPBasicAuth
-from zeep import Client, Plugin
+from zeep import Client, Plugin, xsd
 from zeep.plugins import HistoryPlugin
 from zeep.transports import Transport
 from zeep.wsa import WsAddressingPlugin
@@ -1715,12 +1715,12 @@ def telegramma_submit_preview(pratica_id: str):
 
         telegramma_destinatario = TelegrammaDestinatarioType(
             Destinatario=destinatario_obj,
-            Frazionario=None,
-            IDTelegramma=None,
-            LineaPilota=None,
+            Frazionario=xsd.SkipValue,
+            IDTelegramma=xsd.SkipValue,
+            LineaPilota=xsd.SkipValue,
             NumeroDestinatarioCorrente=1,
             TipoRec=TipoRecType("Item"),
-            TipoRecapitoJokid=None
+            TipoRecapitoJokid=xsd.SkipValue
         )
 
         info_testo = InfoTestoType(
@@ -1956,12 +1956,12 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
 
         telegramma_destinatario = TelegrammaDestinatarioType(
             Destinatario=destinatario_obj,
-            Frazionario=None,
-            IDTelegramma=None,
-            LineaPilota=None,
+            Frazionario=xsd.SkipValue,
+            IDTelegramma=xsd.SkipValue,
+            LineaPilota=xsd.SkipValue,
             NumeroDestinatarioCorrente=1,
             TipoRec=TipoRecType("Item"),
-            TipoRecapitoJokid=None
+            TipoRecapitoJokid=xsd.SkipValue
         )
 
         info_testo = InfoTestoType(
