@@ -2119,6 +2119,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             "pratica_id": pratica_id,
             "id_request": id_request,
             "guid_message": guid_message,
+            "validation_same_id_request": validation_plain,
             "submit_result": plain_result,
             "xml_sent": xml_sent,
             "xml_received": xml_received
