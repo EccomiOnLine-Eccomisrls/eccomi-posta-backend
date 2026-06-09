@@ -1929,6 +1929,9 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             "note": "Submit Telegramma eseguito su Poste H2H TEST. PreConfirm/Confirm non ancora eseguiti.",
             "id_request": id_request,
             "guid_message": guid_message,
+            "poste_res_type": poste_res_type,
+            "poste_description": poste_description,
+            "submit_ok": submit_ok,
             "submit_result": plain_result,
             "raw": str(submit_result),
             "submit_at": now_iso
@@ -1936,7 +1939,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
 
         supabase.table("pratiche") \
             .update({
-                "stato": "SUBMIT_POSTE_OK",
+                "stato": "SUBMIT_POSTE_OK" if submit_ok else "ERRORE_POSTE",
                 "id_richiesta": id_request,
                 "poste_response": poste_payload,
                 "xml_sent": xml_sent,
