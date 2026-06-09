@@ -1006,6 +1006,7 @@ def telegramma_signatures():
             "RecipientsValidation",
             "Preventivo",
             "Submit",
+            "SubmitJokid",
             "PreConfirm",
             "Confirm",
             "GetStatus"
