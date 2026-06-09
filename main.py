@@ -1756,13 +1756,13 @@ def telegramma_submit_preview(pratica_id: str):
             },
             Firma=mittente_data.get("nome") or "",
             GUIDMessage=guid_message,
-            Jokid=False,
+            Jokid=None,
             Mittente=mittente_obj,
-            Mod60Elettronico=False,
+            Mod60Elettronico=None,
             Nazionale=True,
             Opzioni=opzioni,
             PartiTesto=info_testo,
-            TipoRecapitoMod60="",
+            TipoRecapitoMod60="None",
             TipoTelegramma="TOLNAZIO",
             Valorizzazione=valorizzazione_obj
         )
@@ -2002,13 +2002,13 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             },
             Firma=mittente_data.get("nome") or "",
             GUIDMessage=guid_message,
-            Jokid=False,
+            Jokid=None,
             Mittente=mittente_obj,
-            Mod60Elettronico=False,
+            Mod60Elettronico=None,
             Nazionale=True,
             Opzioni=opzioni,
             PartiTesto=info_testo,
-            TipoRecapitoMod60="",
+            TipoRecapitoMod60="None",
             TipoTelegramma="TOLNAZIO",
             Valorizzazione=valorizzazione_obj
         )
