@@ -1715,12 +1715,12 @@ def telegramma_submit_preview(pratica_id: str):
 
         telegramma_destinatario = TelegrammaDestinatarioType(
             Destinatario=destinatario_obj,
-            Frazionario=xsd.SkipValue,
-            IDTelegramma=xsd.SkipValue,
-            LineaPilota=xsd.SkipValue,
+            Frazionario="",
+            IDTelegramma="",
+            LineaPilota="",
             NumeroDestinatarioCorrente=1,
             TipoRec=TipoRecType("Item"),
-            TipoRecapitoJokid=xsd.SkipValue
+            TipoRecapitoJokid=None
         )
 
         info_testo = InfoTestoType(
@@ -1956,12 +1956,12 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
 
         telegramma_destinatario = TelegrammaDestinatarioType(
             Destinatario=destinatario_obj,
-            Frazionario=xsd.SkipValue,
-            IDTelegramma=xsd.SkipValue,
-            LineaPilota=xsd.SkipValue,
+            Frazionario="",
+            IDTelegramma="",
+            LineaPilota="",
             NumeroDestinatarioCorrente=1,
             TipoRec=TipoRecType("Item"),
-            TipoRecapitoJokid=xsd.SkipValue
+            TipoRecapitoJokid=None
         )
 
         info_testo = InfoTestoType(
