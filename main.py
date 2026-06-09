@@ -1974,6 +1974,16 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             Note=""
         )
 
+        parole = int(
+            pratica.get("parole") or len(testo.split()) or 1
+        )
+
+        valorizzazione_obj, pricing_plain = telegramma_build_valorizzazione(
+            client,
+            service,
+            parole
+        )
+
         guid_message = str(uuid.uuid4())
 
         try:
@@ -1999,7 +2009,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             PartiTesto=info_testo,
             TipoRecapitoMod60=None,
             TipoTelegramma="TOLNAZIO",
-            Valorizzazione=None
+            Valorizzazione=valorizzazione_obj
         )
 
         submit_result = service.Submit(
