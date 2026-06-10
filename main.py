@@ -2176,9 +2176,12 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
             }
 
         # TEST H2H SOLO SU PRATICA TECNICA #1392
-        # Non usare sul cliente reale #1393
+        # Il documento Poste F001-05 richiede un testo di 15 parole
         if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1":
-            testo = "TEST TELEGRAMMA H2H"
+            if variant == "15_words":
+                testo = "QUESTO E UN TEST TELEGRAMMA H2H CON QUINDICI PAROLE PER VERIFICA INTEGRAZIONE POSTE SERVIZIO ONLINE"
+            else:
+                testo = "TEST TELEGRAMMA H2H"
 
         client, service = telegramma_service(
             timeout=120,
