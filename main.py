@@ -7627,6 +7627,49 @@ def estrai_dati_pdf_telegramma_poste(pdf_bytes: bytes):
             "error": str(e)
         }
 
+@app.get("/dashboard/pratiche/apri-pdf/{pratica_id}")
+def dashboard_apri_pdf_pratica(pratica_id: str):
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        pdf_url = (
+            pratica.get("pdf_ricevuta_cliente_url")
+            or pratica.get("pdf_url")
+        )
+
+        if not pdf_url:
+            return {
+                "success": False,
+                "error": "Nessun PDF disponibile per questa pratica",
+                "pratica_id": pratica_id,
+                "order_name": pratica.get("order_name")
+            }
+
+        return RedirectResponse(
+            url=pdf_url,
+            status_code=302
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "pratica_id": pratica_id
+        }
+
 @app.get("/dashboard/pratiche/telegramma-manuale/{pratica_id}", response_class=HTMLResponse)
 def dashboard_telegramma_manuale_form(pratica_id: str):
     try:
