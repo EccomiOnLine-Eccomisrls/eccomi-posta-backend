@@ -2312,8 +2312,8 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
         valorizzazione_da_inviare = valorizzazione_obj
 
         # TEST H2H SOLO SU PRATICA TECNICA #1392
-        # Prova Submit senza Valorizzazione nel payload
-        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant == "no_valorizzazione":
+        # Prova Submit senza Valorizzazione
+        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant in ["no_valorizzazione", "no_guid_no_valorizzazione"]:
             try:
                 from zeep import xsd
                 valorizzazione_da_inviare = xsd.SkipValue
@@ -2326,6 +2326,17 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
             id_request = service.GetIdRequest()
         except Exception:
             id_request = str(uuid.uuid4())
+
+        guid_message_da_inviare = guid_message
+
+        # TEST H2H SOLO SU PRATICA TECNICA #1392
+        # Da specifica Poste, GUIDMessage sembra essere output: proviamo a non inviarlo
+        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant in ["no_guid", "no_guid_no_valorizzazione"]:
+            try:
+                from zeep import xsd
+                guid_message_da_inviare = xsd.SkipValue
+            except Exception:
+                guid_message_da_inviare = None
 
         # TEST H2H SOLO SU PRATICA TECNICA #1392
         # Prova GUIDMessage uguale a idRequest
@@ -2341,7 +2352,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
                 ]
             },
             Firma=mittente_data.get("nome") or "",
-            GUIDMessage=guid_message,
+            GUIDMessage=guid_message_da_inviare,
             Jokid=None,
             Mittente=mittente_obj,
             Mod60Elettronico=None,
