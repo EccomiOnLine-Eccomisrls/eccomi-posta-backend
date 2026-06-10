@@ -1262,6 +1262,168 @@ def telegramma_get_status_guid(guid_message: str):
             "error": str(e)
         }
 
+@app.get("/poste/h2h/telegramma/debug-package/{pratica_id}")
+def telegramma_debug_package(pratica_id: str):
+    try:
+        pratica_res = (
+            supabase
+            .table("pratiche")
+            .select("*")
+            .eq("id", pratica_id)
+            .single()
+            .execute()
+        )
+
+        pratica = pratica_res.data
+
+        if not pratica:
+            return {
+                "success": False,
+                "step": "TELEGRAMMA_DEBUG_PACKAGE",
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        id_request = (
+            poste_response.get("id_request")
+            or poste_response.get("idRequest")
+            or poste_response.get("id_request_submit")
+        )
+
+        guid_message = (
+            poste_response.get("guid_message")
+            or poste_response.get("GUIDMessage")
+            or poste_response.get("guid")
+        )
+
+        submit_result = poste_response.get("submit_result")
+        validation_same_id_request = poste_response.get("validation_same_id_request")
+        pricing = poste_response.get("pricing")
+
+        xml_sent = (
+            pratica.get("xml_sent")
+            or poste_response.get("xml_sent")
+            or ""
+        )
+
+        xml_received = (
+            pratica.get("xml_received")
+            or poste_response.get("xml_received")
+            or ""
+        )
+
+        get_status_result = None
+
+        if guid_message:
+            try:
+                client, service = telegramma_service()
+
+                GetStatusRequestType = telegramma_find_type(
+                    client,
+                    "GetStatusRequest",
+                    "Telegramma.WS"
+                )
+
+                get_status_request = GetStatusRequestType(
+                    GUIDMessage=guid_message
+                )
+
+                status_result = service.GetStatus(
+                    getStatusRequest=get_status_request
+                )
+
+                get_status_result = make_json_safe(
+                    zeep_to_plain(status_result)
+                )
+
+            except Exception as status_error:
+                get_status_result = {
+                    "success": False,
+                    "error": str(status_error)
+                }
+
+        ticket_text = f"""
+Buongiorno,
+
+stiamo effettuando i test di integrazione del servizio Telegramma H2H in ambiente test.
+
+Dati servizio:
+- Servizio: Telegramma H2H
+- Ambiente: test
+- Endpoint: {POSTE_H2H_TOL_SERVICE_URL}
+- Userid: {POSTE_H2H_TOL_USERID}
+- Codice contratto: {POSTE_H2H_TOL_CONTRACT_ID}
+
+Operazioni riuscite:
+- GetIdRequest: OK
+- Preventivo: OK
+- RecipientsValidation: OK / Address is valid
+
+Operazione non riuscita:
+- Submit
+
+Pratica interna:
+- pratica_id: {pratica_id}
+- order_name: {pratica.get("order_name")}
+- tipo_servizio: {pratica.get("tipo_servizio")}
+
+Dati Submit:
+- idRequest: {id_request}
+- GUIDMessage: {guid_message}
+
+Risposta Submit:
+{json.dumps(submit_result, ensure_ascii=False, indent=2)}
+
+Validation stesso idRequest:
+{json.dumps(validation_same_id_request, ensure_ascii=False, indent=2)}
+
+Preventivo:
+{json.dumps(pricing, ensure_ascii=False, indent=2)}
+
+GetStatus:
+{json.dumps(get_status_result, ensure_ascii=False, indent=2)}
+
+Il Submit restituisce:
+"Unexpected error has occurred. The request has not been processed"
+
+Il GetStatus restituisce telegramma non trovato, quindi il Submit non registra il telegramma.
+
+Chiediamo cortesemente verifica sui log interni Poste per capire quale campo, parametro contrattuale o abilitazione blocca il Submit.
+""".strip()
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_DEBUG_PACKAGE",
+            "pratica_id": pratica_id,
+            "order_name": pratica.get("order_name"),
+            "stato": pratica.get("stato"),
+            "id_request": id_request,
+            "guid_message": guid_message,
+            "validation_same_id_request": validation_same_id_request,
+            "pricing": pricing,
+            "submit_result": submit_result,
+            "get_status_result": get_status_result,
+            "xml_sent": xml_sent,
+            "xml_received": xml_received,
+            "ticket_text": ticket_text
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_DEBUG_PACKAGE",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
 
 def telegramma_find_type(client, local_name, namespace_contains=None):
     """
