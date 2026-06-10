@@ -2081,7 +2081,7 @@ def telegramma_submit_preview(pratica_id: str):
         }
 
 @app.get("/dashboard/pratiche/telegramma-submit-poste/{pratica_id}")
-def dashboard_telegramma_submit_poste(pratica_id: str):
+def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
     """
     Esegue il Submit reale Telegramma su Poste H2H TEST.
     ATTENZIONE:
@@ -2266,6 +2266,17 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             service,
             parole
         )
+        
+        valorizzazione_da_inviare = valorizzazione_obj
+
+        # TEST H2H SOLO SU PRATICA TECNICA #1392
+        # Prova Submit senza Valorizzazione nel payload
+        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant == "no_valorizzazione":
+            try:
+                from zeep import xsd
+                valorizzazione_da_inviare = xsd.SkipValue
+            except Exception:
+                valorizzazione_da_inviare = None
 
         guid_message = str(uuid.uuid4())
 
@@ -2292,7 +2303,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             PartiTesto=info_testo,
             TipoRecapitoMod60=None,
             TipoTelegramma="TOLNAZIO",
-            Valorizzazione=valorizzazione_obj
+            Valorizzazione=valorizzazione_da_inviare
         )
         
         RecipientType = telegramma_find_type(
@@ -2371,6 +2382,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
 
         poste_payload = {
             "step": "TELEGRAMMA_SUBMIT_POSTE",
+            "variant": variant,
             "note": "Submit Telegramma eseguito su Poste H2H TEST. PreConfirm/Confirm non ancora eseguiti.",
             "id_request": id_request,
             "guid_message": guid_message,
@@ -2399,6 +2411,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
         return {
             "success": True,
             "step": "TELEGRAMMA_SUBMIT_POSTE",
+            "variant": variant,
             "pratica_id": pratica_id,
             "id_request": id_request,
             "guid_message": guid_message,
