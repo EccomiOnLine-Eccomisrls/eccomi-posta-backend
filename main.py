@@ -814,6 +814,8 @@ def telegramma_operations():
             "wsdl": POSTE_H2H_TOL_WSDL
         }
 
+
+
 @app.get("/dashboard/pratiche/telegramma-preventivo/{pratica_id}")
 def dashboard_telegramma_preventivo(pratica_id: str):
     """
@@ -1148,6 +1150,78 @@ def telegramma_deep_types():
             "success": False,
             "step": "ERRORE_TELEGRAMMA_DEEP_TYPES",
             "error": str(e)
+        }
+
+@app.get("/poste/h2h/telegramma/type-debug/{needle}")
+def telegramma_type_debug(needle: str):
+    try:
+        client, service = telegramma_service()
+
+        matches = []
+
+        def safe_str(value):
+            try:
+                return str(value)
+            except Exception:
+                return repr(value)
+
+        def safe_dict(obj):
+            out = {}
+            try:
+                for k, v in getattr(obj, "__dict__", {}).items():
+                    out[str(k)] = safe_str(v)
+            except Exception as e:
+                out["_error"] = str(e)
+            return out
+
+        for t in client.wsdl.types.types:
+            qname = safe_str(getattr(t, "qname", ""))
+            name = safe_str(getattr(t, "name", ""))
+            representation = safe_str(t)
+
+            haystack = f"{qname} {name} {representation}".lower()
+
+            if needle.lower() in haystack:
+                row = {
+                    "class": t.__class__.__name__,
+                    "qname": qname,
+                    "name": name,
+                    "repr": representation,
+                    "dict": safe_dict(t),
+                }
+
+                for attr in [
+                    "_restriction",
+                    "restriction",
+                    "_base_type",
+                    "base_type",
+                    "_default_qname",
+                    "accepted_types",
+                    "_resolved",
+                ]:
+                    try:
+                        value = getattr(t, attr, None)
+                        row[attr] = safe_str(value)
+                        if value is not None:
+                            row[f"{attr}_dict"] = safe_dict(value)
+                    except Exception as e:
+                        row[attr] = f"ERRORE: {e}"
+
+                matches.append(row)
+
+        return {
+            "success": True,
+            "needle": needle,
+            "count": len(matches),
+            "matches": matches,
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TYPE_DEBUG",
+            "needle": needle,
+            "error": str(e),
         }
 
 
