@@ -2159,6 +2159,23 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
             destinatario_data["provincia"] = "RM"
             destinatario_data["telefono"] = ""
 
+        # TEST H2H SOLO SU PRATICA TECNICA #1392
+        # Caso Poste F001-05: Via Roma 1, CAP 15050, Paderna
+        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant == "paderna_15":
+            mittente_data["nome"] = "MARIO ROSSI"
+            mittente_data["indirizzo"] = "VIA ROMA 1"
+            mittente_data["cap"] = "15050"
+            mittente_data["comune"] = "PADERNA"
+            mittente_data["provincia"] = "AL"
+            mittente_data["telefono"] = ""
+
+            destinatario_data["nome"] = "LUCA BIANCHI"
+            destinatario_data["indirizzo"] = "VIA ROMA 1"
+            destinatario_data["cap"] = "15050"
+            destinatario_data["comune"] = "PADERNA"
+            destinatario_data["provincia"] = "AL"
+            destinatario_data["telefono"] = ""
+
         testo = (
             clean_h2h_text(pratica.get("testo") or "")
             .replace("Ã™", "U'")
