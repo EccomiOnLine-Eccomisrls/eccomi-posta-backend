@@ -7712,22 +7712,13 @@ def dashboard_telegramma_manuale_form(pratica_id: str):
                 </div>
 
                 <form method="post" enctype="multipart/form-data">
-                    <label>Identificativo Poste</label>
-                    <input name="identificativo_poste" value="12044660" required>
-
-                    <label>Numero Accettazione</label>
-                    <input name="numero_accettazione" value="0200070048428" required>
-
-                    <label>Numero Telegramma</label>
-                    <input name="numero_telegramma" value="WG36D05076600101100620262324" required>
-
-                    <label>Importo pagato IVA inclusa</label>
-                    <input name="importo" value="4.97" required>
+                    <label>Identificativo Poste opzionale</label>
+                    <input name="identificativo_poste" placeholder="Es. 12044660">
 
                     <label>PDF ricevuta / copia mittente Poste</label>
-                    <input type="file" name="pdf_file" accept="application/pdf">
+                    <input type="file" name="pdf_file" accept="application/pdf" required>
 
-                    <button type="submit">✅ Salva invio manuale Poste</button>
+                    <button type="submit">✅ Carica PDF e salva invio Poste</button>
                 </form>
 
                 <a href="/dashboard/pratiche">← Torna alla dashboard</a>
@@ -7743,53 +7734,65 @@ def dashboard_telegramma_manuale_form(pratica_id: str):
 @app.post("/dashboard/pratiche/telegramma-manuale/{pratica_id}")
 async def dashboard_telegramma_manuale_save(
     pratica_id: str,
-    identificativo_poste: str = Form(...),
-    numero_accettazione: str = Form(...),
-    numero_telegramma: str = Form(...),
-    importo: str = Form(...),
-    pdf_file: UploadFile | None = File(None)
+    identificativo_poste: str = Form(""),
+    pdf_file: UploadFile = File(...)
 ):
     try:
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        pdf_url = None
+        content = await pdf_file.read()
 
-        if pdf_file and pdf_file.filename:
-            content = await pdf_file.read()
-            storage_path = f"telegrammi/{pratica_id}/ricevuta_poste_manual.pdf"
+        estratti = estrai_dati_pdf_telegramma_poste(content)
 
-            supabase.storage.from_("eccomi-posta").upload(
-                storage_path,
-                content,
-                file_options={
-                    "content-type": "application/pdf",
-                    "upsert": "true"
-                }
-            )
+        numero_accettazione = estratti.get("numero_accettazione")
+        numero_telegramma = estratti.get("numero_telegramma")
+        importo = estratti.get("importo")
 
-            pdf_url = supabase.storage.from_("eccomi-posta").get_public_url(storage_path)
+        if not numero_accettazione or not numero_telegramma or not importo:
+            return {
+                "success": False,
+                "step": "PDF_TELEGRAMMA_DATI_NON_LETTI",
+                "error": "Non sono riuscito a leggere Numero Accettazione, Numero Telegramma o Importo dal PDF.",
+                "numero_accettazione": numero_accettazione,
+                "numero_telegramma": numero_telegramma,
+                "importo": importo,
+                "testo_estratto": estratti.get("text", "")[:3000]
+            }
+
+        storage_path = f"telegrammi/{pratica_id}/ricevuta_poste_manual.pdf"
+
+        supabase.storage.from_("eccomi-posta").upload(
+            storage_path,
+            content,
+            file_options={
+                "content-type": "application/pdf",
+                "upsert": "true"
+            }
+        )
+
+        pdf_url = supabase.storage.from_("eccomi-posta").get_public_url(storage_path)
 
         poste_payload = {
             "step": "TELEGRAMMA_MANUALE_INVIATO",
-            "note": "Invio Telegramma effettuato manualmente da portale Poste",
+            "note": "Invio Telegramma effettuato da portale Poste",
             "identificativo_poste": identificativo_poste,
             "numero_accettazione": numero_accettazione,
             "numero_telegramma": numero_telegramma,
             "importo": importo,
             "pdf_ricevuta_cliente_url": pdf_url,
-            "manual_sent_at": now_iso
+            "manual_sent_at": now_iso,
+            "pdf_extract_success": estratti.get("success"),
+            "pdf_extract_preview": estratti.get("text", "")[:1000]
         }
 
         update_payload = {
             "stato": "INVIATO_POSTE",
             "numero_raccomandata": numero_accettazione,
             "poste_response": poste_payload,
+            "pdf_ricevuta_cliente_url": pdf_url,
             "email_sent": False,
             "updated_at": now_iso
         }
-
-        if pdf_url:
-            update_payload["pdf_ricevuta_cliente_url"] = pdf_url
 
         supabase.table("pratiche") \
             .update(update_payload) \
