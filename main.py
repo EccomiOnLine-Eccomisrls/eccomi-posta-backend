@@ -22,6 +22,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from io import BytesIO
+from pypdf import PdfReader
 import datetime
 import os
 import hashlib
@@ -7570,6 +7571,61 @@ def resolve_h2h_order_id(pratica_id: str):
     except Exception as e:
         print("ERRORE resolve_h2h_order_id:", str(e))
         return None
+
+def estrai_dati_pdf_telegramma_poste(pdf_bytes: bytes):
+    try:
+        reader = PdfReader(BytesIO(pdf_bytes))
+        text = ""
+
+        for page in reader.pages:
+            text += page.extract_text() or ""
+            text += "\n"
+
+        numero_accettazione = None
+        numero_telegramma = None
+        importo = None
+
+        m_acc = re.search(
+            r"Numero\s+Accettazione[:\s]+([0-9]+)",
+            text,
+            re.IGNORECASE
+        )
+        if m_acc:
+            numero_accettazione = m_acc.group(1).strip()
+
+        m_tel = re.search(
+            r"TELEGRAMMA\s+N\.?RO\s+([A-Z0-9]+)",
+            text,
+            re.IGNORECASE
+        )
+        if m_tel:
+            numero_telegramma = m_tel.group(1).strip()
+
+        m_imp = re.search(
+            r"IMPORTO\s+EURO\s+([0-9]+(?:[.,][0-9]+)?)",
+            text,
+            re.IGNORECASE
+        )
+        if m_imp:
+            importo = m_imp.group(1).replace(",", ".").strip()
+
+        return {
+            "success": True,
+            "text": text,
+            "numero_accettazione": numero_accettazione,
+            "numero_telegramma": numero_telegramma,
+            "importo": importo
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "text": "",
+            "numero_accettazione": None,
+            "numero_telegramma": None,
+            "importo": None,
+            "error": str(e)
+        }
 
 @app.get("/dashboard/pratiche/telegramma-manuale/{pratica_id}", response_class=HTMLResponse)
 def dashboard_telegramma_manuale_form(pratica_id: str):
