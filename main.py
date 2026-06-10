@@ -166,6 +166,11 @@ POSTE_H2H_TOL_CONTRACT_ID = os.getenv(
     POSTE_H2H_CONTRACT_ID
 )
 
+POSTE_H2H_TOL_CUSTOMER = os.getenv(
+    "POSTE_H2H_TOL_CUSTOMER",
+    POSTE_H2H_TOL_USERID
+)
+
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # ============================================================
@@ -2047,7 +2052,7 @@ def telegramma_submit_preview(pratica_id: str):
             service,
             "Submit",
             telegramma=telegramma_obj,
-            Customer=POSTE_H2H_TOL_USERID,
+            Customer=POSTE_H2H_TOL_CUSTOMER,
             idRequest=id_request,
             CodiceContratto=POSTE_H2H_TOL_CONTRACT_ID
         )
@@ -2441,6 +2446,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
         poste_payload = {
             "step": "TELEGRAMMA_SUBMIT_POSTE",
             "variant": variant,
+            "customer": POSTE_H2H_TOL_CUSTOMER,
             "note": "Submit Telegramma eseguito su Poste H2H TEST. PreConfirm/Confirm non ancora eseguiti.",
             "id_request": id_request,
             "guid_message": guid_message,
