@@ -1224,6 +1224,44 @@ def telegramma_type_debug(needle: str):
             "error": str(e),
         }
 
+@app.get("/poste/h2h/telegramma/get-status-guid/{guid_message}")
+def telegramma_get_status_guid(guid_message: str):
+    try:
+        client, service = telegramma_service()
+
+        GetStatusRequestType = telegramma_find_type(
+            client,
+            "GetStatusRequest",
+            "Telegramma.WS"
+        )
+
+        get_status_request = GetStatusRequestType(
+            GUIDMessage=guid_message
+        )
+
+        result = service.GetStatus(
+            getStatusRequest=get_status_request
+        )
+
+        plain_result = make_json_safe(
+            zeep_to_plain(result)
+        )
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_GET_STATUS",
+            "guid_message": guid_message,
+            "result": plain_result
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_GET_STATUS",
+            "guid_message": guid_message,
+            "error": str(e)
+        }
+
 
 def telegramma_find_type(client, local_name, namespace_contains=None):
     """
