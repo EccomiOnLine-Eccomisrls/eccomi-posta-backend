@@ -2114,7 +2114,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
 
         pratica = pratica_res.data
 
-        if pratica.get("tipo_servizio") != "TELEGRAMMA":
+                if pratica.get("tipo_servizio") != "TELEGRAMMA":
             return {
                 "success": False,
                 "error": "Questa pratica non è un Telegramma",
@@ -2123,6 +2123,19 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
             }
 
         stato = pratica.get("stato")
+
+        # BLOCCO SICUREZZA TELEGRAMMA H2H
+        # Finché Poste non sblocca il Submit TOL, permettiamo test solo sulla pratica tecnica #1392
+        if pratica_id != "525aceed-cd97-400e-9a25-49ec102078f1":
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "TELEGRAMMA_H2H_SUBMIT_BLOCCATO",
+                "error": "Submit Telegramma H2H temporaneamente bloccato: in attesa verifica Poste",
+                "pratica_id": pratica_id,
+                "order_name": pratica.get("order_name"),
+                "stato": stato
+            }
 
         if stato not in ["PREZZATA_DA_CONFERMARE", "ERRORE_POSTE", "SUBMIT_POSTE_OK"]:
             return {
