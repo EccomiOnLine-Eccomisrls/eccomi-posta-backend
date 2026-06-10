@@ -2476,6 +2476,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
             "success": True,
             "step": "TELEGRAMMA_SUBMIT_POSTE",
             "variant": variant,
+            "customer": POSTE_H2H_TOL_CUSTOMER,
             "pratica_id": pratica_id,
             "id_request": id_request,
             "guid_message": guid_message,
