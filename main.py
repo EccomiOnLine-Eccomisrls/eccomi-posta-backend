@@ -2285,6 +2285,11 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
         except Exception:
             id_request = str(uuid.uuid4())
 
+        # TEST H2H SOLO SU PRATICA TECNICA #1392
+        # Prova GUIDMessage uguale a idRequest
+        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant == "guid_equals_id":
+            guid_message = id_request
+
         telegramma_obj = TelegrammaType(
             Coupon=None,
             DataTelegramma=datetime.datetime.now().replace(microsecond=0),
