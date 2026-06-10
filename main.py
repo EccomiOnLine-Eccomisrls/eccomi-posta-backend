@@ -2152,6 +2152,11 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
                 "pratica_id": pratica_id
             }
 
+        # TEST H2H SOLO SU PRATICA TECNICA #1392
+        # Non usare sul cliente reale #1393
+        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1":
+            testo = "TEST TELEGRAMMA H2H"
+
         client, service = telegramma_service(
             timeout=120,
             extra_plugins=[history]
@@ -2249,9 +2254,12 @@ def dashboard_telegramma_submit_poste(pratica_id: str):
             Note=""
         )
 
-        parole = int(
-            pratica.get("parole") or len(testo.split()) or 1
-        )
+        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1":
+            parole = len(testo.split()) or 1
+        else:
+            parole = int(
+                pratica.get("parole") or len(testo.split()) or 1
+            )
 
         valorizzazione_obj, pricing_plain = telegramma_build_valorizzazione(
             client,
