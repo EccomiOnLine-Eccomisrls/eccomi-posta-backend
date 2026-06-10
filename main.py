@@ -171,6 +171,20 @@ POSTE_H2H_TOL_CUSTOMER = os.getenv(
     POSTE_H2H_TOL_USERID
 )
 
+# ============================================================
+# REPORTING
+# ============================================================
+
+POSTE_H2H_REPORTING_WSDL = os.getenv(
+    "POSTE_H2H_REPORTING_WSDL",
+    "https://sptest.posteitaliane.it/Reporting/Reports.svc?wsdl"
+)
+
+POSTE_H2H_REPORTING_SERVICE_URL = os.getenv(
+    "POSTE_H2H_REPORTING_SERVICE_URL",
+    "https://sptest.posteitaliane.it/Reporting/Reports.svc"
+)
+
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # ============================================================
@@ -739,6 +753,52 @@ def supabase_test():
             "success": True,
             "bucket_env": SUPABASE_BUCKET,
             "buckets": [b.name for b in buckets]
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@app.get("/poste/h2h/reporting/debug-operations")
+def poste_reporting_debug_operations():
+    try:
+        history = HistoryPlugin()
+
+        session = Session()
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_TOL_USERID,
+            POSTE_H2H_TOL_PASSWORD
+        )
+        session.verify = False
+
+        transport = Transport(session=session, timeout=60)
+
+        client = Client(
+            wsdl=POSTE_H2H_REPORTING_WSDL,
+            transport=transport,
+            plugins=[history]
+        )
+
+        services = []
+
+        for service_name, service in client.wsdl.services.items():
+            for port_name, port in service.ports.items():
+                operations = list(port.binding._operations.keys())
+
+                services.append({
+                    "service": service_name,
+                    "port": port_name,
+                    "binding": str(port.binding.name),
+                    "operations": operations
+                })
+
+        return {
+            "success": True,
+            "wsdl": POSTE_H2H_REPORTING_WSDL,
+            "service_url": POSTE_H2H_REPORTING_SERVICE_URL,
+            "services": services
         }
 
     except Exception as e:
@@ -2082,6 +2142,52 @@ def telegramma_submit_preview(pratica_id: str):
             "success": False,
             "step": "ERRORE_TELEGRAMMA_SUBMIT_PREVIEW",
             "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
+@app.get("/poste/h2h/reporting/debug-operations")
+def poste_reporting_debug_operations():
+    try:
+        history = HistoryPlugin()
+
+        session = Session()
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_TOL_USERID,
+            POSTE_H2H_TOL_PASSWORD
+        )
+        session.verify = False
+
+        transport = Transport(session=session, timeout=60)
+
+        client = Client(
+            wsdl=POSTE_H2H_REPORTING_WSDL,
+            transport=transport,
+            plugins=[history]
+        )
+
+        services = []
+
+        for service_name, service in client.wsdl.services.items():
+            for port_name, port in service.ports.items():
+                operations = list(port.binding._operations.keys())
+
+                services.append({
+                    "service": service_name,
+                    "port": port_name,
+                    "binding": str(port.binding.name),
+                    "operations": operations
+                })
+
+        return {
+            "success": True,
+            "wsdl": POSTE_H2H_REPORTING_WSDL,
+            "service_url": POSTE_H2H_REPORTING_SERVICE_URL,
+            "services": services
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
             "error": str(e)
         }
 
