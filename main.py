@@ -2429,7 +2429,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
 
         submit_result = service.Submit(
             telegramma=telegramma_obj,
-            Customer=POSTE_H2H_TOL_USERID,
+            Customer=POSTE_H2H_TOL_CUSTOMER,
             idRequest=id_request,
             CodiceContratto=POSTE_H2H_TOL_CONTRACT_ID
         )
