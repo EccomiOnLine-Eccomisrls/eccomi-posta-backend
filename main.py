@@ -2136,6 +2136,12 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
             pratica.get("destinatario") or {}
         )
 
+        # TEST H2H SOLO SU PRATICA TECNICA #1392
+        # Prova indirizzi senza apostrofi/caratteri speciali
+        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant == "clean_address":
+            mittente_data["indirizzo"] = "VIA ROMA 1"
+            destinatario_data["indirizzo"] = "VIA ROMA 1"
+
         testo = (
             clean_h2h_text(pratica.get("testo") or "")
             .replace("Ã™", "U'")
