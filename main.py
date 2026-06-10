@@ -2114,7 +2114,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
 
         pratica = pratica_res.data
 
-                if pratica.get("tipo_servizio") != "TELEGRAMMA":
+        if pratica.get("tipo_servizio") != "TELEGRAMMA":
             return {
                 "success": False,
                 "error": "Questa pratica non è un Telegramma",
