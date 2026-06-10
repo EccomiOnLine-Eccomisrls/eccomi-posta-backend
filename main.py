@@ -2159,7 +2159,7 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
             destinatario_data["provincia"] = "RM"
             destinatario_data["telefono"] = ""
 
-       testo = (
+        testo = (
             clean_h2h_text(pratica.get("testo") or "")
             .replace("Ã™", "U'")
             .replace("Ãš", "U'")
