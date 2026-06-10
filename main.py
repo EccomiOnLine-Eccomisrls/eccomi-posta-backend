@@ -882,7 +882,7 @@ def telegramma_operations():
 
 
 @app.get("/dashboard/pratiche/telegramma-preventivo/{pratica_id}")
-def dashboard_telegramma_preventivo(pratica_id: str):
+def dashboard_telegramma_preventivo(pratica_id: str, redirect: int = 0):
     """
     Recupera il prezzo reale Poste del Telegramma tramite Preventivo.
     NON invia Telegrammi.
@@ -1012,6 +1012,12 @@ def dashboard_telegramma_preventivo(pratica_id: str):
             }) \
             .eq("id", pratica_id) \
             .execute()
+        
+        if redirect == 1:
+            return RedirectResponse(
+                url="/dashboard/pratiche",
+                status_code=303
+            )
 
         return {
             "success": True,
@@ -8991,7 +8997,7 @@ def dashboard_pratiche(stato: str = None):
         if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "RICEVUTO_MANUALE":
             invia_poste_html = f"""
                 <a class="btn-action"
-                   href="/dashboard/pratiche/telegramma-preventivo/{pratica_id}"
+                   href="/dashboard/pratiche/telegramma-preventivo/{pratica_id}?redirect=1"
                    onclick="return confirm('Vuoi richiedere il preventivo reale Poste per questo Telegramma? Non verrà inviato nulla.')">
                     💶 Preventivo Poste
                 </a>
