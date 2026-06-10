@@ -1015,7 +1015,7 @@ def dashboard_telegramma_preventivo(pratica_id: str, redirect: int = 0):
         
         if redirect == 1:
             return RedirectResponse(
-                url="/dashboard/pratiche",
+                url="//pratiche",
                 status_code=303
             )
 
@@ -2197,8 +2197,8 @@ def poste_reporting_debug_operations():
             "error": str(e)
         }
 
-@app.get("/dashboard/pratiche/telegramma-submit-poste/{pratica_id}")
-def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
+@app.get("//pratiche/telegramma-submit-poste/{pratica_id}")
+def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
     """
     Esegue il Submit reale Telegramma su Poste H2H TEST.
     ATTENZIONE:
@@ -4142,7 +4142,7 @@ def ricalcola_prezzo_poste(order_id: str):
                 .execute()
 
         return RedirectResponse(
-            url="/dashboard/pratiche?stato=PREZZATA_DA_CONFERMARE",
+            url="//pratiche?stato=PREZZATA_DA_CONFERMARE",
             status_code=302
         )
 
@@ -4370,7 +4370,7 @@ def process_poste_order(order_id: str):
             .execute()
 
         # =====================================================
-        # 5. Aggiorna pratica dashboard collegata
+        # 5. Aggiorna pratica  collegata
         # =====================================================
 
         update_pratica = {
@@ -4643,7 +4643,7 @@ def invia_email_cliente_raccomandata(ordine: dict, pratica: dict, pdf_cliente_ur
 
     # Ricevuta ufficiale Poste:
     # NON deve mai essere inviata al cliente perché contiene dati interni/costi H2H.
-    # Rimane disponibile solo in dashboard e database.
+    # Rimane disponibile solo in  e database.
     pdf_poste_button = ""
 
     html = f"""
@@ -6071,8 +6071,8 @@ def genera_pdf_telegramma(pdf_path, telegramma):
 
     c.save()
 
-@app.get("/dashboard/pratiche/telegramma-pdf/{pratica_id}")
-def dashboard_telegramma_pdf(pratica_id: str):
+@app.get("//pratiche/telegramma-pdf/{pratica_id}")
+def _telegramma_pdf(pratica_id: str):
     """
     Genera il PDF cliente del Telegramma partendo dalla pratica salvata.
     NON chiama Poste.
@@ -6259,8 +6259,8 @@ def build_nominativo_h2h_from_data(data, NominativoType, IndirizzoType, label="i
         CodiceFiscaleResult=0
     )
 
-@app.get("/dashboard/pratiche/telegramma-prezza/{pratica_id}")
-def dashboard_telegramma_prezza(pratica_id: str):
+@app.get("//pratiche/telegramma-prezza/{pratica_id}")
+def _telegramma_prezza(pratica_id: str):
     """
     Porta un Telegramma da RICEVUTO_MANUALE a PREZZATA_DA_CONFERMARE.
     NON chiama Poste.
@@ -6319,7 +6319,7 @@ def dashboard_telegramma_prezza(pratica_id: str):
             .execute()
 
         return RedirectResponse(
-            url="/dashboard/pratiche?stato=PREZZATA_DA_CONFERMARE",
+            url="//pratiche?stato=PREZZATA_DA_CONFERMARE",
             status_code=302
         )
 
@@ -6331,8 +6331,8 @@ def dashboard_telegramma_prezza(pratica_id: str):
             "error": str(e)
         }
 
-@app.get("/dashboard/pratiche/telegramma-finalizza/{pratica_id}")
-def dashboard_telegramma_finalizza(pratica_id: str):
+@app.get("//pratiche/telegramma-finalizza/{pratica_id}")
+def _telegramma_finalizza(pratica_id: str):
     """
     Finalizza manualmente un Telegramma già controllato/prezzato.
     NON chiama Poste H2H.
@@ -6427,7 +6427,7 @@ def dashboard_telegramma_finalizza(pratica_id: str):
                 "pdf_ricevuta_cliente_url": pdf_public_url,
                 "poste_response": {
                     "step": "TELEGRAMMA_FINALIZZATO_MANUALE",
-                    "note": "Telegramma finalizzato manualmente da dashboard",
+                    "note": "Telegramma finalizzato manualmente da ",
                     "finalizzato_at": now_iso
                 },
                 "updated_at": now_iso
@@ -6436,7 +6436,7 @@ def dashboard_telegramma_finalizza(pratica_id: str):
             .execute()
 
         return RedirectResponse(
-            url="/dashboard/pratiche?stato=INVIATO_POSTE",
+            url="//pratiche?stato=INVIATO_POSTE",
             status_code=302
         )
 
@@ -6546,7 +6546,7 @@ async def shopify_telegramma_order(request: Request):
 
         return {
             "success": True,
-            "message": "Telegramma salvato in dashboard per lavorazione manuale",
+            "message": "Telegramma salvato in  per lavorazione manuale",
             "order_id": order_id,
             "order_name": order_name,
             "telegrammi_trovati": len(telegrammi),
@@ -7277,7 +7277,7 @@ def shopify_telegramma_invia_pratica(pratica_id: str):
         invia_telegramma_pratica_h2h(pratica_id)
 
         return RedirectResponse(
-            url="/dashboard/pratiche",
+            url="//pratiche",
             status_code=302
         )
 
@@ -7529,7 +7529,7 @@ def resolve_h2h_order_id(pratica_id: str):
     """
     Trova l'id corretto in poste_h2h_orders partendo da:
     - id diretto H2H
-    - oppure id pratica dashboard collegata tramite pdf_url
+    - oppure id pratica  collegata tramite pdf_url
     """
 
     try:
@@ -7570,6 +7570,188 @@ def resolve_h2h_order_id(pratica_id: str):
     except Exception as e:
         print("ERRORE resolve_h2h_order_id:", str(e))
         return None
+
+@app.get("/dashboard/pratiche/telegramma-manuale/{pratica_id}", response_class=HTMLResponse)
+def dashboard_telegramma_manuale_form(pratica_id: str):
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return HTMLResponse("<h2>Pratica non trovata</h2>", status_code=404)
+
+        pratica = pratica_res.data
+
+        return f"""
+        <html>
+        <head>
+            <title>Telegramma manuale Poste</title>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    background: #f4f6fb;
+                    padding: 30px;
+                }}
+                .box {{
+                    max-width: 720px;
+                    margin: auto;
+                    background: white;
+                    border-radius: 18px;
+                    padding: 28px;
+                    box-shadow: 0 10px 30px rgba(0,0,0,.08);
+                }}
+                h1 {{ margin-top: 0; }}
+                label {{
+                    display: block;
+                    margin-top: 16px;
+                    font-weight: 700;
+                }}
+                input {{
+                    width: 100%;
+                    padding: 12px;
+                    margin-top: 6px;
+                    border: 1px solid #d5d9e2;
+                    border-radius: 10px;
+                    font-size: 16px;
+                }}
+                button {{
+                    margin-top: 24px;
+                    background: #16a34a;
+                    color: white;
+                    border: none;
+                    padding: 14px 22px;
+                    border-radius: 12px;
+                    font-size: 16px;
+                    font-weight: 800;
+                    cursor: pointer;
+                }}
+                a {{
+                    display: inline-block;
+                    margin-top: 18px;
+                    color: #2563eb;
+                    font-weight: 700;
+                    text-decoration: none;
+                }}
+                .note {{
+                    background: #fff7ed;
+                    padding: 12px;
+                    border-radius: 10px;
+                    margin-top: 16px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="box">
+                <h1>📨 Telegramma manuale Poste</h1>
+
+                <p><b>Ordine:</b> {pratica.get("order_name")}</p>
+                <p><b>Email cliente:</b> {pratica.get("cliente_email") or "-"}</p>
+                <p><b>Stato attuale:</b> {pratica.get("stato")}</p>
+
+                <div class="note">
+                    Compila questi dati solo dopo aver completato l’invio/pagamento sul portale Poste.
+                </div>
+
+                <form method="post" enctype="multipart/form-data">
+                    <label>Identificativo Poste</label>
+                    <input name="identificativo_poste" value="12044660" required>
+
+                    <label>Numero Accettazione</label>
+                    <input name="numero_accettazione" value="0200070048428" required>
+
+                    <label>Numero Telegramma</label>
+                    <input name="numero_telegramma" value="WG36D05076600101100620262324" required>
+
+                    <label>Importo pagato IVA inclusa</label>
+                    <input name="importo" value="4.97" required>
+
+                    <label>PDF ricevuta / copia mittente Poste</label>
+                    <input type="file" name="pdf_file" accept="application/pdf">
+
+                    <button type="submit">✅ Salva invio manuale Poste</button>
+                </form>
+
+                <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+            </div>
+        </body>
+        </html>
+        """
+
+    except Exception as e:
+        return HTMLResponse(f"<h2>Errore</h2><pre>{str(e)}</pre>", status_code=500)
+
+
+@app.post("/dashboard/pratiche/telegramma-manuale/{pratica_id}")
+async def dashboard_telegramma_manuale_save(
+    pratica_id: str,
+    identificativo_poste: str = Form(...),
+    numero_accettazione: str = Form(...),
+    numero_telegramma: str = Form(...),
+    importo: str = Form(...),
+    pdf_file: UploadFile | None = File(None)
+):
+    try:
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        pdf_url = None
+
+        if pdf_file and pdf_file.filename:
+            content = await pdf_file.read()
+            storage_path = f"telegrammi/{pratica_id}/ricevuta_poste_manual.pdf"
+
+            supabase.storage.from_("eccomi-posta").upload(
+                storage_path,
+                content,
+                file_options={
+                    "content-type": "application/pdf",
+                    "upsert": "true"
+                }
+            )
+
+            pdf_url = supabase.storage.from_("eccomi-posta").get_public_url(storage_path)
+
+        poste_payload = {
+            "step": "TELEGRAMMA_MANUALE_INVIATO",
+            "note": "Invio Telegramma effettuato manualmente da portale Poste",
+            "identificativo_poste": identificativo_poste,
+            "numero_accettazione": numero_accettazione,
+            "numero_telegramma": numero_telegramma,
+            "importo": importo,
+            "pdf_ricevuta_cliente_url": pdf_url,
+            "manual_sent_at": now_iso
+        }
+
+        update_payload = {
+            "stato": "INVIATO_POSTE",
+            "numero_raccomandata": numero_accettazione,
+            "poste_response": poste_payload,
+            "email_sent": False,
+            "updated_at": now_iso
+        }
+
+        if pdf_url:
+            update_payload["pdf_ricevuta_cliente_url"] = pdf_url
+
+        supabase.table("pratiche") \
+            .update(update_payload) \
+            .eq("id", pratica_id) \
+            .execute()
+
+        return RedirectResponse(
+            url="/dashboard/pratiche",
+            status_code=303
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_MANUALE_SAVE",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
 
 
 @app.get("/dashboard/pratiche/invia-email-cliente/{pratica_id}")
@@ -9040,8 +9222,7 @@ def dashboard_pratiche(stato: str = None):
                 </span>
 
                 <a class="btn-action"
-                   href="/dashboard/pratiche/telegramma-finalizza/{pratica_id}"
-                   onclick="return confirm('Attenzione: questa azione NON invia ancora il Telegramma tramite Poste H2H. Serve solo per segnare la pratica come lavorata manualmente. Confermi?')">
+                   href="/dashboard/pratiche/telegramma-manuale/{pratica_id}">
                     📝 Segna inviato manuale
                 </a>
             """
