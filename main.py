@@ -2133,6 +2133,18 @@ def dashboard_telegramma_submit_poste(pratica_id: str, variant: str = ""):
                 "pratica_id": pratica_id
             }
 
+        # BLOCCO SICUREZZA TELEGRAMMA H2H
+        # Finché Poste non sblocca il Submit TOL, permettiamo test solo sulla pratica tecnica #1392
+        if pratica_id != "525aceed-cd97-400e-9a25-49ec102078f1":
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "TELEGRAMMA_H2H_SUBMIT_BLOCCATO",
+                "error": "Submit Telegramma H2H temporaneamente bloccato: in attesa verifica Poste",
+                "pratica_id": pratica_id,
+                "stato": stato
+            }
+
         mittente_data = telegramma_normalizza_dati_indirizzo(
             pratica.get("mittente") or {}
         )
