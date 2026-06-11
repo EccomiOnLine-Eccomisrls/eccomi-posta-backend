@@ -1338,25 +1338,25 @@ def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
                 "error": "Completamento Telegramma H2H automatico disattivato. Imposta TELEGRAMMA_H2H_AUTO_ENABLED=true su Render.",
                 "pratica_id": pratica_id
             }
+            
+        telegramma_test_send_enabled = os.getenv(
+            "TELEGRAMMA_H2H_TEST_SEND_ENABLED",
+            "false"
+        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
 
-telegramma_test_send_enabled = os.getenv(
-    "TELEGRAMMA_H2H_TEST_SEND_ENABLED",
-    "false"
-).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
-
-if (
-    not is_pratica_tecnica
-    and "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower()
-    and not telegramma_test_send_enabled
-):
-    return {
-        "success": False,
-        "blocked": True,
-        "step": "TELEGRAMMA_AMBIENTE_TEST_BLOCCATO",
-        "error": "Ambiente Poste TEST rilevato. Per testare su sptest imposta TELEGRAMMA_H2H_TEST_SEND_ENABLED=true.",
-        "service_url": POSTE_H2H_TOL_SERVICE_URL,
-        "pratica_id": pratica_id
-    }
+        if (
+            not is_pratica_tecnica
+            and "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower()
+            and not telegramma_test_send_enabled
+        ):
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "TELEGRAMMA_AMBIENTE_TEST_BLOCCATO",
+                "error": "Ambiente Poste TEST rilevato. Per testare su sptest imposta TELEGRAMMA_H2H_TEST_SEND_ENABLED=true.",
+                "service_url": POSTE_H2H_TOL_SERVICE_URL,
+                "pratica_id": pratica_id
+            }
 
         pratica_res = supabase.table("pratiche") \
             .select("*") \
