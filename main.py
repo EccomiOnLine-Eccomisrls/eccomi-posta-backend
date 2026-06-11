@@ -951,6 +951,69 @@ def telegramma_signatures():
             "step": "ERRORE_TELEGRAMMA_SIGNATURES",
             "error": str(e)
         }
+
+@app.get("/poste/h2h/telegramma/flow-types")
+def telegramma_flow_types():
+    """
+    Mostra i dettagli dei tipi necessari per il flusso finale Telegramma:
+    - GetStatusRequest
+    - GetStatusResult
+    - PreconfirmResult
+    - ConfirmOrder
+    - ConfirmOrderResult
+    - ArrayOfstring
+
+    NON invia Telegrammi.
+    NON genera costi.
+    """
+
+    try:
+        client = telegramma_client(timeout=30)
+
+        types_to_check = [
+            ("GetStatusRequest", "Telegramma.WS"),
+            ("GetStatusResult", "Telegramma.WS"),
+            ("PreconfirmResult", "Telegramma.WS"),
+            ("ConfirmOrder", "Telegramma.WS"),
+            ("ConfirmOrderResult", "Telegramma.WS"),
+            ("ArrayOfstring", ""),
+            ("TResult", "GenericSchema"),
+        ]
+
+        result = {}
+
+        for type_name, namespace_hint in types_to_check:
+            try:
+                t = telegramma_find_type(
+                    client,
+                    type_name,
+                    namespace_hint
+                )
+
+                result[type_name] = {
+                    "success": True,
+                    "type": str(t)
+                }
+
+            except Exception as ex:
+                result[type_name] = {
+                    "success": False,
+                    "error": str(ex)
+                }
+
+        return {
+            "success": True,
+            "service": "Telegramma H2H Poste",
+            "wsdl": POSTE_H2H_TOL_WSDL,
+            "types": result
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_FLOW_TYPES",
+            "error": str(e)
+        }
         
 
 @app.get("/dashboard/pratiche/telegramma-preventivo/{pratica_id}")
