@@ -4712,26 +4712,26 @@ def invia_email_cliente_raccomandata(
     </div>
     """
 
-try:
-    email_payload = {
-        "from": FROM_EMAIL,
-        "to": [cliente_email],
-        "subject": subject,
-        "html": html
-    }
+    try:
+        email_payload = {
+            "from": FROM_EMAIL,
+            "to": [cliente_email],
+            "subject": subject,
+            "html": html
+        }
 
-    if internal_bcc_email:
-        email_payload["bcc"] = [internal_bcc_email]
+        if internal_bcc_email:
+            email_payload["bcc"] = [internal_bcc_email]
 
-    response = requests.post(
-        "https://api.resend.com/emails",
-        headers={
-            "Authorization": f"Bearer {RESEND_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json=email_payload,
-        timeout=30
-    )
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json=email_payload,
+            timeout=30
+        )
 
         response_text = response.text
 
@@ -4756,7 +4756,10 @@ try:
                 data={
                     **base_update,
                     "email_sent": False,
-                    "email_error": errore
+                    "email_error": errore,
+                    "email_status": "failed",
+                    "email_last_event": "email.failed",
+                    "email_last_event_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
                 }
             )
 
@@ -4768,6 +4771,7 @@ try:
         resend_id = resend_email_id
 
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
         aggiorna_esito_email_raccomandata(
             h2h_order_id=h2h_order_id,
             pratica_id=pratica_id,
@@ -4805,6 +4809,7 @@ try:
                 "email_last_event": "email.failed",
                 "email_last_event_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             }
+        )
 
         return {
             "success": False,
