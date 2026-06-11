@@ -29,6 +29,7 @@ import hashlib
 import base64
 import requests
 import uuid
+import inspect
 import json
 import time
 import re
@@ -52,6 +53,11 @@ FROM_EMAIL = os.getenv(
     "FROM_EMAIL",
     "Eccomi Posta <info@eccomionline.com>"
 ).strip()
+
+INTERNAL_BCC_EMAIL = os.getenv(
+    "INTERNAL_BCC_EMAIL",
+    "sales@eccomionline.com"
+)
 
 EMAIL_RACCOMANDATA_ENABLED = os.getenv(
     "EMAIL_RACCOMANDATA_ENABLED",
@@ -4482,7 +4488,12 @@ def aggiorna_esito_email_raccomandata(
         print("ERRORE UPDATE EMAIL PRATICA:", str(e))
 
 
-def invia_email_cliente_raccomandata(ordine: dict, pratica: dict, pdf_cliente_url: str):
+def invia_email_cliente_raccomandata(
+    ordine: dict,
+    pratica: dict,
+    pdf_cliente_url: str,
+    internal_bcc_email=None
+):
     """
     Invia email al cliente dopo INVIATO_POSTE.
     Protezione anti doppio invio tramite email_sent.
@@ -4494,7 +4505,14 @@ def invia_email_cliente_raccomandata(ordine: dict, pratica: dict, pdf_cliente_ur
 
     h2h_order_id = ordine.get("id")
     pratica_id = pratica.get("id")
-    pdf_url = ordine.get("pdf_url") or pratica.get("pdf_url")
+    pdf_url = (
+    pdf_cliente_url
+    or ordine.get("pdf_ricevuta_cliente_url")
+    or pratica.get("pdf_ricevuta_cliente_url")
+    or ordine.get("pdf_url")
+    or pratica.get("pdf_url")
+    or ""
+)
 
     cliente_email = (
         pratica.get("cliente_email")
@@ -4694,21 +4712,26 @@ def invia_email_cliente_raccomandata(ordine: dict, pratica: dict, pdf_cliente_ur
     </div>
     """
 
-    try:
-        response = requests.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {RESEND_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "from": FROM_EMAIL,
-                "to": [cliente_email],
-                "subject": subject,
-                "html": html
-            },
-            timeout=30
-        )
+try:
+    email_payload = {
+        "from": FROM_EMAIL,
+        "to": [cliente_email],
+        "subject": subject,
+        "html": html
+    }
+
+    if internal_bcc_email:
+        email_payload["bcc"] = [internal_bcc_email]
+
+    response = requests.post(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json=email_payload,
+        timeout=30
+    )
 
         response_text = response.text
 
@@ -8108,6 +8131,14 @@ def dashboard_invia_email_cliente(pratica_id: str):
     NON chiama Poste.
     NON finalizza.
     NON genera costi.
+
+    Raccomandata:
+    - usa ordine H2H collegato
+
+    Telegramma:
+    - usa la pratica
+    - usa solo pdf_ricevuta_cliente_url, cioè la ricevuta Eccomi pulita
+    - NON usa il PDF originale Poste
     """
 
     try:
@@ -8130,39 +8161,20 @@ def dashboard_invia_email_cliente(pratica_id: str):
             return {
                 "success": False,
                 "error": "Email cliente disponibile solo per pratiche INVIATO_POSTE",
-                "stato": pratica.get("stato")
-            }
-
-        h2h_order_id = resolve_h2h_order_id(pratica_id)
-
-        if not h2h_order_id:
-            return {
-                "success": False,
-                "error": "Ordine H2H collegato non trovato",
+                "stato": pratica.get("stato"),
                 "pratica_id": pratica_id
             }
 
-        ordine_res = supabase.table("poste_h2h_orders") \
-            .select("*") \
-            .eq("id", h2h_order_id) \
-            .single() \
-            .execute()
+        tipo_servizio = (pratica.get("tipo_servizio") or "").upper()
+        cliente_email = pratica.get("cliente_email") or pratica.get("email_to") or ""
 
-        if not ordine_res.data:
+        if not cliente_email:
             return {
                 "success": False,
-                "error": "Ordine H2H non trovato",
-                "h2h_order_id": h2h_order_id
+                "error": "Email cliente mancante",
+                "pratica_id": pratica_id,
+                "order_name": pratica.get("order_name")
             }
-
-        ordine = ordine_res.data
-
-        pdf_cliente_url = (
-            ordine.get("pdf_ricevuta_cliente_url")
-            or pratica.get("pdf_ricevuta_cliente_url")
-            or pratica.get("pdf_url")
-            or ""
-        )
 
         email_fn = globals().get("invia_email_cliente_raccomandata")
 
@@ -8172,21 +8184,191 @@ def dashboard_invia_email_cliente(pratica_id: str):
                 "error": "Funzione invia_email_cliente_raccomandata non disponibile"
             }
 
-        email_result = email_fn(
-            ordine=ordine,
-            pratica=pratica,
-            pdf_cliente_url=pdf_cliente_url
-        )
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        h2h_order_id = None
+        ordine = None
+        pdf_cliente_url = ""
+        email_subject = ""
+
+        # ==========================================================
+        # TELEGRAMMA — flusso manuale/portale Poste
+        # ==========================================================
+        if tipo_servizio == "TELEGRAMMA":
+            pdf_cliente_url = pratica.get("pdf_ricevuta_cliente_url") or ""
+
+            if not pdf_cliente_url:
+                return {
+                    "success": False,
+                    "error": "PDF cliente Telegramma non disponibile. Genera/carica prima la ricevuta cliente pulita.",
+                    "pratica_id": pratica_id,
+                    "order_name": pratica.get("order_name")
+                }
+
+            poste_response = pratica.get("poste_response") or {}
+
+            if isinstance(poste_response, str):
+                try:
+                    poste_response = json.loads(poste_response)
+                except Exception:
+                    poste_response = {}
+
+            numero_accettazione = (
+                pratica.get("numero_raccomandata")
+                or poste_response.get("numero_accettazione")
+                or ""
+            )
+
+            numero_telegramma = (
+                poste_response.get("numero_telegramma")
+                or ""
+            )
+
+            identificativo_poste = (
+                poste_response.get("identificativo_poste")
+                or ""
+            )
+
+            # Finto ordine compatibile con la funzione email esistente
+            ordine = {
+                "id": f"telegramma-manuale-{pratica_id}",
+                "pratica_id": pratica_id,
+                "order_id": pratica.get("order_id"),
+                "order_name": pratica.get("order_name"),
+                "shopify_order_name": pratica.get("shopify_order_name"),
+                "tipo_servizio": "TELEGRAMMA",
+                "servizio": "TELEGRAMMA",
+                "cliente_email": cliente_email,
+                "email": cliente_email,
+                "numero_raccomandata": numero_accettazione,
+                "numero_accettazione": numero_accettazione,
+                "numero_telegramma": numero_telegramma,
+                "identificativo_poste": identificativo_poste,
+                "pdf_ricevuta_cliente_url": pdf_cliente_url,
+                "pdf_url": pdf_cliente_url,
+                "created_at": pratica.get("created_at"),
+                "updated_at": pratica.get("updated_at")
+            }
+
+            email_subject = f"Il tuo telegramma {pratica.get('order_name') or ''} è stato inviato"
+
+        # ==========================================================
+        # RACCOMANDATA — flusso H2H già esistente
+        # ==========================================================
+        else:
+            h2h_order_id = resolve_h2h_order_id(pratica_id)
+
+            if not h2h_order_id:
+                return {
+                    "success": False,
+                    "error": "Ordine H2H collegato non trovato",
+                    "pratica_id": pratica_id
+                }
+
+            ordine_res = supabase.table("poste_h2h_orders") \
+                .select("*") \
+                .eq("id", h2h_order_id) \
+                .single() \
+                .execute()
+
+            if not ordine_res.data:
+                return {
+                    "success": False,
+                    "error": "Ordine H2H non trovato",
+                    "h2h_order_id": h2h_order_id
+                }
+
+            ordine = ordine_res.data
+
+            pdf_cliente_url = (
+                ordine.get("pdf_ricevuta_cliente_url")
+                or pratica.get("pdf_ricevuta_cliente_url")
+                or pratica.get("pdf_url")
+                or ""
+            )
+
+            email_subject = f"La tua raccomandata {pratica.get('order_name') or ''} è stata inviata"
+
+        if not pdf_cliente_url:
+            return {
+                "success": False,
+                "error": "PDF cliente non disponibile",
+                "pratica_id": pratica_id,
+                "tipo_servizio": tipo_servizio
+            }
+
+        # ==========================================================
+        # INVIO EMAIL + CCN INTERNO
+        # Passa sales@eccomionline.com solo se la funzione email lo supporta
+        # ==========================================================
+        email_kwargs = {
+            "ordine": ordine,
+            "pratica": pratica,
+            "pdf_cliente_url": pdf_cliente_url
+        }
+
+        try:
+            params = inspect.signature(email_fn).parameters
+
+            if "internal_bcc_email" in params:
+                email_kwargs["internal_bcc_email"] = INTERNAL_BCC_EMAIL
+            elif "bcc_email" in params:
+                email_kwargs["bcc_email"] = INTERNAL_BCC_EMAIL
+            elif "bcc" in params:
+                email_kwargs["bcc"] = INTERNAL_BCC_EMAIL
+
+        except Exception:
+            pass
+
+        email_result = email_fn(**email_kwargs)
+
+        email_ok = True
+
+        if isinstance(email_result, dict) and email_result.get("success") is False:
+            email_ok = False
+
+        update_payload = {
+            "email_sent": email_ok,
+            "email_to": cliente_email,
+            "email_subject": email_subject,
+            "email_error": None if email_ok else str(email_result),
+            "updated_at": now_iso
+        }
+
+        if email_ok:
+            update_payload["email_sent_at"] = now_iso
+            update_payload["email_resend_id"] = str(uuid.uuid4())
+
+        supabase.table("pratiche") \
+            .update(update_payload) \
+            .eq("id", pratica_id) \
+            .execute()
 
         return {
-            "success": True,
+            "success": email_ok,
             "step": "EMAIL_CLIENTE_GESTITA",
             "pratica_id": pratica_id,
+            "tipo_servizio": tipo_servizio,
             "h2h_order_id": h2h_order_id,
+            "email_to": cliente_email,
+            "internal_bcc_email": INTERNAL_BCC_EMAIL,
+            "pdf_cliente_url": pdf_cliente_url,
             "email": email_result
         }
 
     except Exception as e:
+        try:
+            supabase.table("pratiche") \
+                .update({
+                    "email_sent": False,
+                    "email_error": str(e),
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }) \
+                .eq("id", pratica_id) \
+                .execute()
+        except Exception:
+            pass
+
         return {
             "success": False,
             "step": "ERRORE_INVIO_EMAIL_CLIENTE",
