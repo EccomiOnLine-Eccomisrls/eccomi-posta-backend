@@ -1548,17 +1548,37 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
     - GetStatus finale
     - se Printing: pratica INVIATO_POSTE
 
-    Per sicurezza, per ora abilitato SOLO sulla pratica tecnica #1392.
+    Sicurezza:
+    - sempre permesso sulla pratica tecnica #1392
+    - sulle pratiche reali solo se TELEGRAMMA_H2H_AUTO_ENABLED=true
+    - blocca automaticamente se l'ambiente Poste è ancora sptest
     """
 
     try:
-        # Sicurezza: per ora solo pratica tecnica #1392
-        if pratica_id != "525aceed-cd97-400e-9a25-49ec102078f1":
+        # Sicurezza Telegramma H2H automatico
+        telegramma_auto_enabled = os.getenv(
+            "TELEGRAMMA_H2H_AUTO_ENABLED",
+            "false"
+        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+
+        is_pratica_tecnica = pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1"
+
+        if not is_pratica_tecnica and not telegramma_auto_enabled:
             return {
                 "success": False,
                 "blocked": True,
                 "step": "TELEGRAMMA_INVIA_COMPLETO_BLOCCATO",
-                "error": "Invio completo Telegramma H2H abilitato solo sulla pratica tecnica #1392",
+                "error": "Invio automatico Telegramma H2H disattivato. Imposta TELEGRAMMA_H2H_AUTO_ENABLED=true su Render.",
+                "pratica_id": pratica_id
+            }
+
+        if not is_pratica_tecnica and "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower():
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "TELEGRAMMA_AMBIENTE_TEST_BLOCCATO",
+                "error": "Ambiente Poste TEST rilevato. Non usare sptest per un telegramma reale.",
+                "service_url": POSTE_H2H_TOL_SERVICE_URL,
                 "pratica_id": pratica_id
             }
 
@@ -2965,12 +2985,17 @@ def poste_reporting_debug_operations():
 @app.get("//pratiche/telegramma-submit-poste/{pratica_id}")
 def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
     """
-    Esegue il Submit reale Telegramma su Poste H2H TEST.
+    Esegue il Submit reale Telegramma su Poste H2H.
     ATTENZIONE:
     - chiama davvero service.Submit
     - NON esegue PreConfirm
     - NON esegue Confirm
     - salva XML e risposta Poste
+
+    Sicurezza:
+    - sempre permesso sulla pratica tecnica #1392
+    - sulle pratiche reali serve TELEGRAMMA_H2H_AUTO_ENABLED=true
+    - blocca automaticamente se l'ambiente Poste è ancora sptest
     """
 
     history = HistoryPlugin()
@@ -3002,14 +3027,39 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
 
         stato = pratica.get("stato")
 
-        # BLOCCO SICUREZZA TELEGRAMMA H2H
-        # Finché Poste non sblocca il Submit TOL, permettiamo test solo sulla pratica tecnica #1392
-        if pratica_id != "525aceed-cd97-400e-9a25-49ec102078f1":
+        # =====================================================
+        # SICUREZZA TELEGRAMMA H2H AUTOMATICO
+        # =====================================================
+        # Sempre permesso sulla pratica tecnica #1392.
+        # Sulle pratiche reali serve TELEGRAMMA_H2H_AUTO_ENABLED=true
+        # e non deve essere ambiente sptest.
+        # =====================================================
+
+        telegramma_auto_enabled = os.getenv(
+            "TELEGRAMMA_H2H_AUTO_ENABLED",
+            "false"
+        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+
+        is_pratica_tecnica = pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1"
+
+        if not is_pratica_tecnica and not telegramma_auto_enabled:
             return {
                 "success": False,
                 "blocked": True,
                 "step": "TELEGRAMMA_H2H_SUBMIT_BLOCCATO",
-                "error": "Submit Telegramma H2H temporaneamente bloccato: in attesa verifica Poste",
+                "error": "Submit Telegramma H2H automatico disattivato. Imposta TELEGRAMMA_H2H_AUTO_ENABLED=true su Render.",
+                "pratica_id": pratica_id,
+                "order_name": pratica.get("order_name"),
+                "stato": stato
+            }
+
+        if not is_pratica_tecnica and "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower():
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "TELEGRAMMA_AMBIENTE_TEST_BLOCCATO",
+                "error": "Ambiente Poste TEST rilevato. Non usare sptest per un telegramma reale.",
+                "service_url": POSTE_H2H_TOL_SERVICE_URL,
                 "pratica_id": pratica_id,
                 "order_name": pratica.get("order_name"),
                 "stato": stato
@@ -3021,25 +3071,12 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             "ERRORE_SUBMIT_POSTE",
             "SUBMIT_POSTE_OK"
         ]:
-           
             return {
                 "success": False,
                 "blocked": True,
                 "error": "Submit Telegramma consentito solo da PREZZATA_DA_CONFERMARE, ERRORE_POSTE, ERRORE_SUBMIT_POSTE o SUBMIT_POSTE_OK",
                 "stato": stato,
                 "pratica_id": pratica_id
-            }
-
-        # BLOCCO SICUREZZA TELEGRAMMA H2H
-        # Finché Poste non sblocca il Submit TOL, permettiamo test solo sulla pratica tecnica #1392
-        if pratica_id != "525aceed-cd97-400e-9a25-49ec102078f1":
-            return {
-                "success": False,
-                "blocked": True,
-                "step": "TELEGRAMMA_H2H_SUBMIT_BLOCCATO",
-                "error": "Submit Telegramma H2H temporaneamente bloccato: in attesa verifica Poste",
-                "pratica_id": pratica_id,
-                "stato": stato
             }
 
         mittente_data = telegramma_normalizza_dati_indirizzo(
@@ -3050,15 +3087,15 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             pratica.get("destinatario") or {}
         )
 
-        # TEST H2H SOLO SU PRATICA TECNICA #1392
-        # Prova indirizzi senza apostrofi/caratteri speciali
-        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant == "clean_address":
+        # =====================================================
+        # VARIANTI SOLO TEST SU PRATICA TECNICA #1392
+        # =====================================================
+
+        if is_pratica_tecnica and variant == "clean_address":
             mittente_data["indirizzo"] = "VIA ROMA 1"
             destinatario_data["indirizzo"] = "VIA ROMA 1"
 
-        # TEST H2H SOLO SU PRATICA TECNICA #1392
-        # Prova dati completamente neutri
-        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant == "clean_all":
+        if is_pratica_tecnica and variant == "clean_all":
             mittente_data["nome"] = "MARIO ROSSI"
             mittente_data["indirizzo"] = "VIA ROMA 1"
             mittente_data["cap"] = "00131"
@@ -3073,9 +3110,7 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             destinatario_data["provincia"] = "RM"
             destinatario_data["telefono"] = ""
 
-        # TEST H2H SOLO SU PRATICA TECNICA #1392
-        # Caso Poste F001-05: Via Roma 1, CAP 15050, Paderna
-        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant == "paderna_15":
+        if is_pratica_tecnica and variant == "paderna_15":
             mittente_data["nome"] = "MARIO ROSSI"
             mittente_data["indirizzo"] = "VIA ROMA 1"
             mittente_data["cap"] = "15050"
@@ -3106,8 +3141,8 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
                 "pratica_id": pratica_id
             }
 
-        # TEST H2H SOLO SU PRATICA TECNICA #1392
-        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1":
+        # Test tecnico: forziamo testo controllato solo sulla pratica #1392
+        if is_pratica_tecnica:
             if variant in ["15_words", "paderna_15"]:
                 testo = "QUESTO E UN TEST TELEGRAMMA H2H CON QUINDICI PAROLE PER VERIFICA INTEGRAZIONE POSTE SERVIZIO ONLINE"
             else:
@@ -3210,18 +3245,19 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             Note=""
         )
 
-        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1":
+        if is_pratica_tecnica:
             parole = len(testo.split()) or 1
         else:
             parole = int(
                 pratica.get("parole") or len(testo.split()) or 1
             )
-        
+
         valorizzazione_da_inviare = xsd.SkipValue
 
         pricing_plain = {
             "note": "Preventivo rimosso dal flusso come indicato da Poste",
-            "preventivo_chiamato": False
+            "preventivo_chiamato": False,
+            "parole": parole
         }
 
         try:
@@ -3232,19 +3268,17 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
         guid_message = id_request
         guid_message_da_inviare = id_request
 
-        # TEST H2H SOLO SU PRATICA TECNICA #1392
-        # Da specifica Poste, GUIDMessage sembra essere output: proviamo a non inviarlo
-        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant in ["no_guid", "no_guid_no_valorizzazione"]:
+        # Varianti vecchie mantenute solo per debug sulla pratica tecnica
+        if is_pratica_tecnica and variant in ["no_guid", "no_guid_no_valorizzazione"]:
             try:
                 from zeep import xsd
                 guid_message_da_inviare = xsd.SkipValue
             except Exception:
                 guid_message_da_inviare = None
 
-        # TEST H2H SOLO SU PRATICA TECNICA #1392
-        # Prova GUIDMessage uguale a idRequest
-        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant == "guid_equals_id":
+        if is_pratica_tecnica and variant == "guid_equals_id":
             guid_message = id_request
+            guid_message_da_inviare = id_request
 
         telegramma_obj = TelegrammaType(
             Coupon=None,
@@ -3266,7 +3300,7 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             TipoTelegramma="TS",
             Valorizzazione=valorizzazione_da_inviare
         )
-        
+
         RecipientType = telegramma_find_type(
             client,
             "Recipient",
@@ -3331,6 +3365,7 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
         plain_result = make_json_safe(
             zeep_to_plain(submit_result)
         )
+
         submit_result_block = plain_result.get("SubmitResult") or {}
         submit_result_info = submit_result_block.get("Result") or {}
 
@@ -3345,7 +3380,7 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             "step": "TELEGRAMMA_SUBMIT_POSTE",
             "variant": variant,
             "customer": POSTE_H2H_TOL_CUSTOMER,
-            "note": "Submit Telegramma eseguito su Poste H2H TEST. PreConfirm/Confirm non ancora eseguiti.",
+            "note": "Submit Telegramma eseguito su Poste H2H. PreConfirm/Confirm non ancora eseguiti.",
             "id_request": id_request,
             "guid_message": guid_message,
             "poste_res_type": poste_res_type,
@@ -3431,7 +3466,6 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             "xml_sent": xml_sent,
             "xml_received": xml_received
         }
-
 
 @app.get("/poste/h2h/operations")
 def poste_operations():
