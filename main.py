@@ -1294,7 +1294,250 @@ def telegramma_preconfirm_debug(pratica_id: str, guid: str = "", force: int = 0)
             "pratica_id": pratica_id,
             "error": str(e)
         }
-        
+
+@app.get("/poste/h2h/telegramma/completa-da-submit/{pratica_id}")
+def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
+    """
+    Completa il flusso Telegramma H2H DOPO un Submit già riuscito.
+
+    NON rifà Submit.
+    NON crea un nuovo Telegramma.
+    Usa GUIDMessage/idRequest già esistente.
+
+    Flusso:
+    - GetStatus
+    - se necessario PreConfirm autoConfirm=true
+    - GetStatus finale
+    - se Printing: aggiorna pratica a INVIATO_POSTE
+    """
+
+    history = HistoryPlugin()
+
+    try:
+        # Sicurezza: per ora solo pratica tecnica #1392
+        if pratica_id != "525aceed-cd97-400e-9a25-49ec102078f1":
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "TELEGRAMMA_COMPLETA_SUBMIT_BLOCCATO",
+                "error": "Completamento Telegramma H2H abilitato solo sulla pratica tecnica #1392",
+                "pratica_id": pratica_id
+            }
+
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        guid_message = (
+            guid
+            or pratica.get("id_richiesta")
+            or poste_response.get("guid_message")
+            or poste_response.get("id_request")
+            or ""
+        )
+
+        if not guid_message:
+            return {
+                "success": False,
+                "error": "GUIDMessage/idRequest mancante",
+                "pratica_id": pratica_id
+            }
+
+        client, service = telegramma_service(
+            timeout=90,
+            extra_plugins=[history]
+        )
+
+        GetStatusRequestType = telegramma_find_type(
+            client,
+            "GetStatusRequest",
+            "Telegramma.WS"
+        )
+
+        ArrayOfstringType = telegramma_find_type(
+            client,
+            "ArrayOfstring",
+            ""
+        )
+
+        def call_get_status():
+            req = GetStatusRequestType(
+                GUIDMessage=guid_message
+            )
+
+            res = service.GetStatus(
+                getStatusRequest=req
+            )
+
+            return make_json_safe(
+                zeep_to_plain(res)
+            )
+
+        def estrai_stato_e_idtelegramma(status_plain):
+            try:
+                details = (
+                    status_plain.get("Status", {})
+                    .get("TelgramStatusDetails", {})
+                    .get("TelegrammaStatusDetailsType", [])
+                )
+
+                if isinstance(details, dict):
+                    details = [details]
+
+                if not details:
+                    return None, None
+
+                first = details[0] or {}
+
+                return (
+                    first.get("State"),
+                    first.get("IDTelegramma")
+                )
+
+            except Exception:
+                return None, None
+
+        # 1. GetStatus iniziale
+        status_before = call_get_status()
+        state_before, id_telegramma_before = estrai_stato_e_idtelegramma(status_before)
+
+        preconfirm_plain = None
+        preconfirm_called = False
+
+        # 2. Se non è già Printing, chiama PreConfirm
+        if state_before != "Printing":
+            id_request_array = ArrayOfstringType(
+                string=[guid_message]
+            )
+
+            preconfirm_result = service.PreConfirm(
+                idRequest=id_request_array,
+                autoConfirm=True,
+                forceOrderCreation=True
+            )
+
+            preconfirm_plain = make_json_safe(
+                zeep_to_plain(preconfirm_result)
+            )
+
+            preconfirm_called = True
+
+            # Piccola attesa per permettere a Poste di aggiornare lo stato
+            time.sleep(2)
+
+        # 3. GetStatus finale
+        status_after = call_get_status()
+        state_after, id_telegramma_after = estrai_stato_e_idtelegramma(status_after)
+
+        final_state = state_after or state_before
+        id_telegramma = id_telegramma_after or id_telegramma_before
+
+        # 4. Recupera dati dal Submit salvato
+        submit_result_saved = poste_response.get("submit_result") or {}
+        submit_telegramma = submit_result_saved.get("telegramma") or {}
+
+        parti_testo = (
+            (submit_telegramma.get("PartiTesto") or {})
+            .get("Testo")
+            or ""
+        )
+
+        numero_accettazione = None
+
+        match_acc = re.search(
+            r"Numero Accettazione:\s*([0-9]+)",
+            parti_testo,
+            flags=re.IGNORECASE
+        )
+
+        if match_acc:
+            numero_accettazione = match_acc.group(1)
+
+        valorizzazione = submit_telegramma.get("Valorizzazione") or {}
+        importo_totale = valorizzazione.get("ImportoTotale")
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        nuovo_stato = "INVIATO_POSTE" if final_state == "Printing" else "SUBMIT_POSTE_OK"
+
+        new_poste_response = dict(poste_response or {})
+        new_poste_response["telegramma_flow_complete"] = {
+            "step": "TELEGRAMMA_COMPLETA_DA_SUBMIT",
+            "guid_message": guid_message,
+            "id_request": guid_message,
+            "preconfirm_called": preconfirm_called,
+            "status_before": status_before,
+            "preconfirm_result": preconfirm_plain,
+            "status_after": status_after,
+            "final_state": final_state,
+            "id_telegramma": id_telegramma,
+            "numero_accettazione": numero_accettazione,
+            "importo_totale": importo_totale,
+            "completed_at": now_iso
+        }
+
+        update_data = {
+            "stato": nuovo_stato,
+            "id_richiesta": guid_message,
+            "poste_response": new_poste_response,
+            "updated_at": now_iso
+        }
+
+        if numero_accettazione:
+            update_data["numero_raccomandata"] = numero_accettazione
+        elif id_telegramma:
+            update_data["numero_raccomandata"] = id_telegramma
+
+        supabase.table("pratiche") \
+            .update(update_data) \
+            .eq("id", pratica_id) \
+            .execute()
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_COMPLETA_DA_SUBMIT",
+            "pratica_id": pratica_id,
+            "guid_message": guid_message,
+            "preconfirm_called": preconfirm_called,
+            "state_before": state_before,
+            "state_after": state_after,
+            "final_state": final_state,
+            "nuovo_stato": nuovo_stato,
+            "id_telegramma": id_telegramma,
+            "numero_accettazione": numero_accettazione,
+            "importo_totale": importo_totale,
+            "status_before": status_before,
+            "preconfirm_result": preconfirm_plain,
+            "status_after": status_after
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_COMPLETA_DA_SUBMIT",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
 
 @app.get("/dashboard/pratiche/telegramma-preventivo/{pratica_id}")
 def dashboard_telegramma_preventivo(pratica_id: str, redirect: int = 0):
