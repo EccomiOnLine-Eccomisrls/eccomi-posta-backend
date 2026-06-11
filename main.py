@@ -4538,19 +4538,19 @@ def invia_email_cliente_raccomandata(
         or ""
     )
 
-tipo_servizio = (
-    pratica.get("tipo_servizio")
-    or ordine.get("tipo_servizio")
-    or "RACCOMANDATA"
-).upper()
+    tipo_servizio = (
+        pratica.get("tipo_servizio")
+        or ordine.get("tipo_servizio")
+        or "RACCOMANDATA"
+    ).upper()
 
-is_telegramma = tipo_servizio == "TELEGRAMMA"
+    is_telegramma = tipo_servizio == "TELEGRAMMA"
 
-subject = (
-    f"Il tuo Telegramma Eccomi Posta è stato inviato - {numero_raccomandata}"
-    if is_telegramma
-    else f"La tua raccomandata Eccomi Posta è stata inviata - {numero_raccomandata}"
-)
+    subject = (
+        f"Il tuo Telegramma Eccomi Posta è stato inviato - {numero_raccomandata}"
+        if is_telegramma
+        else f"La tua raccomandata Eccomi Posta è stata inviata - {numero_raccomandata}"
+    )
 
     base_update = {
         "email_to": cliente_email,
