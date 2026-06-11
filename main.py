@@ -2461,14 +2461,13 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             "preventivo_chiamato": False
         }
 
-        guid_message = str(uuid.uuid4())
-
         try:
             id_request = service.GetIdRequest()
         except Exception:
             id_request = str(uuid.uuid4())
 
-        guid_message_da_inviare = guid_message
+        guid_message = id_request
+        guid_message_da_inviare = id_request
 
         # TEST H2H SOLO SU PRATICA TECNICA #1392
         # Da specifica Poste, GUIDMessage sembra essere output: proviamo a non inviarlo
