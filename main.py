@@ -2525,7 +2525,7 @@ def telegramma_submit_preview(pratica_id: str):
             Opzioni=opzioni,
             PartiTesto=info_testo,
             TipoRecapitoMod60=None,
-            TipoTelegramma="TOLNAZIO",
+            TipoTelegramma="TS",
             Valorizzazione=valorizzazione_obj
         )
 
@@ -2913,7 +2913,7 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             Opzioni=opzioni,
             PartiTesto=info_testo,
             TipoRecapitoMod60=None,
-            TipoTelegramma="TOLNAZIO",
+            TipoTelegramma="TS",
             Valorizzazione=valorizzazione_da_inviare
         )
         
