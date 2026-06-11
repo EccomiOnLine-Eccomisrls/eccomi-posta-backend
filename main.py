@@ -1014,6 +1014,286 @@ def telegramma_flow_types():
             "step": "ERRORE_TELEGRAMMA_FLOW_TYPES",
             "error": str(e)
         }
+
+@app.get("/poste/h2h/telegramma/get-status/{pratica_id}")
+def telegramma_get_status_debug(pratica_id: str, guid: str = ""):
+    """
+    GetStatus Telegramma H2H.
+    NON invia Telegrammi.
+    NON genera costi.
+    Usa GUIDMessage / idRequest per leggere lo stato.
+    """
+
+    history = HistoryPlugin()
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        guid_message = (
+            guid
+            or poste_response.get("guid_message")
+            or poste_response.get("id_request")
+            or pratica.get("id_richiesta")
+            or ""
+        )
+
+        if not guid_message:
+            return {
+                "success": False,
+                "error": "GUIDMessage/idRequest mancante",
+                "pratica_id": pratica_id
+            }
+
+        client, service = telegramma_service(
+            timeout=60,
+            extra_plugins=[history]
+        )
+
+        GetStatusRequestType = telegramma_find_type(
+            client,
+            "GetStatusRequest",
+            "Telegramma.WS"
+        )
+
+        get_status_request = GetStatusRequestType(
+            GUIDMessage=guid_message
+        )
+
+        result = service.GetStatus(
+            getStatusRequest=get_status_request
+        )
+
+        plain_result = make_json_safe(
+            zeep_to_plain(result)
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        new_poste_response = dict(poste_response or {})
+        new_poste_response["last_get_status"] = {
+            "step": "TELEGRAMMA_GET_STATUS",
+            "guid_message": guid_message,
+            "result": plain_result,
+            "xml_sent": xml_sent,
+            "xml_received": xml_received,
+            "checked_at": now_iso
+        }
+
+        supabase.table("pratiche") \
+            .update({
+                "poste_response": new_poste_response,
+                "updated_at": now_iso
+            }) \
+            .eq("id", pratica_id) \
+            .execute()
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_GET_STATUS",
+            "pratica_id": pratica_id,
+            "guid_message": guid_message,
+            "result": plain_result,
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_GET_STATUS",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
+@app.get("/poste/h2h/telegramma/preconfirm/{pratica_id}")
+def telegramma_preconfirm_debug(pratica_id: str, guid: str = "", force: int = 0):
+    """
+    PreConfirm Telegramma H2H con autoConfirm=true.
+    ATTENZIONE:
+    - Va chiamato solo dopo Submit OK / GetStatus OK.
+    - Per sicurezza, di default lavora solo se la pratica è SUBMIT_POSTE_OK.
+    - force=1 permette test tecnico manuale.
+    """
+
+    history = HistoryPlugin()
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+        stato = pratica.get("stato")
+
+        if stato != "SUBMIT_POSTE_OK" and force != 1:
+            return {
+                "success": False,
+                "blocked": True,
+                "error": "PreConfirm bloccato: consentito solo dopo SUBMIT_POSTE_OK",
+                "stato": stato,
+                "pratica_id": pratica_id,
+                "hint": "Usa force=1 solo per test tecnico controllato"
+            }
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        id_request = (
+            guid
+            or poste_response.get("guid_message")
+            or poste_response.get("id_request")
+            or pratica.get("id_richiesta")
+            or ""
+        )
+
+        if not id_request:
+            return {
+                "success": False,
+                "error": "idRequest/GUIDMessage mancante",
+                "pratica_id": pratica_id
+            }
+
+        client, service = telegramma_service(
+            timeout=60,
+            extra_plugins=[history]
+        )
+
+        ArrayOfstringType = telegramma_find_type(
+            client,
+            "ArrayOfstring",
+            ""
+        )
+
+        id_request_array = ArrayOfstringType(
+            string=[id_request]
+        )
+
+        result = service.PreConfirm(
+            idRequest=id_request_array,
+            autoConfirm=True,
+            forceOrderCreation=True
+        )
+
+        plain_result = make_json_safe(
+            zeep_to_plain(result)
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        new_poste_response = dict(poste_response or {})
+        new_poste_response["last_preconfirm"] = {
+            "step": "TELEGRAMMA_PRECONFIRM",
+            "id_request": id_request,
+            "autoConfirm": True,
+            "forceOrderCreation": True,
+            "result": plain_result,
+            "xml_sent": xml_sent,
+            "xml_received": xml_received,
+            "checked_at": now_iso
+        }
+
+        supabase.table("pratiche") \
+            .update({
+                "poste_response": new_poste_response,
+                "updated_at": now_iso
+            }) \
+            .eq("id", pratica_id) \
+            .execute()
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_PRECONFIRM",
+            "pratica_id": pratica_id,
+            "id_request": id_request,
+            "result": plain_result,
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_PRECONFIRM",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
         
 
 @app.get("/dashboard/pratiche/telegramma-preventivo/{pratica_id}")
