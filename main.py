@@ -10942,7 +10942,7 @@ def dashboard_pratiche(stato: str = None):
                 '</a>'
             )
 
-        elif p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "PREZZATA_DA_CONFERMARE":
+elif p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "PREZZATA_DA_CONFERMARE":
     invia_poste_html = f"""
         {prezzo_poste_html}
 
