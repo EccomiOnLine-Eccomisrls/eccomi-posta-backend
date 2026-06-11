@@ -1456,9 +1456,11 @@ def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
 
         preconfirm_plain = None
         preconfirm_called = False
+        
+        stati_finali_ok = ["Printing", "Confirmed"]
 
-        # 2. Se non è già Printing, chiama PreConfirm
-        if state_before != "Printing":
+        # 2. Se non è già in stato finale, chiama PreConfirm
+        if state_before not in stati_finali_ok:
             id_request_array = ArrayOfstringType(
                 string=[guid_message]
             )
@@ -1512,7 +1514,7 @@ def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
 
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        nuovo_stato = "INVIATO_POSTE" if final_state == "Printing" else "SUBMIT_POSTE_OK"
+        nuovo_stato = "INVIATO_POSTE" if final_state in stati_finali_ok else "SUBMIT_POSTE_OK"
 
         new_poste_response = dict(poste_response or {})
         new_poste_response["telegramma_flow_complete"] = {
@@ -1698,7 +1700,7 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
         nuovo_stato = complete_response.get("nuovo_stato")
 
         return {
-            "success": final_state == "Printing",
+            "success": final_state in ["Printing", "Confirmed"],
             "step": "TELEGRAMMA_INVIA_COMPLETO",
             "pratica_id": pratica_id,
             "guid_message": guid_message,
