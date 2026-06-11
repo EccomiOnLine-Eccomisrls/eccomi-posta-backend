@@ -2090,11 +2090,12 @@ def telegramma_submit_preview(pratica_id: str):
             pratica.get("parole") or len(testo.split()) or 1
         )
 
-        valorizzazione_obj, pricing_plain = telegramma_build_valorizzazione(
-            client,
-            service,
-            parole
-        )
+        valorizzazione_obj = xsd.SkipValue
+
+        pricing_plain = {
+            "note": "Preventivo rimosso dal flusso come indicato da Poste",
+            "preventivo_chiamato": False
+        }
 
         guid_message = str(uuid.uuid4())
 
@@ -2458,16 +2459,12 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             parole
         )
         
-        valorizzazione_da_inviare = valorizzazione_obj
+        valorizzazione_da_inviare = xsd.SkipValue
 
-        # TEST H2H SOLO SU PRATICA TECNICA #1392
-        # Prova Submit senza Valorizzazione
-        if pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1" and variant in ["no_valorizzazione", "no_guid_no_valorizzazione"]:
-            try:
-                from zeep import xsd
-                valorizzazione_da_inviare = xsd.SkipValue
-            except Exception:
-                valorizzazione_da_inviare = None
+        pricing_plain = {
+            "note": "Preventivo rimosso dal flusso come indicato da Poste",
+            "preventivo_chiamato": False
+        }
 
         guid_message = str(uuid.uuid4())
 
