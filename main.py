@@ -2505,7 +2505,8 @@ def telegramma_submit_preview(pratica_id: str):
             "preventivo_chiamato": False
         }
 
-        guid_message = str(uuid.uuid4())
+        id_request = str(uuid.uuid4())
+        guid_message = id_request
 
         telegramma_obj = TelegrammaType(
             Coupon=None,
@@ -2527,8 +2528,6 @@ def telegramma_submit_preview(pratica_id: str):
             TipoTelegramma="TOLNAZIO",
             Valorizzazione=valorizzazione_obj
         )
-
-        id_request = str(uuid.uuid4())
 
         message = client.create_message(
             service,
@@ -2666,11 +2665,17 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
                 "stato": stato
             }
 
-        if stato not in ["PREZZATA_DA_CONFERMARE", "ERRORE_POSTE", "SUBMIT_POSTE_OK"]:
+        if stato not in [
+            "PREZZATA_DA_CONFERMARE",
+            "ERRORE_POSTE",
+            "ERRORE_SUBMIT_POSTE",
+            "SUBMIT_POSTE_OK"
+        ]:
+           
             return {
                 "success": False,
                 "blocked": True,
-                "error": "Submit Telegramma consentito solo da PREZZATA_DA_CONFERMARE o ERRORE_POSTE",
+                "error": "Submit Telegramma consentito solo da PREZZATA_DA_CONFERMARE, ERRORE_POSTE, ERRORE_SUBMIT_POSTE o SUBMIT_POSTE_OK",
                 "stato": stato,
                 "pratica_id": pratica_id
             }
