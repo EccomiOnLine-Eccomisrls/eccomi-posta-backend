@@ -10943,19 +10943,22 @@ def dashboard_pratiche(stato: str = None):
             )
 
         elif p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "PREZZATA_DA_CONFERMARE":
-            invia_poste_html = f"""
-                {prezzo_poste_html}
+    invia_poste_html = f"""
+        {prezzo_poste_html}
 
-                <span class="btn-action btn-disabled">
-                    🚀 Invio Poste H2H in preparazione
-                </span>
+        <a class="btn-action btn-send"
+           href="/poste/h2h/telegramma/invia-completo/{pratica_id}"
+           target="_blank"
+           onclick="return confirm('ATTENZIONE: confermi invio automatico Telegramma H2H a Poste? Questa azione può inviare davvero il telegramma e generare costo H2H.');">
+            🚀 Invia Telegramma H2H
+        </a>
 
-                <a class="btn-action"
-                   href="/dashboard/pratiche/telegramma-manuale/{pratica_id}">
-                    📝 Segna inviato manuale
-                </a>
-            """
-
+        <a class="btn-action"
+           href="/dashboard/pratiche/telegramma-manuale/{pratica_id}"
+           onclick="return confirm('Vuoi segnare questo telegramma come inviato manualmente?')">
+            📝 Segna inviato manuale
+        </a>
+    """
         elif stato_pratica == "PREZZATA_DA_CONFERMARE" and h2h_order_id:
             if costo_display:
                 invia_poste_html = (
