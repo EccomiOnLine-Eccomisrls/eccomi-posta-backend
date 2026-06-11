@@ -3005,7 +3005,7 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
 
         supabase.table("pratiche") \
             .update({
-                "stato": "SUBMIT_POSTE_OK" if submit_ok else "ERRORE_POSTE",
+                "stato": "SUBMIT_POSTE_OK" if submit_ok else "ERRORE_SUBMIT_POSTE",
                 "id_richiesta": id_request,
                 "poste_response": poste_payload,
                 "xml_sent": xml_sent,
@@ -3054,7 +3054,7 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
         try:
             supabase.table("pratiche") \
                 .update({
-                    "stato": "ERRORE_POSTE",
+                    "stato": "ERRORE_SUBMIT_POSTE",
                     "poste_response": {
                         "step": "ERRORE_TELEGRAMMA_SUBMIT_POSTE",
                         "error": str(e)
