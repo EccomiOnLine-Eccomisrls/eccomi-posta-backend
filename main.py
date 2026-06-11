@@ -1580,7 +1580,6 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
     """
 
     try:
-        # Sicurezza Telegramma H2H automatico
         telegramma_auto_enabled = os.getenv(
             "TELEGRAMMA_H2H_AUTO_ENABLED",
             "false"
@@ -1629,13 +1628,17 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
             }
 
         submit_result = submit_response.get("submit_result") or {}
-        submit_result_block = submit_result.get("SubmitResult") or {}
-        submit_result_info = submit_result_block.get("Result") or {}
+
+        submit_result_info = (
+            (submit_result.get("SubmitResult") or {}).get("Result")
+            or submit_result.get("Result")
+            or {}
+        )
 
         poste_res_type = submit_result_info.get("ResType")
         poste_description = submit_result_info.get("Description")
 
-        if poste_res_type != "I":
+        if poste_res_type not in ["I", "W"]:
             return {
                 "success": False,
                 "step": "SUBMIT_NON_COMPLETATO",
@@ -1657,7 +1660,6 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
                 "submit_response": submit_response
             }
 
-        # Piccola attesa per permettere a Poste di aggiornare lo stato
         time.sleep(2)
 
         # 2. Completa da Submit fino a Printing
@@ -1665,6 +1667,14 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
             pratica_id=pratica_id,
             guid=guid_message
         )
+
+        if not isinstance(complete_response, dict):
+            return {
+                "success": False,
+                "step": "ERRORE_COMPLETA_DA_SUBMIT",
+                "error": "Risposta completamento non valida",
+                "complete_response": str(complete_response)
+            }
 
         final_state = complete_response.get("final_state")
         nuovo_stato = complete_response.get("nuovo_stato")
@@ -1678,6 +1688,9 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
             "submit_description": poste_description,
             "final_state": final_state,
             "nuovo_stato": nuovo_stato,
+            "numero_accettazione": complete_response.get("numero_accettazione"),
+            "id_telegramma": complete_response.get("id_telegramma"),
+            "importo_totale": complete_response.get("importo_totale"),
             "submit_response": submit_response,
             "complete_response": complete_response
         }
