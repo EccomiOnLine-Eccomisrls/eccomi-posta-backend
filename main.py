@@ -7627,6 +7627,57 @@ def estrai_dati_pdf_telegramma_poste(pdf_bytes: bytes):
             "error": str(e)
         }
 
+@app.get("/dashboard/pratiche/apri-pdf-poste/{pratica_id}")
+def dashboard_apri_pdf_poste_originale(pratica_id: str):
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        pdf_poste_url = (
+            poste_response.get("pdf_poste_originale_url")
+            or poste_response.get("pdf_originale_poste_url")
+        )
+
+        if not pdf_poste_url:
+            return {
+                "success": False,
+                "error": "PDF Poste originale non disponibile",
+                "pratica_id": pratica_id,
+                "order_name": pratica.get("order_name")
+            }
+
+        return RedirectResponse(
+            url=pdf_poste_url,
+            status_code=302
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "pratica_id": pratica_id
+        }
+
 @app.get("/dashboard/pratiche/apri-pdf/{pratica_id}")
 def dashboard_apri_pdf_pratica(pratica_id: str):
     try:
@@ -9270,7 +9321,7 @@ def dashboard_pratiche(stato: str = None):
         ricevuta_poste_url = h2h_ricevuta_by_pdf.get(pdf_url_pratica)
         
         if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "INVIATO_POSTE":
-            ricevuta_poste_url = f"/dashboard/pratiche/apri-pdf/{pratica_id}"
+            ricevuta_poste_url = f"/dashboard/pratiche/apri-pdf-poste/{pratica_id}"
 
         if costo_valorizzato is not None:
             try:
