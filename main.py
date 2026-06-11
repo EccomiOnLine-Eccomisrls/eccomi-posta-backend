@@ -4740,6 +4740,12 @@ try:
         except Exception:
             response_json = {}
 
+        resend_email_id = (
+            response_json.get("id")
+            or response_json.get("data", {}).get("id")
+            or ""
+        )
+
         if response.status_code < 200 or response.status_code >= 300:
             errore = f"Errore Resend {response.status_code}: {response_text}"
 
@@ -4759,10 +4765,9 @@ try:
                 "error": errore
             }
 
-        resend_id = response_json.get("id", "")
+        resend_id = resend_email_id
 
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-
         aggiorna_esito_email_raccomandata(
             h2h_order_id=h2h_order_id,
             pratica_id=pratica_id,
@@ -4772,6 +4777,9 @@ try:
                 "email_sent": True,
                 "email_sent_at": now_iso,
                 "email_error": None,
+                "email_status": "sent",
+                "email_last_event": "email.sent",
+                "email_last_event_at": now_iso,
                 "email_resend_id": resend_id
             }
         )
@@ -4792,9 +4800,11 @@ try:
             data={
                 **base_update,
                 "email_sent": False,
-                "email_error": errore
+                "email_error": errore,
+                "email_status": "failed",
+                "email_last_event": "email.failed",
+                "email_last_event_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             }
-        )
 
         return {
             "success": False,
@@ -8375,7 +8385,133 @@ def dashboard_invia_email_cliente(pratica_id: str):
             "pratica_id": pratica_id,
             "error": str(e)
         }
+@app.post("/resend/webhook")
+async def resend_webhook(request: Request):
+    """
+    Riceve eventi email da Resend e aggiorna la pratica:
+    - email.sent
+    - email.delivered
+    - email.opened
+    - email.clicked
+    - email.bounced
+    - email.failed
+    - email.complained
+    """
 
+    try:
+        payload = await request.json()
+
+        event_type = payload.get("type") or ""
+        created_at = (
+            payload.get("created_at")
+            or datetime.datetime.now(datetime.timezone.utc).isoformat()
+        )
+
+        data = payload.get("data") or {}
+
+        email_id = (
+            data.get("email_id")
+            or data.get("id")
+            or payload.get("email_id")
+            or payload.get("id")
+            or ""
+        )
+
+        if not email_id:
+            return {
+                "success": False,
+                "error": "email_id mancante",
+                "event_type": event_type,
+                "payload": payload
+            }
+
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("email_resend_id", email_id) \
+            .limit(1) \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": True,
+                "matched": False,
+                "message": "Evento Resend ricevuto ma pratica non trovata",
+                "email_id": email_id,
+                "event_type": event_type
+            }
+
+        pratica = pratica_res.data[0]
+        pratica_id = pratica.get("id")
+
+        update_payload = {
+            "email_last_event": event_type,
+            "email_last_event_at": created_at,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+
+        if event_type == "email.sent":
+            update_payload["email_status"] = "sent"
+
+        elif event_type == "email.delivered":
+            update_payload["email_status"] = "delivered"
+            update_payload["email_delivered_at"] = created_at
+
+        elif event_type == "email.opened":
+            update_payload["email_status"] = "opened"
+            update_payload["email_opened_at"] = created_at
+
+        elif event_type == "email.clicked":
+            update_payload["email_status"] = "clicked"
+
+        elif event_type == "email.bounced":
+            update_payload["email_status"] = "bounced"
+            update_payload["email_bounced_at"] = created_at
+            update_payload["email_error"] = str(data.get("bounce") or data)
+
+        elif event_type == "email.failed":
+            update_payload["email_status"] = "failed"
+            update_payload["email_failed_at"] = created_at
+            update_payload["email_error"] = str(data)
+
+        elif event_type == "email.complained":
+            update_payload["email_status"] = "complained"
+            update_payload["email_error"] = "Il destinatario ha segnalato la mail come spam"
+
+        current_events = pratica.get("email_events") or []
+
+        if not isinstance(current_events, list):
+            current_events = []
+
+        current_events.append({
+            "type": event_type,
+            "email_id": email_id,
+            "created_at": created_at,
+            "data": data
+        })
+
+        update_payload["email_events"] = current_events[-20:]
+
+        supabase.table("pratiche") \
+            .update(update_payload) \
+            .eq("id", pratica_id) \
+            .execute()
+
+        return {
+            "success": True,
+            "matched": True,
+            "step": "RESEND_WEBHOOK_RECEIVED",
+            "event_type": event_type,
+            "email_id": email_id,
+            "pratica_id": pratica_id,
+            "order_name": pratica.get("order_name")
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_RESEND_WEBHOOK",
+            "error": str(e)
+        }
 
 @app.get("/dashboard/pratiche/invia-poste/{pratica_id}")
 def dashboard_invia_poste(pratica_id: str):
