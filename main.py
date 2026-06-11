@@ -4538,10 +4538,19 @@ def invia_email_cliente_raccomandata(
         or ""
     )
 
-    subject = "La tua raccomandata Eccomi Posta è stata inviata"
+tipo_servizio = (
+    pratica.get("tipo_servizio")
+    or ordine.get("tipo_servizio")
+    or "RACCOMANDATA"
+).upper()
 
-    if numero_raccomandata:
-        subject += f" - {numero_raccomandata}"
+is_telegramma = tipo_servizio == "TELEGRAMMA"
+
+subject = (
+    f"Il tuo Telegramma Eccomi Posta è stato inviato - {numero_raccomandata}"
+    if is_telegramma
+    else f"La tua raccomandata Eccomi Posta è stata inviata - {numero_raccomandata}"
+)
 
     base_update = {
         "email_to": cliente_email,
@@ -4665,24 +4674,64 @@ def invia_email_cliente_raccomandata(
     # Rimane disponibile solo in  e database.
     pdf_poste_button = ""
 
+    tipo_servizio = (
+        pratica.get("tipo_servizio")
+        or ordine.get("tipo_servizio")
+        or "RACCOMANDATA"
+    ).upper()
+
+    is_telegramma = tipo_servizio == "TELEGRAMMA"
+
+    nome_servizio = "telegramma" if is_telegramma else "raccomandata"
+    nome_servizio_titolo = "Telegramma" if is_telegramma else "Raccomandata"
+
+    numero_label = "Numero accettazione" if is_telegramma else "Numero raccomandata"
+
+    titolo_mail = (
+        "Il tuo telegramma è stato inviato"
+        if is_telegramma
+        else "La tua raccomandata è stata inviata"
+    )
+
+    testo_mail = (
+        "la tua pratica Eccomi Posta è stata lavorata correttamente e il telegramma è stato inviato tramite Poste Italiane."
+        if is_telegramma
+        else "la tua pratica Eccomi Posta è stata lavorata correttamente e la raccomandata è stata inviata tramite Poste Italiane."
+    )
+
+    if is_telegramma:
+        tracking_button = ""
+        
+        pdf_poste_button = ""
+
+        pdf_cliente_button = f"""
+        <p style="margin:18px 0;">
+            <a href="{pdf_url}"
+               style="background:#15803d;color:white;padding:12px 18px;
+                      border-radius:10px;text-decoration:none;font-weight:bold;
+                      display:inline-block;">
+                Scarica ricevuta Telegramma
+            </a>
+        </p>
+        """
+
     html = f"""
     <div style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f9;
                 padding:24px;color:#111827;">
         <div style="max-width:640px;margin:0 auto;background:white;
                     border-radius:16px;padding:26px;">
             <h1 style="margin-top:0;color:#0f172a;">
-                La tua raccomandata è stata inviata
+                {titolo_mail}
             </h1>
 
             <p>
                 Ciao,<br>
-                la tua pratica Eccomi Posta è stata lavorata correttamente
-                e la raccomandata è stata inviata tramite Poste Italiane.
+                {testo_mail}
             </p>
 
             <div style="background:#f8fafc;border-radius:12px;padding:16px;margin:20px 0;">
                 <p><strong>Ordine:</strong> {shopify_order_name or "-"}</p>
-                <p><strong>Numero raccomandata:</strong> {numero_raccomandata or "-"}</p>
+                <p><strong>{numero_label}:</strong> {numero_raccomandata or "-"}</p>
             </div>
 
             {tracking_button}
