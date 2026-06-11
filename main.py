@@ -1309,18 +1309,43 @@ def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
     - se necessario PreConfirm autoConfirm=true
     - GetStatus finale
     - se Printing: aggiorna pratica a INVIATO_POSTE
+
+    Sicurezza:
+    - sempre permesso sulla pratica tecnica #1392
+    - sulle pratiche reali solo se TELEGRAMMA_H2H_AUTO_ENABLED=true
+    - blocca automaticamente se l'ambiente Poste è ancora sptest
     """
 
     history = HistoryPlugin()
 
     try:
-        # Sicurezza: per ora solo pratica tecnica #1392
-        if pratica_id != "525aceed-cd97-400e-9a25-49ec102078f1":
+        # =====================================================
+        # SICUREZZA TELEGRAMMA H2H AUTOMATICO
+        # =====================================================
+
+        telegramma_auto_enabled = os.getenv(
+            "TELEGRAMMA_H2H_AUTO_ENABLED",
+            "false"
+        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+
+        is_pratica_tecnica = pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1"
+
+        if not is_pratica_tecnica and not telegramma_auto_enabled:
             return {
                 "success": False,
                 "blocked": True,
                 "step": "TELEGRAMMA_COMPLETA_SUBMIT_BLOCCATO",
-                "error": "Completamento Telegramma H2H abilitato solo sulla pratica tecnica #1392",
+                "error": "Completamento Telegramma H2H automatico disattivato. Imposta TELEGRAMMA_H2H_AUTO_ENABLED=true su Render.",
+                "pratica_id": pratica_id
+            }
+
+        if not is_pratica_tecnica and "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower():
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "TELEGRAMMA_AMBIENTE_TEST_BLOCCATO",
+                "error": "Ambiente Poste TEST rilevato. Non usare sptest per un telegramma reale.",
+                "service_url": POSTE_H2H_TOL_SERVICE_URL,
                 "pratica_id": pratica_id
             }
 
@@ -1441,7 +1466,8 @@ def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
 
             preconfirm_called = True
 
-            # Piccola attesa per permettere a Poste di aggiornare lo stato
+            # Anche se PreConfirm restituisce warning/errore,
+            # Poste può comunque portare lo stato a Printing.
             time.sleep(2)
 
         # 3. GetStatus finale
@@ -1537,7 +1563,6 @@ def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
             "pratica_id": pratica_id,
             "error": str(e)
         }
-
 @app.get("/poste/h2h/telegramma/invia-completo/{pratica_id}")
 def telegramma_invia_completo(pratica_id: str, variant: str = ""):
     """
