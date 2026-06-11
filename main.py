@@ -9074,6 +9074,9 @@ def dashboard_pratiche(stato: str = None):
         h2h_order_id = h2h_id_by_pdf.get(pdf_url_pratica)
         costo_valorizzato = h2h_costo_by_pdf.get(pdf_url_pratica)
         ricevuta_poste_url = h2h_ricevuta_by_pdf.get(pdf_url_pratica)
+        
+        if p.get("tipo_servizio") == "TELEGRAMMA" and p.get("pdf_ricevuta_cliente_url"):
+            ricevuta_poste_url = p.get("pdf_ricevuta_cliente_url")
 
         if costo_valorizzato is not None:
             try:
