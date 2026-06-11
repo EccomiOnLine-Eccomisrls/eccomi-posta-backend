@@ -9059,7 +9059,7 @@ def dashboard_pratiche(stato: str = None):
         has_rr = bool_from_any(p.get("ricevuta_ritorno"))
 
         if p.get("tipo_servizio") == "TELEGRAMMA":
-            pdf_cliente_href = f"/dashboard/pratiche/telegramma-pdf/{pratica_id}"
+            pdf_cliente_href = f"/dashboard/pratiche/apri-pdf/{pratica_id}"
             pdf_cliente_label = "PDF Telegramma"
         else:
             pdf_cliente_href = f"/dashboard/pratiche/pdf/{p.get('id_richiesta') or pratica_id}"
