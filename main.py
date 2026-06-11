@@ -886,7 +886,72 @@ def telegramma_operations():
             "wsdl": POSTE_H2H_TOL_WSDL
         }
 
+@app.get("/poste/h2h/telegramma/signatures")
+def telegramma_signatures():
+    """
+    Mostra le firme dei metodi Telegramma H2H.
+    NON invia Telegrammi.
+    NON genera costi.
+    Serve per capire i parametri corretti di:
+    - GetStatus
+    - PreConfirm
+    - Confirm
+    - Submit
+    """
 
+    try:
+        client = telegramma_client(timeout=30)
+
+        methods_to_check = [
+            "GetIdRequest",
+            "RecipientsValidation",
+            "Submit",
+            "GetStatus",
+            "PreConfirm",
+            "Confirm",
+            "Abort",
+            "Modify"
+        ]
+
+        result = {}
+
+        for service_name, srv in client.wsdl.services.items():
+            result[service_name] = {}
+
+            for port_name, port in srv.ports.items():
+                operations = port.binding._operations
+
+                result[service_name][port_name] = {}
+
+                for method_name in methods_to_check:
+                    operation = operations.get(method_name)
+
+                    if not operation:
+                        result[service_name][port_name][method_name] = {
+                            "available": False
+                        }
+                        continue
+
+                    result[service_name][port_name][method_name] = {
+                        "available": True,
+                        "input": str(operation.input.signature()),
+                        "output": str(operation.output.signature())
+                    }
+
+        return {
+            "success": True,
+            "service": "Telegramma H2H Poste",
+            "wsdl": POSTE_H2H_TOL_WSDL,
+            "methods": result
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_SIGNATURES",
+            "error": str(e)
+        }
+        
 
 @app.get("/dashboard/pratiche/telegramma-preventivo/{pratica_id}")
 def dashboard_telegramma_preventivo(pratica_id: str, redirect: int = 0):
