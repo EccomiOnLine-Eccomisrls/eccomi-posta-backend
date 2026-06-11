@@ -8439,6 +8439,171 @@ def dashboard_invia_email_cliente(pratica_id: str):
             "pratica_id": pratica_id,
             "error": str(e)
         }
+
+@app.get("/dashboard/pratiche/anteprima-email-cliente/{pratica_id}", response_class=HTMLResponse)
+def dashboard_anteprima_email_cliente(pratica_id: str):
+    """
+    Anteprima HTML della mail cliente.
+    NON invia email.
+    NON chiama Resend.
+    Serve solo per controllare testo, bottoni e PDF.
+    """
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return HTMLResponse(
+                "<h2>Pratica non trovata</h2>",
+                status_code=404
+            )
+
+        pratica = pratica_res.data
+
+        tipo_servizio = (pratica.get("tipo_servizio") or "RACCOMANDATA").upper()
+        is_telegramma = tipo_servizio == "TELEGRAMMA"
+
+        cliente_email = pratica.get("cliente_email") or pratica.get("email_to") or ""
+        shopify_order_name = (
+            pratica.get("shopify_order_name")
+            or pratica.get("order_name")
+            or pratica.get("order_id")
+            or ""
+        )
+
+        numero_raccomandata = pratica.get("numero_raccomandata") or ""
+
+        pdf_url = (
+            pratica.get("pdf_ricevuta_cliente_url")
+            or pratica.get("pdf_url")
+            or ""
+        )
+
+        titolo_mail = (
+            "Il tuo telegramma è stato inviato"
+            if is_telegramma
+            else "La tua raccomandata è stata inviata"
+        )
+
+        testo_mail = (
+            "la tua pratica Eccomi Posta è stata lavorata correttamente e il telegramma è stato inviato tramite Poste Italiane."
+            if is_telegramma
+            else "la tua pratica Eccomi Posta è stata lavorata correttamente e la raccomandata è stata inviata tramite Poste Italiane."
+        )
+
+        numero_label = (
+            "Numero accettazione"
+            if is_telegramma
+            else "Numero raccomandata"
+        )
+
+        subject = (
+            f"Il tuo Telegramma Eccomi Posta è stato inviato - {numero_raccomandata}"
+            if is_telegramma
+            else f"La tua raccomandata Eccomi Posta è stata inviata - {numero_raccomandata}"
+        )
+
+        tracking_button = ""
+
+        if numero_raccomandata and not is_telegramma:
+            tracking_button = f"""
+            <p style="margin:18px 0;">
+                <a href="https://www.poste.it/cerca/index.html#/risultati-spedizioni/{numero_raccomandata}"
+                   target="_blank"
+                   style="background:#2563eb;color:white;padding:12px 18px;
+                          border-radius:10px;text-decoration:none;font-weight:bold;
+                          display:inline-block;">
+                    Traccia la raccomandata
+                </a>
+            </p>
+            """
+
+        pdf_cliente_button = ""
+
+        if pdf_url:
+            label_pdf = (
+                "Scarica ricevuta Telegramma"
+                if is_telegramma
+                else "Scarica ricevuta Eccomi Posta"
+            )
+
+            pdf_cliente_button = f"""
+            <p style="margin:18px 0;">
+                <a href="{pdf_url}"
+                   target="_blank"
+                   style="background:#15803d;color:white;padding:12px 18px;
+                          border-radius:10px;text-decoration:none;font-weight:bold;
+                          display:inline-block;">
+                    {label_pdf}
+                </a>
+            </p>
+            """
+
+        html = f"""
+        <div style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f9;
+                    padding:24px;color:#111827;">
+            <div style="max-width:640px;margin:0 auto 16px auto;
+                        background:#fff7ed;border:1px solid #fed7aa;
+                        border-radius:14px;padding:14px 18px;color:#9a3412;">
+                <strong>ANTEPRIMA EMAIL — NON INVIATA</strong><br>
+                Destinatario previsto: {cliente_email or "-"}<br>
+                Oggetto previsto: {subject}
+            </div>
+
+            <div style="max-width:640px;margin:0 auto;background:white;
+                        border-radius:16px;padding:26px;">
+                <h1 style="margin-top:0;color:#0f172a;">
+                    {titolo_mail}
+                </h1>
+
+                <p>
+                    Ciao,<br>
+                    {testo_mail}
+                </p>
+
+                <div style="background:#f8fafc;border-radius:12px;padding:16px;margin:20px 0;">
+                    <p><strong>Ordine:</strong> {shopify_order_name or "-"}</p>
+                    <p><strong>{numero_label}:</strong> {numero_raccomandata or "-"}</p>
+                </div>
+
+                {tracking_button}
+                {pdf_cliente_button}
+
+                <hr style="border:none;border-top:1px solid #e5e7eb;margin:26px 0;">
+
+                <p>
+                    Hai bisogno di inviare un nuovo documento, una raccomandata,
+                    un telegramma, Posta1 o Posta4?
+                </p>
+
+                <p style="margin:22px 0;">
+                    <a href="{ECCOMI_POSTA_CTA_URL}"
+                       style="background:#f97316;color:white;padding:12px 18px;
+                              border-radius:10px;text-decoration:none;font-weight:bold;">
+                        Vai a Eccomi Posta
+                    </a>
+                </p>
+
+                <p style="font-size:12px;color:#6b7280;margin-top:28px;">
+                    Eccomi Posta — Servizi postali digitali<br>
+                    www.eccomionline.com
+                </p>
+            </div>
+        </div>
+        """
+
+        return HTMLResponse(html)
+
+    except Exception as e:
+        return HTMLResponse(
+            f"<h2>Errore anteprima email</h2><pre>{str(e)}</pre>",
+            status_code=500
+        )
+
 @app.post("/resend/webhook")
 async def resend_webhook(request: Request):
     """
