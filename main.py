@@ -8636,10 +8636,13 @@ def dashboard_apri_pdf_pratica(pratica_id: str):
 
         pratica = pratica_res.data
 
-        pdf_url = (
-            pratica.get("pdf_ricevuta_cliente_url")
-            or pratica.get("pdf_url")
-        )
+        if (pratica.get("tipo_servizio") or "").upper() == "TELEGRAMMA":
+            pdf_url = ensure_pdf_cliente_telegramma(pratica)
+        else:
+            pdf_url = (
+                pratica.get("pdf_ricevuta_cliente_url")
+                or pratica.get("pdf_url")
+            )
 
         if not pdf_url:
             return {
@@ -8916,6 +8919,108 @@ def genera_pdf_cliente_telegramma_bytes(
     buffer.seek(0)
     return buffer.getvalue()
 
+def ensure_pdf_cliente_telegramma(pratica: dict):
+    """
+    Garantisce che un Telegramma INVIATO_POSTE abbia il PDF cliente pulito.
+    Se manca pdf_ricevuta_cliente_url, lo genera, lo salva su Supabase
+    e aggiorna la pratica.
+    """
+    pratica_id = pratica.get("id")
+
+    pdf_esistente = pratica.get("pdf_ricevuta_cliente_url")
+    if pdf_esistente:
+        return pdf_esistente
+
+    poste_response = pratica.get("poste_response") or {}
+
+    if isinstance(poste_response, str):
+        try:
+            poste_response = json.loads(poste_response)
+        except Exception:
+            poste_response = {}
+
+    flow = (
+        poste_response.get("telegramma_flow_complete")
+        or poste_response.get("complete_response")
+        or {}
+    )
+
+    submit_response = poste_response.get("submit_response") or {}
+    submit_result = (
+        poste_response.get("submit_result")
+        or submit_response.get("submit_result")
+        or {}
+    )
+
+    telegramma_obj = (
+        submit_result.get("telegramma")
+        or poste_response.get("telegramma")
+        or {}
+    )
+
+    numero_accettazione = (
+        pratica.get("numero_raccomandata")
+        or flow.get("numero_accettazione")
+        or poste_response.get("numero_accettazione")
+        or ""
+    )
+
+    numero_telegramma = (
+        flow.get("id_telegramma")
+        or poste_response.get("id_telegramma")
+        or poste_response.get("numero_telegramma")
+        or ""
+    )
+
+    if not numero_telegramma:
+        try:
+            dest = telegramma_obj.get("Destinatari") or {}
+            tg_dest = dest.get("TelegrammaDestinatario")
+
+            if isinstance(tg_dest, list) and tg_dest:
+                numero_telegramma = tg_dest[0].get("IDTelegramma") or ""
+            elif isinstance(tg_dest, dict):
+                numero_telegramma = tg_dest.get("IDTelegramma") or ""
+        except Exception:
+            numero_telegramma = ""
+
+    if not numero_accettazione:
+        raise ValueError("Numero accettazione Telegramma mancante: impossibile generare PDF cliente")
+
+    pdf_cliente_bytes = genera_pdf_cliente_telegramma_bytes(
+        pratica=pratica,
+        numero_accettazione=numero_accettazione,
+        numero_telegramma=numero_telegramma
+    )
+
+    storage_path_cliente = f"telegrammi/{pratica_id}/ricevuta_cliente.pdf"
+
+    supabase.storage.from_("eccomi-posta").upload(
+        storage_path_cliente,
+        pdf_cliente_bytes,
+        file_options={
+            "content-type": "application/pdf",
+            "upsert": "true"
+        }
+    )
+
+    pdf_cliente_url = supabase.storage.from_("eccomi-posta").get_public_url(
+        storage_path_cliente
+    )
+
+    poste_response["pdf_ricevuta_cliente_url"] = pdf_cliente_url
+    poste_response["pdf_cliente_generato_da"] = "ensure_pdf_cliente_telegramma"
+
+    supabase.table("pratiche").update({
+        "pdf_ricevuta_cliente_url": pdf_cliente_url,
+        "poste_response": poste_response,
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }).eq("id", pratica_id).execute()
+
+    pratica["pdf_ricevuta_cliente_url"] = pdf_cliente_url
+    pratica["poste_response"] = poste_response
+
+    return pdf_cliente_url
 
 @app.post("/dashboard/pratiche/telegramma-manuale/{pratica_id}")
 async def dashboard_telegramma_manuale_save(
@@ -9112,16 +9217,8 @@ def dashboard_invia_email_cliente(pratica_id: str):
         # TELEGRAMMA — flusso manuale/portale Poste
         # ==========================================================
         if tipo_servizio == "TELEGRAMMA":
-            pdf_cliente_url = pratica.get("pdf_ricevuta_cliente_url") or ""
-
-            if not pdf_cliente_url:
-                return {
-                    "success": False,
-                    "error": "PDF cliente Telegramma non disponibile. Genera/carica prima la ricevuta cliente pulita.",
-                    "pratica_id": pratica_id,
-                    "order_name": pratica.get("order_name")
-                }
-
+            pdf_cliente_url = ensure_pdf_cliente_telegramma(pratica)
+            
             poste_response = pratica.get("poste_response") or {}
 
             if isinstance(poste_response, str):
@@ -9261,18 +9358,11 @@ def dashboard_invia_email_cliente(pratica_id: str):
             .eq("id", pratica_id) \
             .execute()
 
-        return {
-            "success": email_ok,
-            "step": "EMAIL_CLIENTE_GESTITA",
-            "pratica_id": pratica_id,
-            "tipo_servizio": tipo_servizio,
-            "h2h_order_id": h2h_order_id,
-            "email_to": cliente_email,
-            "internal_bcc_email": INTERNAL_BCC_EMAIL,
-            "pdf_cliente_url": pdf_cliente_url,
-            "email": email_result
-        }
-
+        return RedirectResponse(
+            url="/dashboard/pratiche?email=inviata" if email_ok else "/dashboard/pratiche?email=errore",
+            status_code=303
+        )
+        
     except Exception as e:
         try:
             supabase.table("pratiche") \
@@ -10781,7 +10871,6 @@ def dashboard_pratiche(stato: str = None):
 
                     <a class="btn-action"
                        href="/dashboard/pratiche/invia-email-cliente/{pratica_id}"
-                       target="_blank"
                        onclick="return confirm('Riprovo a inviare la mail al cliente? Non verrà chiamata Poste.')">
                         📧 Riprova email
                     </a>
@@ -10794,7 +10883,6 @@ def dashboard_pratiche(stato: str = None):
 
                     <a class="btn-action"
                        href="/dashboard/pratiche/invia-email-cliente/{pratica_id}"
-                       target="_blank"
                        onclick="return confirm('Inviare email al cliente per questa raccomandata? Non verrà chiamata Poste.')">
                         📧 Email cliente
                     </a>
