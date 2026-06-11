@@ -2217,6 +2217,7 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
     """
 
     history = HistoryPlugin()
+    from zeep import xsd
 
     try:
         pratica_res = supabase.table("pratiche") \
@@ -2452,12 +2453,6 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             parole = int(
                 pratica.get("parole") or len(testo.split()) or 1
             )
-
-        valorizzazione_obj, pricing_plain = telegramma_build_valorizzazione(
-            client,
-            service,
-            parole
-        )
         
         valorizzazione_da_inviare = xsd.SkipValue
 
