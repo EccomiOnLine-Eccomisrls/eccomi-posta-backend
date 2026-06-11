@@ -1538,7 +1538,114 @@ def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
             "error": str(e)
         }
 
+@app.get("/poste/h2h/telegramma/invia-completo/{pratica_id}")
+def telegramma_invia_completo(pratica_id: str, variant: str = ""):
+    """
+    Flusso completo Telegramma H2H:
+    - Submit
+    - GetStatus
+    - PreConfirm autoConfirm=true se necessario
+    - GetStatus finale
+    - se Printing: pratica INVIATO_POSTE
 
+    Per sicurezza, per ora abilitato SOLO sulla pratica tecnica #1392.
+    """
+
+    try:
+        # Sicurezza: per ora solo pratica tecnica #1392
+        if pratica_id != "525aceed-cd97-400e-9a25-49ec102078f1":
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "TELEGRAMMA_INVIA_COMPLETO_BLOCCATO",
+                "error": "Invio completo Telegramma H2H abilitato solo sulla pratica tecnica #1392",
+                "pratica_id": pratica_id
+            }
+
+        # 1. Submit
+        submit_response = _telegramma_submit_poste(
+            pratica_id=pratica_id,
+            variant=variant
+        )
+
+        if not isinstance(submit_response, dict):
+            return {
+                "success": False,
+                "step": "ERRORE_TELEGRAMMA_INVIA_COMPLETO",
+                "error": "Risposta Submit non valida",
+                "submit_response": str(submit_response)
+            }
+
+        if not submit_response.get("success"):
+            return {
+                "success": False,
+                "step": "ERRORE_SUBMIT_NEL_FLUSSO_COMPLETO",
+                "submit_response": submit_response
+            }
+
+        submit_result = submit_response.get("submit_result") or {}
+        submit_result_block = submit_result.get("SubmitResult") or {}
+        submit_result_info = submit_result_block.get("Result") or {}
+
+        poste_res_type = submit_result_info.get("ResType")
+        poste_description = submit_result_info.get("Description")
+
+        if poste_res_type != "I":
+            return {
+                "success": False,
+                "step": "SUBMIT_NON_COMPLETATO",
+                "poste_res_type": poste_res_type,
+                "poste_description": poste_description,
+                "submit_response": submit_response
+            }
+
+        guid_message = (
+            submit_response.get("guid_message")
+            or submit_response.get("id_request")
+            or ""
+        )
+
+        if not guid_message:
+            return {
+                "success": False,
+                "step": "GUID_MANCANTE_DOPO_SUBMIT",
+                "submit_response": submit_response
+            }
+
+        # Piccola attesa per permettere a Poste di aggiornare lo stato
+        time.sleep(2)
+
+        # 2. Completa da Submit fino a Printing
+        complete_response = telegramma_completa_da_submit(
+            pratica_id=pratica_id,
+            guid=guid_message
+        )
+
+        final_state = complete_response.get("final_state")
+        nuovo_stato = complete_response.get("nuovo_stato")
+
+        return {
+            "success": final_state == "Printing",
+            "step": "TELEGRAMMA_INVIA_COMPLETO",
+            "pratica_id": pratica_id,
+            "guid_message": guid_message,
+            "submit_res_type": poste_res_type,
+            "submit_description": poste_description,
+            "final_state": final_state,
+            "nuovo_stato": nuovo_stato,
+            "submit_response": submit_response,
+            "complete_response": complete_response
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_INVIA_COMPLETO",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }        
+
+    
 @app.get("/dashboard/pratiche/telegramma-preventivo/{pratica_id}")
 def dashboard_telegramma_preventivo(pratica_id: str, redirect: int = 0):
     """
