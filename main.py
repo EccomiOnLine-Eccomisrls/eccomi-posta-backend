@@ -9075,8 +9075,8 @@ def dashboard_pratiche(stato: str = None):
         costo_valorizzato = h2h_costo_by_pdf.get(pdf_url_pratica)
         ricevuta_poste_url = h2h_ricevuta_by_pdf.get(pdf_url_pratica)
         
-        if p.get("tipo_servizio") == "TELEGRAMMA" and p.get("pdf_ricevuta_cliente_url"):
-            ricevuta_poste_url = p.get("pdf_ricevuta_cliente_url")
+        if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "INVIATO_POSTE":
+            ricevuta_poste_url = f"/dashboard/pratiche/apri-pdf/{pratica_id}"
 
         if costo_valorizzato is not None:
             try:
