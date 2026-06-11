@@ -1605,25 +1605,25 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
                 "pratica_id": pratica_id
             }
 
-telegramma_test_send_enabled = os.getenv(
-    "TELEGRAMMA_H2H_TEST_SEND_ENABLED",
-    "false"
-).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+        telegramma_test_send_enabled = os.getenv(
+            "TELEGRAMMA_H2H_TEST_SEND_ENABLED",
+            "false"
+        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
 
-if (
-    not is_pratica_tecnica
-    and "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower()
-    and not telegramma_test_send_enabled
-):
-    return {
-        "success": False,
-        "blocked": True,
-        "step": "TELEGRAMMA_AMBIENTE_TEST_BLOCCATO",
-        "error": "Ambiente Poste TEST rilevato. Per testare su sptest imposta TELEGRAMMA_H2H_TEST_SEND_ENABLED=true.",
-        "service_url": POSTE_H2H_TOL_SERVICE_URL,
-        "pratica_id": pratica_id
-    }
-
+        if (
+            not is_pratica_tecnica
+            and "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower()
+            and not telegramma_test_send_enabled
+        ):
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "TELEGRAMMA_AMBIENTE_TEST_BLOCCATO",
+                "error": "Ambiente Poste TEST rilevato. Per testare su sptest imposta TELEGRAMMA_H2H_TEST_SEND_ENABLED=true.",
+                "service_url": POSTE_H2H_TOL_SERVICE_URL,
+                "pratica_id": pratica_id
+            }   
+            
         # 1. Submit
         submit_response = _telegramma_submit_poste(
             pratica_id=pratica_id,
@@ -3109,25 +3109,25 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
                 "stato": stato
             }
 
-telegramma_test_send_enabled = os.getenv(
-    "TELEGRAMMA_H2H_TEST_SEND_ENABLED",
-    "false"
-).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+        telegramma_test_send_enabled = os.getenv(
+            "TELEGRAMMA_H2H_TEST_SEND_ENABLED",
+            "false"
+        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
 
-if (
-    not is_pratica_tecnica
-    and "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower()
-    and not telegramma_test_send_enabled
-):
-    return {
-        "success": False,
-        "blocked": True,
-        "step": "TELEGRAMMA_AMBIENTE_TEST_BLOCCATO",
-        "error": "Ambiente Poste TEST rilevato. Per testare su sptest imposta TELEGRAMMA_H2H_TEST_SEND_ENABLED=true.",
-        "service_url": POSTE_H2H_TOL_SERVICE_URL,
-        "pratica_id": pratica_id
-    }
-
+        if (
+            not is_pratica_tecnica
+            and "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower()
+            and not telegramma_test_send_enabled
+        ):
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "TELEGRAMMA_AMBIENTE_TEST_BLOCCATO",
+                "error": "Ambiente Poste TEST rilevato. Per testare su sptest imposta TELEGRAMMA_H2H_TEST_SEND_ENABLED=true.",
+                "service_url": POSTE_H2H_TOL_SERVICE_URL,
+                "pratica_id": pratica_id
+            }
+        
         if stato not in [
             "PREZZATA_DA_CONFERMARE",
             "ERRORE_POSTE",
