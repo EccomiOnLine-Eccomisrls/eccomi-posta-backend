@@ -7773,6 +7773,158 @@ def dashboard_telegramma_manuale_form(pratica_id: str):
     except Exception as e:
         return HTMLResponse(f"<h2>Errore</h2><pre>{str(e)}</pre>", status_code=500)
 
+def _ecx_dict(value):
+    if isinstance(value, dict):
+        return value
+
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return {}
+
+    return {}
+
+
+def _ecx_addr_label(data):
+    data = _ecx_dict(data)
+
+    nome = str(data.get("nome") or "").strip()
+    via = str(data.get("via") or data.get("indirizzo") or "").strip()
+    civico = str(data.get("civico") or "").strip()
+    cap = str(data.get("cap") or "").strip()
+    comune = str(data.get("comune") or "").strip()
+    provincia = str(data.get("provincia") or "").strip()
+
+    indirizzo = " ".join([x for x in [via, civico] if x]).strip()
+    localita = " ".join([x for x in [cap, comune, f"({provincia})" if provincia else ""] if x]).strip()
+
+    return nome, indirizzo, localita
+
+
+def genera_pdf_cliente_telegramma_bytes(
+    pratica: dict,
+    numero_accettazione: str,
+    numero_telegramma: str
+):
+    """
+    Genera ricevuta cliente Eccomi Posta per Telegramma.
+    NON include importo/costo Poste.
+    """
+    buffer = BytesIO()
+
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    y = height - 2.2 * cm
+
+    c.setFont("Helvetica-Bold", 22)
+    c.drawCentredString(width / 2, y, "ECCOMI POSTA")
+
+    y -= 0.7 * cm
+    c.setFont("Helvetica", 12)
+    c.drawCentredString(width / 2, y, "Servizi Postali Digitali")
+
+    y -= 1.1 * cm
+    c.line(2 * cm, y, width - 2 * cm, y)
+
+    y -= 1.3 * cm
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(2 * cm, y, "Ricevuta di invio Telegramma")
+
+    y -= 1.2 * cm
+
+    box_x = 2 * cm
+    box_y = y - 2.2 * cm
+    box_w = width - 4 * cm
+    box_h = 2.4 * cm
+
+    c.roundRect(box_x, box_y, box_w, box_h, 8, stroke=1, fill=0)
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(box_x + 0.6 * cm, y - 0.5 * cm, "Numero Accettazione")
+    c.drawString(box_x + 8.2 * cm, y - 0.5 * cm, "Stato")
+
+    c.setFont("Helvetica-Bold", 15)
+    c.drawString(box_x + 0.6 * cm, y - 1.25 * cm, str(numero_accettazione or "-"))
+
+    c.setFont("Helvetica", 12)
+    c.drawString(box_x + 8.2 * cm, y - 1.25 * cm, "Accettato da Poste Italiane")
+
+    y = box_y - 1.2 * cm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "Numero Telegramma")
+    y -= 0.55 * cm
+    c.setFont("Helvetica", 11)
+    c.drawString(2 * cm, y, str(numero_telegramma or "-"))
+
+    y -= 1.1 * cm
+
+    mitt_nome, mitt_indirizzo, mitt_localita = _ecx_addr_label(pratica.get("mittente"))
+    dest_nome, dest_indirizzo, dest_localita = _ecx_addr_label(pratica.get("destinatario"))
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "Mittente")
+    y -= 0.55 * cm
+    c.setFont("Helvetica", 11)
+    c.drawString(2 * cm, y, mitt_nome or "-")
+    y -= 0.45 * cm
+    c.drawString(2 * cm, y, mitt_indirizzo or "-")
+    y -= 0.45 * cm
+    c.drawString(2 * cm, y, mitt_localita or "-")
+
+    y -= 1.0 * cm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "Destinatario")
+    y -= 0.55 * cm
+    c.setFont("Helvetica", 11)
+    c.drawString(2 * cm, y, dest_nome or "-")
+    y -= 0.45 * cm
+    c.drawString(2 * cm, y, dest_indirizzo or "-")
+    y -= 0.45 * cm
+    c.drawString(2 * cm, y, dest_localita or "-")
+
+    y -= 1.0 * cm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "Data operazione")
+    c.setFont("Helvetica", 11)
+    c.drawString(6 * cm, y, datetime.datetime.now().strftime("%d/%m/%Y %H:%M"))
+
+    y -= 1.6 * cm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "Scopri anche gli altri servizi Eccomi Posta")
+    y -= 0.55 * cm
+
+    c.setFont("Helvetica", 10)
+    servizi = [
+        "Telegramma Online",
+        "Raccomandata con ricevuta di ritorno",
+        "Visure e certificati",
+        "Spedizione buste e pacchi",
+        "Servizi postali per aziende"
+    ]
+
+    for servizio in servizi:
+        c.drawString(2.4 * cm, y, f"• {servizio}")
+        y -= 0.42 * cm
+
+    c.line(2 * cm, 2.0 * cm, width - 2 * cm, 2.0 * cm)
+    c.setFont("Helvetica", 8)
+    c.drawString(
+        2 * cm,
+        1.55 * cm,
+        "Eccomi Posta è un servizio digitale di gestione spedizioni. Ricevuta generata da Eccomi Online."
+    )
+
+    c.save()
+
+    buffer.seek(0)
+    return buffer.getvalue()
+
 
 @app.post("/dashboard/pratiche/telegramma-manuale/{pratica_id}")
 async def dashboard_telegramma_manuale_save(
@@ -7783,6 +7935,22 @@ async def dashboard_telegramma_manuale_save(
     try:
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "TELEGRAMMA_MANUALE_SAVE",
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
         content = await pdf_file.read()
 
         estratti = estrai_dati_pdf_telegramma_poste(content)
@@ -7791,21 +7959,22 @@ async def dashboard_telegramma_manuale_save(
         numero_telegramma = estratti.get("numero_telegramma")
         importo = estratti.get("importo")
 
-        if not numero_accettazione or not numero_telegramma or not importo:
+        if not numero_accettazione or not numero_telegramma:
             return {
                 "success": False,
                 "step": "PDF_TELEGRAMMA_DATI_NON_LETTI",
-                "error": "Non sono riuscito a leggere Numero Accettazione, Numero Telegramma o Importo dal PDF.",
+                "error": "Non sono riuscito a leggere Numero Accettazione o Numero Telegramma dal PDF.",
                 "numero_accettazione": numero_accettazione,
                 "numero_telegramma": numero_telegramma,
                 "importo": importo,
                 "testo_estratto": estratti.get("text", "")[:3000]
             }
 
-        storage_path = f"telegrammi/{pratica_id}/ricevuta_poste_manual.pdf"
+        # 1) PDF Poste originale: archivio interno
+        storage_path_poste = f"telegrammi/{pratica_id}/ricevuta_poste_originale.pdf"
 
         supabase.storage.from_("eccomi-posta").upload(
-            storage_path,
+            storage_path_poste,
             content,
             file_options={
                 "content-type": "application/pdf",
@@ -7813,7 +7982,31 @@ async def dashboard_telegramma_manuale_save(
             }
         )
 
-        pdf_url = supabase.storage.from_("eccomi-posta").get_public_url(storage_path)
+        pdf_poste_originale_url = supabase.storage.from_("eccomi-posta").get_public_url(
+            storage_path_poste
+        )
+
+        # 2) PDF cliente Eccomi: pulito, senza costo Poste
+        pdf_cliente_bytes = genera_pdf_cliente_telegramma_bytes(
+            pratica=pratica,
+            numero_accettazione=numero_accettazione,
+            numero_telegramma=numero_telegramma
+        )
+
+        storage_path_cliente = f"telegrammi/{pratica_id}/ricevuta_cliente.pdf"
+
+        supabase.storage.from_("eccomi-posta").upload(
+            storage_path_cliente,
+            pdf_cliente_bytes,
+            file_options={
+                "content-type": "application/pdf",
+                "upsert": "true"
+            }
+        )
+
+        pdf_cliente_url = supabase.storage.from_("eccomi-posta").get_public_url(
+            storage_path_cliente
+        )
 
         poste_payload = {
             "step": "TELEGRAMMA_MANUALE_INVIATO",
@@ -7821,8 +8014,9 @@ async def dashboard_telegramma_manuale_save(
             "identificativo_poste": identificativo_poste,
             "numero_accettazione": numero_accettazione,
             "numero_telegramma": numero_telegramma,
-            "importo": importo,
-            "pdf_ricevuta_cliente_url": pdf_url,
+            "importo_poste_interno": importo,
+            "pdf_poste_originale_url": pdf_poste_originale_url,
+            "pdf_ricevuta_cliente_url": pdf_cliente_url,
             "manual_sent_at": now_iso,
             "pdf_extract_success": estratti.get("success"),
             "pdf_extract_preview": estratti.get("text", "")[:1000]
@@ -7832,7 +8026,7 @@ async def dashboard_telegramma_manuale_save(
             "stato": "INVIATO_POSTE",
             "numero_raccomandata": numero_accettazione,
             "poste_response": poste_payload,
-            "pdf_ricevuta_cliente_url": pdf_url,
+            "pdf_ricevuta_cliente_url": pdf_cliente_url,
             "email_sent": False,
             "updated_at": now_iso
         }
