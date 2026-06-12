@@ -11191,38 +11191,40 @@ def dashboard_pratiche(stato: str = None):
             </td>
         </tr>
         """
+        
+    telegramma_auto_enabled = os.getenv(
+        "TELEGRAMMA_H2H_AUTO_ENABLED",
+        "false"
+    ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
 
-telegramma_auto_enabled = os.getenv(
-    "TELEGRAMMA_H2H_AUTO_ENABLED",
-    "false"
-).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+    telegramma_test_enabled = os.getenv(
+        "TELEGRAMMA_H2H_TEST_SEND_ENABLED",
+        "false"
+    ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
 
-telegramma_test_enabled = os.getenv(
-    "TELEGRAMMA_H2H_TEST_SEND_ENABLED",
-    "false"
-).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+    is_sptest = "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower()
 
-is_sptest = "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower()
+    if POSTE_INVIO_AUTO:
+        h2h_led = "🟢"
+        h2h_mode_label = "H2H AUTO"
+        h2h_mode_bg = "#16a34a"
 
-if POSTE_INVIO_AUTO:
-    h2h_led = "🟢"
-    h2h_mode_label = "H2H AUTO"
-    h2h_mode_bg = "#16a34a"
+    elif telegramma_auto_enabled and is_sptest and telegramma_test_enabled:
+        h2h_led = "🟠"
+        h2h_mode_label = "TELEGRAMMA H2H TEST AUTO"
+        h2h_mode_bg = "#f97316"
 
-elif telegramma_auto_enabled and is_sptest and telegramma_test_enabled:
-    h2h_led = "🟠"
-    h2h_mode_label = "TELEGRAMMA H2H TEST AUTO"
-    h2h_mode_bg = "#f97316"
+    elif telegramma_auto_enabled and not is_sptest:
+        h2h_led = "🟢"
+        h2h_mode_label = "TELEGRAMMA H2H AUTO PRODUZIONE"
+        h2h_mode_bg = "#16a34a"
 
-elif telegramma_auto_enabled and not is_sptest:
-    h2h_led = "🟢"
-    h2h_mode_label = "TELEGRAMMA H2H AUTO PRODUZIONE"
-    h2h_mode_bg = "#16a34a"
+    else:
+        h2h_led = "🔴"
+        h2h_mode_label = "H2H MANUALE"
+        h2h_mode_bg = "#dc2626"
 
-else:
-    h2h_led = "🔴"
-    h2h_mode_label = "H2H MANUALE"
-    h2h_mode_bg = "#dc2626"
+
     return f"""
     <html>
     <head>
