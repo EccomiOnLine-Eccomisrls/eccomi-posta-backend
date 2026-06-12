@@ -11204,24 +11204,29 @@ def dashboard_pratiche(stato: str = None):
 
     is_sptest = "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower()
 
-    if POSTE_INVIO_AUTO:
-        h2h_led = "🟢"
-        h2h_mode_label = "H2H AUTO"
-        h2h_mode_bg = "#16a34a"
-
-    elif telegramma_auto_enabled and is_sptest and telegramma_test_enabled:
-        h2h_led = "🟠"
-        h2h_mode_label = "TELEGRAMMA H2H TEST AUTO"
-        h2h_mode_bg = "#f97316"
-
+    if telegramma_auto_enabled and is_sptest and telegramma_test_enabled:
+        telegramma_label = "Telegramma: TEST AUTO"
     elif telegramma_auto_enabled and not is_sptest:
-        h2h_led = "🟢"
-        h2h_mode_label = "TELEGRAMMA H2H AUTO PRODUZIONE"
-        h2h_mode_bg = "#16a34a"
+        telegramma_label = "Telegramma: AUTO PRODUZIONE"
+    else:
+        telegramma_label = "Telegramma: MANUALE"
 
+    raccomandata_label = (
+        "Raccomandata: AUTO"
+        if POSTE_INVIO_AUTO
+        else "Raccomandata: MANUALE"
+    )
+
+    h2h_mode_label = f"{telegramma_label} · {raccomandata_label}"
+
+    if "AUTO PRODUZIONE" in telegramma_label and POSTE_INVIO_AUTO:
+        h2h_led = "🟢"
+        h2h_mode_bg = "#16a34a"
+    elif "TEST AUTO" in telegramma_label:
+        h2h_led = "🟠"
+        h2h_mode_bg = "#f97316"
     else:
         h2h_led = "🔴"
-        h2h_mode_label = "H2H MANUALE"
         h2h_mode_bg = "#dc2626"
 
 
