@@ -10800,8 +10800,11 @@ def dashboard_pratiche(stato: str = None):
         costo_valorizzato = h2h_costo_by_pdf.get(pdf_url_pratica)
         ricevuta_poste_url = h2h_ricevuta_by_pdf.get(pdf_url_pratica)
         
+        ricevuta_poste_label = "Apri ricevuta Poste"
+
         if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "INVIATO_POSTE":
-            ricevuta_poste_url = f"/dashboard/pratiche/apri-pdf-poste/{pratica_id}"
+            ricevuta_poste_url = f"/dashboard/pratiche/apri-pdf/{pratica_id}"
+            ricevuta_poste_label = "Apri ricevuta Telegramma"
 
         if costo_valorizzato is not None:
             try:
@@ -10822,7 +10825,7 @@ def dashboard_pratiche(stato: str = None):
                     <a class="btn-action"
                        href="{ricevuta_poste_url}"
                        target="_blank">
-                        Apri ricevuta Poste
+                        {ricevuta_poste_label}
                     </a>
                 """
             else:
@@ -11189,10 +11192,37 @@ def dashboard_pratiche(stato: str = None):
         </tr>
         """
 
-    h2h_led = "🟢" if POSTE_INVIO_AUTO else "🔴"
-    h2h_mode_label = "H2H AUTO" if POSTE_INVIO_AUTO else "H2H MANUALE"
-    h2h_mode_bg = "#16a34a" if POSTE_INVIO_AUTO else "#dc2626"
+telegramma_auto_enabled = os.getenv(
+    "TELEGRAMMA_H2H_AUTO_ENABLED",
+    "false"
+).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
 
+telegramma_test_enabled = os.getenv(
+    "TELEGRAMMA_H2H_TEST_SEND_ENABLED",
+    "false"
+).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+
+is_sptest = "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower()
+
+if POSTE_INVIO_AUTO:
+    h2h_led = "🟢"
+    h2h_mode_label = "H2H AUTO"
+    h2h_mode_bg = "#16a34a"
+
+elif telegramma_auto_enabled and is_sptest and telegramma_test_enabled:
+    h2h_led = "🟠"
+    h2h_mode_label = "TELEGRAMMA H2H TEST AUTO"
+    h2h_mode_bg = "#f97316"
+
+elif telegramma_auto_enabled and not is_sptest:
+    h2h_led = "🟢"
+    h2h_mode_label = "TELEGRAMMA H2H AUTO PRODUZIONE"
+    h2h_mode_bg = "#16a34a"
+
+else:
+    h2h_led = "🔴"
+    h2h_mode_label = "H2H MANUALE"
+    h2h_mode_bg = "#dc2626"
     return f"""
     <html>
     <head>
