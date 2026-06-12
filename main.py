@@ -11460,6 +11460,34 @@ def dashboard_pratiche(stato: str = None):
                 box-shadow:0 2px 8px rgba(0,0,0,.10);
                 text-align:center;
             }}
+            
+            /* Bordi colonne dashboard */
+            table {{
+                border: 2px solid #111827 !important;
+                border-collapse: collapse !important;
+            }}
+
+            th {{
+                border-right: 1px solid #374151 !important;
+            }}
+
+            td {{
+                border-right: 1px solid rgba(17, 24, 39, 0.22) !important;
+            }}
+
+            th:last-child,
+            td:last-child {{
+                border-right: none !important;
+            }}
+
+            .main-row td {{
+                border-top: 1px solid rgba(17, 24, 39, 0.18) !important;
+            }}
+
+            .action-row td {{
+                border-right: none !important;
+                border-bottom: 2px solid rgba(17, 24, 39, 0.16) !important;
+            }}
 
             @media (max-width: 700px) {{
                 body {{
