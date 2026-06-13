@@ -10784,7 +10784,7 @@ def dashboard_pratiche(stato: str = None):
         has_rr = bool_from_any(p.get("ricevuta_ritorno"))
 
         if p.get("tipo_servizio") == "TELEGRAMMA":
-            pdf_cliente_href = f"/dashboard/pratiche/apri-pdf/{pratica_id}"
+            pdf_cliente_href = f"/dashboard/pratiche/pdf-telegramma/{pratica_id}"
             pdf_cliente_label = "PDF Telegramma"
         else:
             pdf_cliente_href = f"/dashboard/pratiche/pdf/{p.get('id_richiesta') or pratica_id}"
@@ -12178,6 +12178,147 @@ def dashboard_pratica_pdf(pratica_id: str):
         "success": False,
         "error": "PDF non disponibile per questa pratica"
     }
+
+@app.get("/dashboard/pratiche/pdf-telegramma/{pratica_id}")
+def dashboard_pdf_telegramma_testo(pratica_id: str):
+    import io
+    import json
+    import datetime
+
+    result = supabase.table("pratiche") \
+        .select("*") \
+        .eq("id", pratica_id) \
+        .single() \
+        .execute()
+
+    if not result.data:
+        return {
+            "success": False,
+            "error": "Pratica non trovata",
+            "pratica_id": pratica_id
+        }
+
+    pratica = result.data
+
+    if pratica.get("tipo_servizio") != "TELEGRAMMA":
+        return {
+            "success": False,
+            "error": "Questa pratica non è un Telegramma",
+            "pratica_id": pratica_id
+        }
+
+    def parse_address(value):
+        if isinstance(value, dict):
+            return value
+
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except Exception:
+                return {"raw": value}
+
+        return {}
+
+    mittente = parse_address(pratica.get("mittente"))
+    destinatario = parse_address(pratica.get("destinatario"))
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+
+    width, height = A4
+    y = height - 2.2 * cm
+
+    c.setFont("Helvetica-Bold", 18)
+    c.drawCentredString(width / 2, y, "TELEGRAMMA")
+    y -= 1.2 * cm
+
+    c.setFont("Helvetica", 10)
+    c.drawCentredString(width / 2, y, "Documento generato da Eccomi Posta")
+    y -= 1.4 * cm
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, "Ordine:")
+    c.setFont("Helvetica", 11)
+    c.drawString(4 * cm, y, str(pratica.get("order_name") or pratica.get("shopify_order_name") or "-"))
+    y -= 0.7 * cm
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, "Data:")
+    c.setFont("Helvetica", 11)
+    created_at = str(pratica.get("created_at") or "")[:16].replace("T", " ")
+    c.drawString(4 * cm, y, created_at or datetime.datetime.now().strftime("%d/%m/%Y"))
+    y -= 1.2 * cm
+
+    def draw_address(title, data):
+        nonlocal y
+
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(2 * cm, y, title)
+        y -= 0.6 * cm
+
+        righe = [
+            data.get("nome") or data.get("raw") or "-",
+            f"{data.get('via') or ''} {data.get('civico') or ''}".strip(),
+            f"{data.get('cap') or ''} {data.get('comune') or ''} ({data.get('provincia') or ''})".strip(),
+            data.get("contatto") or ""
+        ]
+
+        c.setFont("Helvetica", 11)
+
+        for riga in righe:
+            if riga:
+                c.drawString(2 * cm, y, riga)
+                y -= 0.55 * cm
+
+        y -= 0.5 * cm
+
+    draw_address("MITTENTE", mittente)
+    draw_address("DESTINATARIO", destinatario)
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "TESTO TELEGRAMMA")
+    y -= 0.8 * cm
+
+    testo = str(pratica.get("testo") or "").strip()
+
+    c.setFont("Times-Roman", 14)
+
+    max_width = width - 4 * cm
+    words = testo.split()
+    line = ""
+
+    for word in words:
+        test_line = (line + " " + word).strip()
+
+        if c.stringWidth(test_line, "Times-Roman", 14) <= max_width:
+            line = test_line
+        else:
+            c.drawString(2 * cm, y, line)
+            y -= 0.65 * cm
+            line = word
+
+            if y < 2.5 * cm:
+                c.showPage()
+                y = height - 2 * cm
+                c.setFont("Times-Roman", 14)
+
+    if line:
+        c.drawString(2 * cm, y, line)
+        y -= 1.2 * cm
+
+    c.setFont("Helvetica", 10)
+    c.drawString(2 * cm, 1.5 * cm, "Documento non ancora ricevuta ufficiale Poste.")
+
+    c.save()
+    buffer.seek(0)
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="telegramma-{pratica.get("order_name") or pratica_id}.pdf"'
+        }
+    )
 
 
 @app.get("/dashboard/pratiche/errore/{pratica_id}")
