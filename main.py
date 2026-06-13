@@ -12703,6 +12703,469 @@ def dashboard_salva_ricevuta_poste(pratica_id: str):
             "error": str(e)
         }
 
+@app.get("/dashboard/pratiche/monitora/{pratica_id}")
+def dashboard_monitora_pratica_poste(pratica_id: str):
+    """
+    Monitoraggio pratica Eccomi Posta.
+    NON invia nulla a Poste.
+    TELEGRAMMA: usa GetStatus già esistente.
+    RACCOMANDATA: recupera/salva ricevuta ufficiale Poste se disponibile.
+    """
+
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .limit(1) \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "PRATICA_NON_TROVATA",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data[0]
+        tipo_servizio = str(pratica.get("tipo_servizio") or "").upper().strip()
+
+        if "RACCOMANDATA" in tipo_servizio:
+            return monitora_raccomandata_poste(pratica_id, pratica, now_iso)
+
+        if "TELEGRAMMA" in tipo_servizio:
+            return monitora_telegramma_poste(pratica_id, pratica, now_iso)
+
+        return {
+            "success": False,
+            "step": "TIPO_SERVIZIO_NON_GESTITO",
+            "pratica_id": pratica_id,
+            "tipo_servizio": tipo_servizio
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_MONITORAGGIO_PRATICA",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
+
+def monitora_raccomandata_poste(pratica_id: str, pratica: dict, now_iso: str):
+    """
+    Monitora una Raccomandata già inviata.
+    NON invia una nuova raccomandata.
+    Recupera solo la ricevuta ufficiale Poste se disponibile.
+    """
+
+    try:
+        h2h_order_id = resolve_h2h_order_id(pratica_id)
+
+        if not h2h_order_id:
+            monitor_payload = {
+                "tipo": "RACCOMANDATA",
+                "stato_monitoraggio": "H2H_ORDER_NON_TROVATO",
+                "last_monitor_at": now_iso,
+                "message": "Nessun ordine H2H collegato alla pratica."
+            }
+
+            aggiorna_monitoraggio_pratica(pratica_id, pratica, monitor_payload)
+
+            return {
+                "success": False,
+                "step": "H2H_ORDER_NON_TROVATO",
+                "pratica_id": pratica_id,
+                "message": "Nessun ordine H2H collegato alla pratica."
+            }
+
+        ordine_res = supabase.table("poste_h2h_orders") \
+            .select("*") \
+            .eq("id", h2h_order_id) \
+            .single() \
+            .execute()
+
+        if not ordine_res.data:
+            monitor_payload = {
+                "tipo": "RACCOMANDATA",
+                "stato_monitoraggio": "H2H_ORDER_NON_PRESENTE",
+                "last_monitor_at": now_iso,
+                "h2h_order_id": str(h2h_order_id)
+            }
+
+            aggiorna_monitoraggio_pratica(pratica_id, pratica, monitor_payload)
+
+            return {
+                "success": False,
+                "step": "H2H_ORDER_NON_PRESENTE",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id
+            }
+
+        ordine = ordine_res.data
+        id_richiesta = ordine.get("id_richiesta")
+
+        if not id_richiesta:
+            monitor_payload = {
+                "tipo": "RACCOMANDATA",
+                "stato_monitoraggio": "ID_RICHIESTA_MANCANTE",
+                "last_monitor_at": now_iso,
+                "h2h_order_id": str(h2h_order_id),
+                "message": "La pratica non ha ancora un id_richiesta Poste."
+            }
+
+            aggiorna_monitoraggio_pratica(pratica_id, pratica, monitor_payload)
+
+            return {
+                "success": False,
+                "step": "ID_RICHIESTA_MANCANTE",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "message": "La pratica non ha ancora un id_richiesta Poste."
+            }
+
+        pdf_esistente = ordine.get("pdf_ricevuta_url")
+
+        if pdf_esistente:
+            monitor_payload = {
+                "tipo": "RACCOMANDATA",
+                "stato_monitoraggio": "RICEVUTA_POSTE_GIA_PRESENTE",
+                "last_monitor_at": now_iso,
+                "h2h_order_id": str(h2h_order_id),
+                "id_richiesta": str(id_richiesta),
+                "pdf_ricevuta_url": pdf_esistente
+            }
+
+            aggiorna_monitoraggio_pratica(pratica_id, pratica, monitor_payload)
+
+            return {
+                "success": True,
+                "step": "RICEVUTA_POSTE_GIA_PRESENTE",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "id_richiesta": id_richiesta,
+                "pdf_ricevuta_url": pdf_esistente
+            }
+
+        history = HistoryPlugin()
+
+        client, service = poste_client(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        poste_result = service.RecuperaRicevutaAccettazione(
+            IDRichiesta=id_richiesta
+        )
+
+        pdf_bytes = estrai_pdf_bytes_ricevuta_poste(poste_result)
+
+        file_path = f"ricevute-poste/{h2h_order_id}/ricevuta_accettazione.pdf"
+
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            file_path,
+            pdf_bytes,
+            {
+                "content-type": "application/pdf",
+                "upsert": "true"
+            }
+        )
+
+        pdf_public_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
+            file_path
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        supabase.table("poste_h2h_orders") \
+            .update({
+                "pdf_ricevuta_url": pdf_public_url,
+                "ricevuta_salvata_at": now_iso,
+                "poste_response": str(poste_result)
+            }) \
+            .eq("id", h2h_order_id) \
+            .execute()
+
+        receipt_payload = {
+            "pratica_id": str(pratica_id),
+            "h2h_order_id": str(h2h_order_id),
+            "shopify_order_name": (
+                ordine.get("shopify_order_name")
+                or pratica.get("shopify_order_name")
+                or pratica.get("order_name")
+                or ""
+            ),
+            "id_richiesta": str(id_richiesta),
+            "guid_utente": str(ordine.get("guid_utente") or ""),
+            "id_ricevuta": str(ordine.get("id_ricevuta") or ""),
+            "numero_raccomandata": str(
+                ordine.get("numero_raccomandata")
+                or pratica.get("numero_raccomandata")
+                or ""
+            ),
+            "costo": ordine.get("costo"),
+            "pdf_ricevuta_url": pdf_public_url,
+            "tipo_ricevuta": "ACCETTAZIONE_POSTE",
+            "poste_response": str(poste_result),
+            "updated_at": now_iso
+        }
+
+        try:
+            existing_receipt = supabase.table("poste_h2h_ricevute") \
+                .select("id") \
+                .eq("h2h_order_id", str(h2h_order_id)) \
+                .limit(1) \
+                .execute()
+
+            if existing_receipt.data:
+                supabase.table("poste_h2h_ricevute") \
+                    .update(receipt_payload) \
+                    .eq("id", existing_receipt.data[0].get("id")) \
+                    .execute()
+            else:
+                supabase.table("poste_h2h_ricevute") \
+                    .insert(receipt_payload) \
+                    .execute()
+
+        except Exception as receipt_db_error:
+            print("ERRORE_SALVATAGGIO_POSTE_H2H_RICEVUTE:", receipt_db_error)
+
+        monitor_payload = {
+            "tipo": "RACCOMANDATA",
+            "stato_monitoraggio": "RICEVUTA_POSTE_SALVATA",
+            "last_monitor_at": now_iso,
+            "h2h_order_id": str(h2h_order_id),
+            "id_richiesta": str(id_richiesta),
+            "pdf_ricevuta_url": pdf_public_url,
+            "pdf_size_bytes": len(pdf_bytes),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+        aggiorna_monitoraggio_pratica(pratica_id, pratica, monitor_payload)
+
+        return {
+            "success": True,
+            "step": "RICEVUTA_POSTE_SALVATA",
+            "pratica_id": pratica_id,
+            "h2h_order_id": h2h_order_id,
+            "id_richiesta": id_richiesta,
+            "pdf_ricevuta_url": pdf_public_url
+        }
+
+    except Exception as e:
+        monitor_payload = {
+            "tipo": "RACCOMANDATA",
+            "stato_monitoraggio": "ERRORE_MONITORAGGIO_RACCOMANDATA",
+            "last_monitor_at": now_iso,
+            "error": str(e)
+        }
+
+        aggiorna_monitoraggio_pratica(pratica_id, pratica, monitor_payload)
+
+        return {
+            "success": False,
+            "step": "ERRORE_MONITORAGGIO_RACCOMANDATA",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
+
+def monitora_telegramma_poste(pratica_id: str, pratica: dict, now_iso: str):
+    """
+    Monitora lo stato di un Telegramma già inviato.
+    NON invia un nuovo Telegramma.
+    NON fa PreConfirm.
+    Usa solo GetStatus.
+    """
+
+    try:
+        get_status_result = telegramma_get_status_debug(pratica_id)
+
+        if not isinstance(get_status_result, dict):
+            monitor_payload = {
+                "tipo": "TELEGRAMMA",
+                "stato_monitoraggio": "ERRORE_GETSTATUS_RISPOSTA_NON_VALIDA",
+                "last_monitor_at": now_iso,
+                "raw_response": str(get_status_result)
+            }
+
+            aggiorna_monitoraggio_pratica(pratica_id, pratica, monitor_payload)
+
+            return {
+                "success": False,
+                "step": "ERRORE_GETSTATUS_RISPOSTA_NON_VALIDA",
+                "pratica_id": pratica_id,
+                "response": str(get_status_result)
+            }
+
+        if not get_status_result.get("success"):
+            monitor_payload = {
+                "tipo": "TELEGRAMMA",
+                "stato_monitoraggio": "ERRORE_GETSTATUS_TELEGRAMMA",
+                "last_monitor_at": now_iso,
+                "error": get_status_result.get("error"),
+                "get_status_result": get_status_result
+            }
+
+            aggiorna_monitoraggio_pratica(pratica_id, pratica, monitor_payload)
+
+            return {
+                "success": False,
+                "step": "ERRORE_GETSTATUS_TELEGRAMMA",
+                "pratica_id": pratica_id,
+                "get_status_result": get_status_result
+            }
+
+        status_plain = get_status_result.get("result") or {}
+
+        state = None
+        id_telegramma = None
+
+        try:
+            details = (
+                status_plain.get("Status", {})
+                .get("TelgramStatusDetails", {})
+                .get("TelegrammaStatusDetailsType", [])
+            )
+
+            if isinstance(details, dict):
+                details = [details]
+
+            if details:
+                first = details[0] or {}
+                state = first.get("State")
+                id_telegramma = first.get("IDTelegramma")
+
+        except Exception:
+            pass
+
+        stato_monitoraggio = "TELEGRAMMA_MONITORATO"
+
+        if state in ["Printing", "Confirmed"]:
+            stato_monitoraggio = "TELEGRAMMA_IN_LAVORAZIONE_POSTE"
+
+        if state in ["Delivered", "Recapitato", "Consegnato"]:
+            stato_monitoraggio = "TELEGRAMMA_CONSEGNATO"
+
+        monitor_payload = {
+            "tipo": "TELEGRAMMA",
+            "stato_monitoraggio": stato_monitoraggio,
+            "last_monitor_at": now_iso,
+            "guid_message": get_status_result.get("guid_message"),
+            "state": state,
+            "id_telegramma": id_telegramma,
+            "get_status_result": status_plain
+        }
+
+        aggiorna_monitoraggio_pratica(pratica_id, pratica, monitor_payload)
+
+        update_data = {
+            "updated_at": now_iso
+        }
+
+        if id_telegramma and not pratica.get("numero_raccomandata"):
+            update_data["numero_raccomandata"] = str(id_telegramma)
+
+        if stato_monitoraggio == "TELEGRAMMA_CONSEGNATO":
+            update_data["stato"] = "CONSEGNATO"
+
+        if len(update_data.keys()) > 1:
+            supabase.table("pratiche") \
+                .update(update_data) \
+                .eq("id", pratica_id) \
+                .execute()
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_MONITORATO",
+            "pratica_id": pratica_id,
+            "stato_monitoraggio": stato_monitoraggio,
+            "state": state,
+            "id_telegramma": id_telegramma,
+            "get_status_result": status_plain
+        }
+
+    except Exception as e:
+        monitor_payload = {
+            "tipo": "TELEGRAMMA",
+            "stato_monitoraggio": "ERRORE_MONITORAGGIO_TELEGRAMMA",
+            "last_monitor_at": now_iso,
+            "error": str(e)
+        }
+
+        aggiorna_monitoraggio_pratica(pratica_id, pratica, monitor_payload)
+
+        return {
+            "success": False,
+            "step": "ERRORE_MONITORAGGIO_TELEGRAMMA",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
+
+def aggiorna_monitoraggio_pratica(pratica_id: str, pratica: dict, monitor_payload: dict):
+    """
+    Salva il risultato del monitoraggio dentro pratiche.poste_response.
+    Non richiede nuove colonne Supabase.
+    Rilegge la pratica prima di salvare per non sovrascrivere altri dati.
+    """
+
+    try:
+        pratica_fresh_res = supabase.table("pratiche") \
+            .select("poste_response") \
+            .eq("id", pratica_id) \
+            .limit(1) \
+            .execute()
+
+        if pratica_fresh_res.data:
+            poste_response_attuale = pratica_fresh_res.data[0].get("poste_response") or {}
+        else:
+            poste_response_attuale = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response_attuale, str):
+            try:
+                poste_response_attuale = json.loads(poste_response_attuale)
+            except Exception:
+                poste_response_attuale = {}
+
+        if not isinstance(poste_response_attuale, dict):
+            poste_response_attuale = {}
+
+        poste_response_attuale["monitoraggio_poste"] = monitor_payload
+
+        supabase.table("pratiche") \
+            .update({
+                "poste_response": poste_response_attuale,
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }) \
+            .eq("id", pratica_id) \
+            .execute()
+
+    except Exception as e:
+        print("ERRORE_AGGIORNA_MONITORAGGIO_PRATICA:", e)
+
+
 @app.get("/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}")
 def dashboard_ricevuta_poste_telegramma(pratica_id: str):
     import json
