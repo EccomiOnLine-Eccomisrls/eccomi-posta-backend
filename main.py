@@ -12721,22 +12721,52 @@ def dashboard_monitora_pratica_poste(pratica_id: str):
             .limit(1) \
             .execute()
 
+        # Fallback 1: se non è pratiche.id, prova come id_richiesta Poste
+        if not pratica_res.data:
+            pratica_res = supabase.table("pratiche") \
+                .select("*") \
+                .eq("id_richiesta", pratica_id) \
+                .limit(1) \
+                .execute()
+
+        # Fallback 2: prova come order_name / shopify_order_name
+        if not pratica_res.data:
+            pratica_res = supabase.table("pratiche") \
+                .select("*") \
+                .or_(
+                    f"order_name.eq.{pratica_id},shopify_order_name.eq.{pratica_id},order_id.eq.{pratica_id}"
+                ) \
+                .limit(1) \
+                .execute()
+
+        # Fallback 3: se scrivi 1400, prova anche #1400
+        if not pratica_res.data and not str(pratica_id).startswith("#"):
+            pratica_res = supabase.table("pratiche") \
+                .select("*") \
+                .or_(
+                    f"order_name.eq.#{pratica_id},shopify_order_name.eq.#{pratica_id}"
+                ) \
+                .limit(1) \
+                .execute()
+
         if not pratica_res.data:
             return {
                 "success": False,
                 "step": "PRATICA_NON_TROVATA",
-                "pratica_id": pratica_id
+                "input": pratica_id,
+                "message": "Nessuna pratica trovata né per id, né per id_richiesta, né per ordine."
             }
 
         pratica = pratica_res.data[0]
+        pratica_id_effettivo = pratica.get("id") or pratica_id
         tipo_servizio = str(pratica.get("tipo_servizio") or "").upper().strip()
 
         if "RACCOMANDATA" in tipo_servizio:
-            return monitora_raccomandata_poste(pratica_id, pratica, now_iso)
+            return monitora_raccomandata_poste(pratica_id_effettivo, pratica, now_iso)
 
         if "TELEGRAMMA" in tipo_servizio:
-            return monitora_telegramma_poste(pratica_id, pratica, now_iso)
-
+            return monitora_telegramma_poste(pratica_id_effettivo, pratica, now_iso)
+            
         return {
             "success": False,
             "step": "TIPO_SERVIZIO_NON_GESTITO",
