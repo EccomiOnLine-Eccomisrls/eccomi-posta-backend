@@ -1858,7 +1858,7 @@ def dashboard_telegramma_preventivo(pratica_id: str, redirect: int = 0):
         
         if redirect == 1:
             return RedirectResponse(
-                url="//pratiche",
+                url="/dashboard/pratiche",
                 status_code=303
             )
 
