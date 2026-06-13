@@ -144,19 +144,25 @@ POSTE_H2H_ROL_WSDL = os.getenv(
 POSTE_H2H_SERVICE_URL = "https://cewebservices.posteitaliane.it/ROLGC/RolService.svc"
 POSTE_H2H_BINDING = "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_ROLServiceSoap"
 
-# ============================================================
+# ---------------------------------------------------------
 # POSTE H2H TELEGRAMMA - TOL
-# ============================================================
-
-POSTE_H2H_TOL_WSDL = os.getenv(
-    "POSTE_H2H_TOL_WSDL",
-    "https://sptest.posteitaliane.it/TelegrammaExtranet/WsTOL.svc?wsdl"
-)
+# ---------------------------------------------------------
 
 POSTE_H2H_TOL_SERVICE_URL = os.getenv(
     "POSTE_H2H_TOL_SERVICE_URL",
-    "https://sptest.posteitaliane.it/TelegrammaExtranet/WsTOL.svc"
-)
+    "https://cewebservices.posteitaliane.it/TelegrammaExtranet/WsTOL.svc"
+).strip()
+
+POSTE_H2H_TOL_WSDL = os.getenv(
+    "POSTE_H2H_TOL_WSDL",
+    ""
+).strip()
+
+if not POSTE_H2H_TOL_WSDL:
+    if POSTE_H2H_TOL_SERVICE_URL.endswith("?wsdl"):
+        POSTE_H2H_TOL_WSDL = POSTE_H2H_TOL_SERVICE_URL
+    else:
+        POSTE_H2H_TOL_WSDL = POSTE_H2H_TOL_SERVICE_URL.rstrip("/") + "?wsdl"
 
 POSTE_H2H_TOL_USERID = os.getenv(
     "POSTE_H2H_TOL_USERID",
