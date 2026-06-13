@@ -10677,6 +10677,7 @@ def dashboard_pratiche(stato: str = None):
             "id,order_id,order_name,shopify_order_name,tipo_servizio,"
             "cliente_email,stato,numero_raccomandata,pdf_url,poste_response,"
             "id_richiesta,ricevuta_ritorno,created_at,updated_at,"
+            "pdf_ricevuta_cliente_url,"
             "email_sent,email_sent_at,email_error,email_to,email_subject,email_resend_id"
         )
         .order("created_at", desc=True)
@@ -10799,9 +10800,10 @@ def dashboard_pratiche(stato: str = None):
         h2h_order_id = h2h_id_by_pdf.get(pdf_url_pratica)
         costo_valorizzato = h2h_costo_by_pdf.get(pdf_url_pratica)
         ricevuta_poste_url = h2h_ricevuta_by_pdf.get(pdf_url_pratica)
-        
+
         ricevuta_poste_label = "Apri ricevuta Poste"
         ricevuta_poste_telegramma_url = None
+        ricevuta_cliente_url_pratica = p.get("pdf_ricevuta_cliente_url")
 
         try:
             pr_telegramma = p.get("poste_response") or {}
@@ -10818,9 +10820,28 @@ def dashboard_pratiche(stato: str = None):
                 or pr_telegramma.get("pdf_ricevuta_url")
                 or pr_telegramma.get("ricevuta_url")
             )
+
+            # Fallback per Telegramma manuale:
+            # se non è un invio H2H automatico e abbiamo già una ricevuta caricata,
+            # usiamo quella come Ricevuta Poste.
+            is_telegramma_h2h = bool(
+                p.get("id_richiesta")
+                or pr_telegramma.get("telegramma_flow_complete")
+                or pr_telegramma.get("submit_response")
+                or pr_telegramma.get("guid")
+            )
+
+            if (
+                p.get("tipo_servizio") == "TELEGRAMMA"
+                and not ricevuta_poste_telegramma_url
+                and not is_telegramma_h2h
+                and ricevuta_cliente_url_pratica
+            ):
+                ricevuta_poste_telegramma_url = ricevuta_cliente_url_pratica
+
         except Exception:
             ricevuta_poste_telegramma_url = None
-
+            
         if costo_valorizzato is not None:
             try:
                 costo_float = float(str(costo_valorizzato).replace(",", "."))
