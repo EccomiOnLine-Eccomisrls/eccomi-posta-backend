@@ -12245,8 +12245,32 @@ def dashboard_pdf_telegramma_testo(pratica_id: str):
     c.setFont("Helvetica-Bold", 11)
     c.drawString(2 * cm, y, "Data:")
     c.setFont("Helvetica", 11)
-    created_at = str(pratica.get("created_at") or "")[:16].replace("T", " ")
-    c.drawString(4 * cm, y, created_at or datetime.datetime.now().strftime("%d/%m/%Y"))
+
+    try:
+        from zoneinfo import ZoneInfo
+
+        created_raw = pratica.get("created_at")
+
+        if created_raw:
+            created_dt = datetime.datetime.fromisoformat(
+                str(created_raw).replace("Z", "+00:00")
+            )
+
+            if created_dt.tzinfo is None:
+                created_dt = created_dt.replace(tzinfo=datetime.timezone.utc)
+
+            data_pdf = created_dt.astimezone(
+                ZoneInfo("Europe/Rome")
+            ).strftime("Roma, %d/%m/%Y")
+        else:
+            data_pdf = datetime.datetime.now(
+                ZoneInfo("Europe/Rome")
+            ).strftime("Roma, %d/%m/%Y")
+
+    except Exception:
+        data_pdf = datetime.datetime.now().strftime("Roma, %d/%m/%Y")
+
+    c.drawString(4 * cm, y, data_pdf)
     y -= 1.2 * cm
 
     def draw_address(title, data):
