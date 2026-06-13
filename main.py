@@ -1,4 +1,4 @@
-import urllib3
+    import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
@@ -11073,6 +11073,22 @@ async def shopify_raccomandata_order(request: Request):
 
         for item in order.get("line_items", []) or []:
             title = str(item.get("title") or "")
+            props_preview = {}
+
+            for p in item.get("properties", []) or []:
+                name = str(p.get("name") or "").strip()
+                value = p.get("value")
+
+                if name:
+                    props_preview[name] = value
+
+            is_extra_rr = (
+                str(props_preview.get("Tipo extra") or "").lower().strip() == "ricevuta di ritorno"
+                or "RICEVUTA DI RITORNO" in title.upper()
+            )
+
+            if is_extra_rr:
+                continue
 
             if "RACCOMANDATA" not in title.upper():
                 continue
@@ -11143,6 +11159,12 @@ async def shopify_raccomandata_order(request: Request):
             mittente_raw = prop_value(props, ["Mittente", "mittente"], "")
             destinatario_raw = prop_value(props, ["Destinatario", "destinatario"], "")
             testo_racc = prop_value(props, ["Testo raccomandata", "testo"], "")
+            oggetto_racc = prop_value(props, ["Oggetto", "oggetto"], "")
+            firma_racc = prop_value(props, ["Firma", "firma"], "")
+            metodo_invio = prop_value(props, ["Metodo invio", "metodo_invio"], "")
+            nome_file_pdf = prop_value(props, ["Nome file PDF", "nome_file_pdf"], "")
+            pagine_racc = prop_value(props, ["Pagine", "pagine"], "")
+            token_pratica = prop_value(props, ["Token pratica", "token"], token or "")
 
             has_rr = (
                 detect_ricevuta_ritorno(props)
@@ -11167,6 +11189,26 @@ async def shopify_raccomandata_order(request: Request):
 
             if testo_racc:
                 update_data["testo"] = testo_racc
+
+            poste_response_attuale = pratica.get("poste_response") or {}
+
+            if not isinstance(poste_response_attuale, dict):
+                poste_response_attuale = {}
+
+            poste_response_attuale.update({
+                "shopify_order_payload": {
+                    "oggetto": oggetto_racc,
+                    "firma": firma_racc,
+                    "metodo_invio": metodo_invio,
+                    "nome_file_pdf": nome_file_pdf,
+                    "pagine": pagine_racc,
+                    "token_pratica": token_pratica,
+                    "ricevuta_ritorno": has_rr
+                }
+            })
+
+            update_data["poste_response"] = poste_response_attuale
+
 
             supabase.table("pratiche") \
                 .update(update_data) \
