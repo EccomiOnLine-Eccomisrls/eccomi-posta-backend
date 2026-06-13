@@ -10821,10 +10821,6 @@ def dashboard_pratiche(stato: str = None):
         except Exception:
             ricevuta_poste_telegramma_url = None
 
-        if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "INVIATO_POSTE":
-            ricevuta_poste_url = f"/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}"
-            ricevuta_poste_label = "Ricevuta Poste"
-
         if costo_valorizzato is not None:
             try:
                 costo_float = float(str(costo_valorizzato).replace(",", "."))
@@ -10835,46 +10831,46 @@ def dashboard_pratiche(stato: str = None):
             costo_display = None
 
         if stato_pratica == "INVIATO_POSTE":
-            if ricevuta_poste_url:
-        if p.get("tipo_servizio") == "TELEGRAMMA":
-            if ricevuta_poste_telegramma_url:
-            ricevuta_poste_html = f"""
-                <a class="btn-action"
-                   href="/dashboard/pratiche/apri-pdf/{pratica_id}"
-                   target="_blank">
-                    ✅ Ricevuta cliente
-                </a>
-
-                <a class="btn-action"
-                   href="{ricevuta_poste_telegramma_url}"
-                   target="_blank">
-                    🏛️ Ricevuta Poste
-                </a>
-            """
-        else:
-            ricevuta_poste_html = f"""
-                <a class="btn-action"
-                   href="/dashboard/pratiche/apri-pdf/{pratica_id}"
-                   target="_blank">
-                    ✅ Ricevuta cliente
-                </a>
-
-                <span class="btn-action btn-disabled">
-                    🏛️ Ricevuta Poste non ancora disponibile
-                </span>
-            """
-                else:
+            if p.get("tipo_servizio") == "TELEGRAMMA":
+                if ricevuta_poste_telegramma_url:
                     ricevuta_poste_html = f"""
-                        <span class="receipt-pill receipt-ok">
-                             ✅ Ricevuta salvata
-                        </span>
+                        <a class="btn-action"
+                           href="/dashboard/pratiche/apri-pdf/{pratica_id}"
+                           target="_blank">
+                            ✅ Ricevuta cliente
+                        </a>
 
                         <a class="btn-action"
-                           href="{ricevuta_poste_url}"
+                           href="{ricevuta_poste_telegramma_url}"
                            target="_blank">
-                            {ricevuta_poste_label}
+                            🏛️ Ricevuta Poste
                         </a>
                     """
+                else:
+                    ricevuta_poste_html = f"""
+                        <a class="btn-action"
+                           href="/dashboard/pratiche/apri-pdf/{pratica_id}"
+                           target="_blank">
+                            ✅ Ricevuta cliente
+                        </a>
+
+                        <span class="btn-action btn-disabled">
+                            🏛️ Ricevuta Poste non ancora disponibile
+                        </span>
+                    """
+
+            elif ricevuta_poste_url:
+                ricevuta_poste_html = f"""
+                    <span class="receipt-pill receipt-ok">
+                        ✅ Ricevuta salvata
+                    </span>
+
+                    <a class="btn-action"
+                       href="{ricevuta_poste_url}"
+                       target="_blank">
+                        {ricevuta_poste_label}
+                    </a>
+                """
             else:
                 ricevuta_poste_html = f"""
                     <span class="receipt-pill receipt-wait">
