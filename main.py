@@ -10825,11 +10825,9 @@ def dashboard_pratiche(stato: str = None):
                             ✅ Ricevuta cliente
                         </a>
 
-                        <a class="btn-action"
-                           href="/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}"
-                           target="_blank">
-                            🏛️ Ricevuta Poste
-                        </a>
+                        <span class="btn-action btn-disabled">
+                            🏛️ Ricevuta Poste non disponibile
+                        </span>
                     """
                 else:
                     ricevuta_poste_html = f"""
