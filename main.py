@@ -1917,6 +1917,145 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
             "error": str(e)
         }        
 
+def auto_telegramma_test_post_pagamento(pratica_id: str):
+    """
+    AUTO TELEGRAMMA TEST POST-PAGAMENTO
+
+    Esegue automaticamente:
+    1. Preventivo Poste
+    2. Invio Telegramma H2H TEST
+    3. Generazione ricevuta cliente
+    4. Invio email cliente
+
+    Sicurezza:
+    - funziona solo se AUTO_TELEGRAMMA_TEST_POST_PAGAMENTO_ENABLED=true
+    - funziona solo su endpoint Poste TEST sptest
+    - non reinvia se la pratica è già INVIATO_POSTE con email_sent=True
+    """
+
+    try:
+        auto_enabled = os.getenv(
+            "AUTO_TELEGRAMMA_TEST_POST_PAGAMENTO_ENABLED",
+            "false"
+        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+
+        if not auto_enabled:
+            return {
+                "success": True,
+                "skipped": True,
+                "step": "AUTO_TELEGRAMMA_TEST_DISABLED",
+                "message": "Auto Telegramma test post-pagamento disattivato"
+            }
+
+        if "sptest" not in str(POSTE_H2H_TOL_SERVICE_URL).lower():
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "AUTO_TELEGRAMMA_TEST_SOLO_SPTEST",
+                "error": "Questa automazione è consentita solo in ambiente Poste TEST sptest",
+                "service_url": POSTE_H2H_TOL_SERVICE_URL
+            }
+
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "AUTO_TELEGRAMMA_PRATICA_NON_TROVATA",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        tipo_servizio = (pratica.get("tipo_servizio") or "").upper()
+        stato = pratica.get("stato") or ""
+        email_sent = bool_from_any(pratica.get("email_sent"))
+
+        if tipo_servizio != "TELEGRAMMA":
+            return {
+                "success": True,
+                "skipped": True,
+                "step": "AUTO_TELEGRAMMA_NON_TELEGRAMMA",
+                "tipo_servizio": tipo_servizio
+            }
+
+        if stato == "INVIATO_POSTE" and email_sent:
+            return {
+                "success": True,
+                "skipped": True,
+                "step": "AUTO_TELEGRAMMA_GIA_COMPLETO",
+                "stato": stato,
+                "email_sent": email_sent
+            }
+
+        # 1. Preventivo Poste
+        preventivo_result = dashboard_telegramma_preventivo(
+            pratica_id=pratica_id,
+            redirect=0
+        )
+
+        if isinstance(preventivo_result, dict) and preventivo_result.get("success") is False:
+            return {
+                "success": False,
+                "step": "AUTO_TELEGRAMMA_ERRORE_PREVENTIVO",
+                "preventivo_result": preventivo_result
+            }
+
+        # 2. Invio Telegramma H2H TEST
+        invio_result = telegramma_invia_completo(
+            pratica_id=pratica_id
+        )
+
+        if not isinstance(invio_result, dict) or not invio_result.get("success"):
+            return {
+                "success": False,
+                "step": "AUTO_TELEGRAMMA_ERRORE_INVIO_H2H",
+                "invio_result": invio_result
+            }
+
+        # 3. Rilegge pratica aggiornata
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        pratica = pratica_res.data or pratica
+
+        # 4. Genera/assicura ricevuta cliente Telegramma
+        try:
+            ensure_pdf_cliente_telegramma(pratica)
+        except Exception as pdf_err:
+            return {
+                "success": False,
+                "step": "AUTO_TELEGRAMMA_ERRORE_PDF_CLIENTE",
+                "error": str(pdf_err)
+            }
+
+        # 5. Invio email cliente
+        email_result = dashboard_invia_email_cliente(pratica_id)
+
+        return {
+            "success": True,
+            "step": "AUTO_TELEGRAMMA_TEST_POST_PAGAMENTO_COMPLETO",
+            "pratica_id": pratica_id,
+            "preventivo_result": preventivo_result,
+            "invio_result": invio_result,
+            "email_result": str(email_result)
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_AUTO_TELEGRAMMA_TEST_POST_PAGAMENTO",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
     
 @app.get("/dashboard/pratiche/telegramma-preventivo/{pratica_id}")
 def dashboard_telegramma_preventivo(pratica_id: str, redirect: int = 0):
@@ -7593,6 +7732,20 @@ def shopify_telegramma_order_info():
 
 @app.post("/shopify/telegramma/order")
 async def shopify_telegramma_order(request: Request):
+    """
+    Webhook Shopify per ordini Telegramma.
+
+    Flusso:
+    - riceve ordine Shopify
+    - legge i prodotti Telegramma
+    - salva la pratica in Supabase
+    - se ordine pagato:
+        AUTO TELEGRAMMA TEST POST-PAGAMENTO
+        preventivo -> invio H2H test -> ricevuta cliente -> email cliente
+    - se ordine non pagato:
+        salva solo la pratica per lavorazione manuale
+    """
+
     try:
         order = await request.json()
 
@@ -7600,7 +7753,15 @@ async def shopify_telegramma_order(request: Request):
         order_name = order.get("name")
         email = order.get("email") or order.get("contact_email")
 
+        financial_status = str(
+            order.get("financial_status") or ""
+        ).lower().strip()
+
+        is_paid = financial_status == "paid"
+
         telegrammi = []
+        saved_items = []
+        auto_results = []
 
         for item in order.get("line_items", []):
             title = item.get("title", "")
@@ -7617,6 +7778,8 @@ async def shopify_telegramma_order(request: Request):
                 "order_id": order_id,
                 "order_name": order_name,
                 "email": email,
+                "financial_status": financial_status,
+                "is_paid": is_paid,
                 "testo": props.get("📨 Testo telegramma"),
                 "parole": props.get("🔢 Parole telegramma"),
                 "mittente": {
@@ -7648,14 +7811,18 @@ async def shopify_telegramma_order(request: Request):
                 "order_id": order_id,
                 "order_name": order_name,
                 "email": email,
+                "financial_status": financial_status,
+                "is_paid": is_paid,
                 "telegrammi": telegrammi
             }, f, ensure_ascii=False, indent=2)
 
-        saved_items = []
-
         for tg in telegrammi:
             try:
-                insert_result = supabase.table("pratiche").insert({
+                now_iso = datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat()
+
+                insert_payload = {
                     "order_id": str(order_id),
                     "order_name": order_name,
                     "tipo_servizio": "TELEGRAMMA",
@@ -7664,37 +7831,95 @@ async def shopify_telegramma_order(request: Request):
                     "destinatario": tg.get("destinatario"),
                     "testo": tg.get("testo"),
                     "parole": int(tg.get("parole") or 0),
-                    "stato": "RICEVUTO_MANUALE"
-                }).execute()
+                    "stato": "RICEVUTO_PAGATO" if is_paid else "RICEVUTO_MANUALE",
+                    "updated_at": now_iso
+                }
+
+                insert_result = supabase.table("pratiche") \
+                    .insert(insert_payload) \
+                    .execute()
 
                 saved_items.append(insert_result.data)
+
+                pratica_id = None
 
                 if insert_result.data and len(insert_result.data) > 0:
                     pratica_id = insert_result.data[0].get("id")
 
-                    if pratica_id:
-                        # invia_telegramma_pratica_h2h(pratica_id)
-                        pass
+                if pratica_id:
+                    if is_paid:
+                        try:
+                            auto_result = auto_telegramma_test_post_pagamento(
+                                pratica_id
+                            )
+
+                            auto_results.append({
+                                "pratica_id": pratica_id,
+                                "order_name": order_name,
+                                "financial_status": financial_status,
+                                "result": auto_result
+                            })
+
+                            print(
+                                "AUTO_TELEGRAMMA_TEST_POST_PAGAMENTO:",
+                                auto_result
+                            )
+
+                        except Exception as auto_err:
+                            auto_results.append({
+                                "pratica_id": pratica_id,
+                                "order_name": order_name,
+                                "financial_status": financial_status,
+                                "success": False,
+                                "error": str(auto_err)
+                            })
+
+                            print(
+                                "ERRORE_AUTO_TELEGRAMMA_TEST_POST_PAGAMENTO:",
+                                str(auto_err)
+                            )
+
+                    else:
+                        auto_results.append({
+                            "pratica_id": pratica_id,
+                            "order_name": order_name,
+                            "skipped": True,
+                            "reason": f"Ordine non pagato: financial_status={financial_status}"
+                        })
 
             except Exception as db_error:
-                print("ERRORE SALVATAGGIO/INVIO TELEGRAMMA:", str(db_error))
+                print(
+                    "ERRORE SALVATAGGIO/INVIO TELEGRAMMA:",
+                    str(db_error)
+                )
+
+                auto_results.append({
+                    "success": False,
+                    "step": "ERRORE_SALVATAGGIO_TELEGRAMMA",
+                    "order_name": order_name,
+                    "error": str(db_error)
+                })
 
         return {
             "success": True,
-            "message": "Telegramma salvato in  per lavorazione manuale",
+            "message": "Telegramma Shopify ricevuto e processato",
             "order_id": order_id,
             "order_name": order_name,
+            "email": email,
+            "financial_status": financial_status,
+            "is_paid": is_paid,
             "telegrammi_trovati": len(telegrammi),
             "telegrammi": telegrammi,
-            "saved_items": saved_items
+            "saved_items": saved_items,
+            "auto_results": auto_results
         }
 
     except Exception as e:
         return {
             "success": False,
+            "step": "ERRORE_SHOPIFY_TELEGRAMMA_ORDER",
             "error": str(e)
         }
-
 
 @app.get("/shopify/telegramma/last")
 def shopify_telegramma_last():
