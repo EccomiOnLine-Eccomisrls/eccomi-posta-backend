@@ -8010,6 +8010,64 @@ async def shopify_telegramma_order(request: Request):
 
         for tg in telegrammi:
             try:
+                # =====================================================
+                # ANTI-DUPLICATO SHOPIFY TELEGRAMMA
+                # =====================================================
+                # Shopify può richiamare il webhook più volte.
+                # Evitiamo di creare più pratiche per lo stesso ordine.
+                # =====================================================
+
+                try:
+                    existing_res = supabase.table("pratiche") \
+                        .select("id, order_id, order_name, tipo_servizio, stato, numero_raccomandata, email_sent, testo") \
+                        .eq("order_id", str(order_id)) \
+                        .eq("tipo_servizio", "TELEGRAMMA") \
+                        .execute()
+
+                    existing_items = existing_res.data or []
+
+                    tg_testo_norm = str(tg.get("testo") or "").strip().upper()
+
+                    existing_match = None
+
+                    for existing in existing_items:
+                        existing_testo_norm = str(
+                            existing.get("testo") or ""
+                        ).strip().upper()
+
+                        if existing_testo_norm == tg_testo_norm:
+                            existing_match = existing
+                            break
+
+                    if existing_match:
+                        saved_items.append([existing_match])
+
+                        auto_results.append({
+                            "success": True,
+                            "skipped": True,
+                            "step": "TELEGRAMMA_SHOPIFY_DUPLICATO",
+                            "reason": "Ordine Telegramma già presente in pratiche",
+                            "order_id": order_id,
+                            "order_name": order_name,
+                            "pratica_id": existing_match.get("id"),
+                            "stato": existing_match.get("stato"),
+                            "numero_accettazione": existing_match.get("numero_raccomandata"),
+                            "email_sent": existing_match.get("email_sent")
+                        })
+
+                        print(
+                            "TELEGRAMMA_SHOPIFY_DUPLICATO:",
+                            order_name,
+                            existing_match.get("id")
+                        )
+
+                        continue
+
+                except Exception as duplicate_check_error:
+                    print(
+                        "ERRORE_CONTROLLO_DUPLICATO_TELEGRAMMA:",
+                        str(duplicate_check_error)
+                    )
                 now_iso = datetime.datetime.now(
                     datetime.timezone.utc
                 ).isoformat()
