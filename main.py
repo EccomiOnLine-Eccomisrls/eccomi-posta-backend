@@ -10801,6 +10801,25 @@ def dashboard_pratiche(stato: str = None):
         ricevuta_poste_url = h2h_ricevuta_by_pdf.get(pdf_url_pratica)
         
         ricevuta_poste_label = "Apri ricevuta Poste"
+        ricevuta_poste_telegramma_url = None
+
+        try:
+            pr_telegramma = p.get("poste_response") or {}
+
+            if isinstance(pr_telegramma, str):
+                try:
+                    pr_telegramma = json.loads(pr_telegramma)
+                except Exception:
+                    pr_telegramma = {}
+
+            ricevuta_poste_telegramma_url = (
+                pr_telegramma.get("pdf_ricevuta_poste_url")
+                or pr_telegramma.get("ricevuta_poste_url")
+                or pr_telegramma.get("pdf_ricevuta_url")
+                or pr_telegramma.get("ricevuta_url")
+            )
+        except Exception:
+            ricevuta_poste_telegramma_url = None
 
         if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "INVIATO_POSTE":
             ricevuta_poste_url = f"/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}"
@@ -10817,18 +10836,33 @@ def dashboard_pratiche(stato: str = None):
 
         if stato_pratica == "INVIATO_POSTE":
             if ricevuta_poste_url:
-                if p.get("tipo_servizio") == "TELEGRAMMA":
-                    ricevuta_poste_html = f"""
-                        <a class="btn-action"
-                           href="/dashboard/pratiche/apri-pdf/{pratica_id}"
-                           target="_blank">
-                            ✅ Ricevuta cliente
-                        </a>
+        if p.get("tipo_servizio") == "TELEGRAMMA":
+            if ricevuta_poste_telegramma_url:
+            ricevuta_poste_html = f"""
+                <a class="btn-action"
+                   href="/dashboard/pratiche/apri-pdf/{pratica_id}"
+                   target="_blank">
+                    ✅ Ricevuta cliente
+                </a>
 
-                        <span class="btn-action btn-disabled">
-                            🏛️ Ricevuta Poste non disponibile
-                        </span>
-                    """
+                <a class="btn-action"
+                   href="{ricevuta_poste_telegramma_url}"
+                   target="_blank">
+                    🏛️ Ricevuta Poste
+                </a>
+            """
+        else:
+            ricevuta_poste_html = f"""
+                <a class="btn-action"
+                   href="/dashboard/pratiche/apri-pdf/{pratica_id}"
+                   target="_blank">
+                    ✅ Ricevuta cliente
+                </a>
+
+                <span class="btn-action btn-disabled">
+                    🏛️ Ricevuta Poste non ancora disponibile
+                </span>
+            """
                 else:
                     ricevuta_poste_html = f"""
                         <span class="receipt-pill receipt-ok">
