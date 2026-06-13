@@ -677,6 +677,23 @@ def debug_index():
         ]
     }
 
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "service": "eccomi-posta-backend",
+        "version": "posta-monitoring-ready"
+    }
+
+
+@app.get("/api/health")
+def api_health():
+    return {
+        "status": "ok",
+        "service": "eccomi-posta-backend",
+        "version": "posta-monitoring-ready"
+    }
+
 
 @app.get("/debug/email-function")
 @app.get("/poste/debug/email-function")
