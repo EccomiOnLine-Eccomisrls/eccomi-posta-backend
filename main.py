@@ -3758,6 +3758,172 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             zeep_to_plain(validation_result)
         )
 
+# =====================================================
+# PRODUZIONE: APPLICA SUGGERIMENTO INDIRIZZO POSTE
+# =====================================================
+# Se Poste risponde "Invalid address. Suggestions available",
+# prendiamo il primo suggerimento e ricostruiamo il destinatario.
+# Questo evita l'errore produzione:
+# "throw Linea Pilota exception"
+# =====================================================
+
+        try:
+            validation_item = None
+
+            if isinstance(validation_plain, list) and len(validation_plain) > 0:
+                validation_item = validation_plain[0]
+            elif isinstance(validation_plain, dict):
+                validation_item = validation_plain
+
+            validation_result_info = (
+                (validation_item or {}).get("Result")
+                or {}
+            )
+
+            validation_res_type = validation_result_info.get("ResType")
+            validation_description = validation_result_info.get("Description")
+
+            destinatari_validation = (
+                (validation_item or {}).get("Destinatari")
+                or {}
+            )
+
+            suggerimenti = destinatari_validation.get("Recipient") or []
+
+            if isinstance(suggerimenti, dict):
+                suggerimenti = [suggerimenti]
+
+            if suggerimenti and len(suggerimenti) > 0:
+                primo_suggerimento = suggerimenti[0] or {}
+
+                destinatario_suggerito = (
+                    primo_suggerimento.get("destinatario")
+                    or {}
+                )
+
+                provincia_suggerita = primo_suggerimento.get("Provincia")
+
+                if destinatario_suggerito:
+                    destinatario_data["cap"] = (
+                        destinatario_suggerito.get("CAP")
+                        or destinatario_data.get("cap")
+                    )
+
+                    destinatario_data["comune"] = (
+                        destinatario_suggerito.get("Citta")
+                        or destinatario_data.get("comune")
+                    )
+
+                    destinatario_data["indirizzo"] = (
+                        destinatario_suggerito.get("Indirizzo")
+                        or destinatario_data.get("indirizzo")
+                    )
+
+                     destinatario_data["nome"] = " ".join(
+                        [
+                            str(destinatario_suggerito.get("Nome") or "").strip(),
+                            str(destinatario_suggerito.get("Cognome") or "").strip()
+                        ]
+                    ).strip() or destinatario_data.get("nome")
+
+                    destinatario_data["provincia"] = (
+                        provincia_suggerita
+                        or destinatario_data.get("provincia")
+                    )
+
+                    print(
+                        "SUGGERIMENTO_POSTE_APPLICATO_TELEGRAMMA:",
+                        destinatario_data
+                    )
+
+                    dest_nome, dest_cognome = telegramma_split_nome_cognome(
+                        destinatario_data.get("nome")
+                    )
+
+                    destinatario_obj = DestinatarioType(
+                        CAP=destinatario_data.get("cap"),
+                        Citta=destinatario_data.get("comune"),
+                        Cognome=dest_cognome,
+                        Indirizzo=destinatario_data.get("indirizzo"),
+                        Nome=dest_nome,
+                        RagioneSociale="",
+                        Stato="ITALIA",
+                        Telefono=destinatario_data.get("telefono")
+                    )
+
+                    telegramma_destinatario = TelegrammaDestinatarioType(
+                        Destinatario=destinatario_obj,
+                        Frazionario="",
+                        IDTelegramma="",
+                        LineaPilota="",
+                        NumeroDestinatarioCorrente=1,
+                        TipoRec=TipoRecType("Item"),
+                        TipoRecapitoJokid=None
+                    )
+
+                    telegramma_obj = TelegrammaType(
+                        Coupon=None,
+                        DataTelegramma=datetime.datetime.now().replace(microsecond=0),
+                        Destinatari={
+                            "TelegrammaDestinatario": [
+                                telegramma_destinatario
+                            ]
+                        },
+                        Firma=mittente_data.get("nome") or "",
+                        GUIDMessage=guid_message_da_inviare,
+                        Jokid=None,
+                        Mittente=mittente_obj,
+                        Mod60Elettronico=None,
+                        Nazionale=True,
+                        Opzioni=opzioni,
+                        PartiTesto=info_testo,
+                        TipoRecapitoMod60=None,
+                        TipoTelegramma="TS",
+                        Valorizzazione=valorizzazione_da_inviare
+                    )
+
+            elif validation_res_type == "E":
+                now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+                poste_payload = {
+                    "step": "TELEGRAMMA_VALIDAZIONE_DESTINATARIO_KO",
+                    "variant": variant,
+                    "customer": POSTE_H2H_TOL_CUSTOMER,
+                    "note": "Validazione destinatario Poste fallita prima del Submit",        
+                    "id_request": id_request,
+                    "guid_message": guid_message,
+                    "validation_res_type": validation_res_type,
+                    "validation_description": validation_description,
+                    "validation_same_id_request": validation_plain,
+                    "submit_at": now_iso
+                }
+
+                supabase.table("pratiche") \
+                    .update({
+                        "stato": "ERRORE_SUBMIT_POSTE",
+                        "id_richiesta": id_request,
+                        "poste_response": poste_payload,
+                        "updated_at": now_iso
+                    }) \
+                    .eq("id", pratica_id) \
+                    .execute()
+
+                return {
+                    "success": False,
+                    "step": "TELEGRAMMA_VALIDAZIONE_DESTINATARIO_KO",
+                    "pratica_id": pratica_id,
+                    "id_request": id_request,
+                    "guid_message": guid_message,
+                    "validation_same_id_request": validation_plain,
+                    "error": validation_description
+                }
+
+        except Exception as suggest_err:
+            print(
+                "ERRORE_APPLICAZIONE_SUGGERIMENTO_POSTE:",
+                str(suggest_err)
+            )
+
         submit_result = service.Submit(
             telegramma=telegramma_obj,
             Customer=POSTE_H2H_TOL_CUSTOMER,
