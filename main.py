@@ -1574,6 +1574,175 @@ def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
             "pratica_id": pratica_id,
             "error": str(e)
         }
+
+@app.get("/dashboard/pratiche/telegramma-loading/{pratica_id}", response_class=HTMLResponse)
+def dashboard_telegramma_loading(pratica_id: str):
+    return f"""
+    <!doctype html>
+    <html lang="it">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Eccomi Posta - Invio Telegramma</title>
+
+        <style>
+            body {{
+                margin: 0;
+                min-height: 100vh;
+                font-family: Arial, Helvetica, sans-serif;
+                background: linear-gradient(135deg, #fff7ed, #f4f6f9);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #111827;
+            }}
+
+            .box {{
+                width: min(620px, 92vw);
+                background: #ffffff;
+                border-radius: 26px;
+                padding: 38px 34px;
+                box-shadow: 0 24px 70px rgba(15, 23, 42, 0.20);
+                text-align: center;
+                border: 1px solid #fed7aa;
+            }}
+
+            .logo {{
+                font-size: 56px;
+                margin-bottom: 12px;
+            }}
+
+            h1 {{
+                margin: 0 0 12px;
+                font-size: 30px;
+                color: #111827;
+            }}
+
+            p {{
+                font-size: 16px;
+                color: #4b5563;
+                line-height: 1.55;
+                margin: 0;
+            }}
+
+            .loader {{
+                width: 58px;
+                height: 58px;
+                margin: 28px auto 22px;
+                border: 6px solid #e5e7eb;
+                border-top-color: #f97316;
+                border-radius: 50%;
+                animation: spin 0.9s linear infinite;
+            }}
+
+            @keyframes spin {{
+                to {{
+                    transform: rotate(360deg);
+                }}
+            }}
+
+            .log {{
+                margin-top: 18px;
+                padding: 15px;
+                border-radius: 14px;
+                background: #f8fafc;
+                font-size: 14px;
+                color: #374151;
+                border: 1px solid #e5e7eb;
+            }}
+
+            .ok {{
+                background: #ecfdf5;
+                color: #166534;
+                border-color: #bbf7d0;
+            }}
+
+            .error {{
+                background: #fee2e2;
+                color: #991b1b;
+                border-color: #fecaca;
+            }}
+
+            .small {{
+                margin-top: 18px;
+                font-size: 12px;
+                color: #9ca3af;
+            }}
+        </style>
+    </head>
+
+    <body>
+        <div class="box">
+            <div class="logo">📨</div>
+
+            <h1>Eccomi Posta in elaborazione</h1>
+
+            <p>
+                Stiamo inviando il Telegramma tramite Poste H2H.<br>
+                Attendi qualche secondo, non chiudere questa pagina.
+            </p>
+
+            <div class="loader"></div>
+
+            <div id="log" class="log">
+                Preparazione invio Telegramma...
+            </div>
+
+            <div class="small">
+                Ambiente operativo Eccomi Posta
+            </div>
+        </div>
+
+        <script>
+            const praticaId = "{pratica_id}";
+            const log = document.getElementById("log");
+
+            async function avviaInvio() {{
+                try {{
+                    log.textContent = "Connessione con Poste H2H...";
+
+                    const response = await fetch(`/poste/h2h/telegramma/invia-completo/${{praticaId}}`, {{
+                        method: "GET",
+                        headers: {{
+                            "Accept": "application/json"
+                        }}
+                    }});
+
+                    const data = await response.json();
+
+                    const ok = data && (
+                        data.success === true ||
+                        data.numero_accettazione ||
+                        data.nuovo_stato === "SUBMIT_POSTE_OK" ||
+                        data.nuovo_stato === "INVIATO_POSTE"
+                    );
+
+                    if (ok) {{
+                        log.classList.add("ok");
+                        log.textContent = "Telegramma elaborato correttamente. Ritorno alla dashboard...";
+
+                        setTimeout(() => {{
+                            window.location.href = "/dashboard/pratiche?telegramma=inviato";
+                        }}, 1000);
+
+                        return;
+                    }}
+
+                    log.classList.add("error");
+                    log.textContent = "Errore invio Telegramma: " + (data.error || data.step || "errore sconosciuto");
+
+                }} catch (err) {{
+                    log.classList.add("error");
+                    log.textContent = "Errore tecnico: " + err.message;
+                }}
+            }}
+
+            avviaInvio();
+        </script>
+    </body>
+    </html>
+    """
+
 @app.get("/poste/h2h/telegramma/invia-completo/{pratica_id}")
 def telegramma_invia_completo(pratica_id: str, variant: str = ""):
     """
@@ -11119,7 +11288,7 @@ def dashboard_pratiche(stato: str = None):
                 {prezzo_poste_html}
 
                 <a class="btn-action btn-send"
-                   href="/poste/h2h/telegramma/invia-completo/{pratica_id}"
+                   href="/dashboard/pratiche/telegramma-loading/{pratica_id}"
                    target="_blank"
                    onclick="return confirm('ATTENZIONE: confermi invio automatico Telegramma H2H a Poste? Questa azione può inviare davvero il telegramma e generare costo H2H.');">
                     🚀 Invia Telegramma H2H
