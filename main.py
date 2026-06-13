@@ -3819,7 +3819,7 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
                         or destinatario_data.get("indirizzo")
                     )
 
-                     destinatario_data["nome"] = " ".join(
+                    destinatario_data["nome"] = " ".join(
                         [
                             str(destinatario_suggerito.get("Nome") or "").strip(),
                             str(destinatario_suggerito.get("Cognome") or "").strip()
