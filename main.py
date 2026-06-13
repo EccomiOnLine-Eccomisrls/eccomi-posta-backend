@@ -1868,22 +1868,47 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
         final_state = complete_response.get("final_state")
         nuovo_stato = complete_response.get("nuovo_stato")
 
+        numero_accettazione = complete_response.get("numero_accettazione")
+        id_telegramma = complete_response.get("id_telegramma")
+        importo_totale = complete_response.get("importo_totale")
+
+        invio_ok = bool(
+            final_state in ["Printing", "Confirmed"]
+            or (
+                poste_res_type in ["I", "W"]
+                and numero_accettazione
+                and id_telegramma
+            )
+        )
+
+        stato_dashboard = "INVIATO_POSTE" if invio_ok else (nuovo_stato or "SUBMIT_POSTE_OK")
+
+        if invio_ok:
+            supabase.table("pratiche") \
+                .update({
+                    "stato": stato_dashboard,
+                    "numero_raccomandata": numero_accettazione,
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }) \
+                .eq("id", pratica_id) \
+                .execute()
+
         return {
-            "success": final_state in ["Printing", "Confirmed"],
+            "success": invio_ok,
             "step": "TELEGRAMMA_INVIA_COMPLETO",
             "pratica_id": pratica_id,
             "guid_message": guid_message,
             "submit_res_type": poste_res_type,
             "submit_description": poste_description,
             "final_state": final_state,
-            "nuovo_stato": nuovo_stato,
-            "numero_accettazione": complete_response.get("numero_accettazione"),
-            "id_telegramma": complete_response.get("id_telegramma"),
-            "importo_totale": complete_response.get("importo_totale"),
+            "nuovo_stato": stato_dashboard,
+            "numero_accettazione": numero_accettazione,
+            "id_telegramma": id_telegramma,
+            "importo_totale": importo_totale,
             "submit_response": submit_response,
             "complete_response": complete_response
         }
-
+        
     except Exception as e:
         return {
             "success": False,
