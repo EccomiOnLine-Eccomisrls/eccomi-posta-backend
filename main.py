@@ -9444,12 +9444,19 @@ def dashboard_anteprima_email_cliente(pratica_id: str):
             else "Numero raccomandata"
         )
 
-        subject = (
-            f"Il tuo Telegramma Eccomi Posta è stato inviato - {numero_raccomandata}"
-            if is_telegramma
-            else f"La tua raccomandata Eccomi Posta è stata inviata - {numero_raccomandata}"
-        )
-
+        if is_telegramma:
+            subject = (
+                f"Il tuo Telegramma Eccomi Posta è stato inviato - N. {numero_raccomandata}"
+                if numero_raccomandata
+                else "Il tuo Telegramma Eccomi Posta è stato inviato"
+            )
+        else:
+            subject = (
+                f"La tua raccomandata Eccomi Posta è stata inviata - {numero_raccomandata}"
+                if numero_raccomandata
+                else "La tua raccomandata Eccomi Posta è stata inviata"
+            )
+            
         tracking_button = ""
 
         if numero_raccomandata and not is_telegramma:
