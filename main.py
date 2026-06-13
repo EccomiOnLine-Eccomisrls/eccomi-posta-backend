@@ -5594,7 +5594,7 @@ def invia_email_cliente_raccomandata(
     is_telegramma = tipo_servizio == "TELEGRAMMA"
 
     subject = (
-        f"Il tuo Telegramma Eccomi Posta è stato inviato - {numero_raccomandata}"
+        f"Il tuo Telegramma Eccomi Posta è stato inviato - N. {numero_raccomandata}
         if is_telegramma
         else f"La tua raccomandata Eccomi Posta è stata inviata - {numero_raccomandata}"
     )
