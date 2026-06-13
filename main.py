@@ -10803,8 +10803,8 @@ def dashboard_pratiche(stato: str = None):
         ricevuta_poste_label = "Apri ricevuta Poste"
 
         if p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "INVIATO_POSTE":
-            ricevuta_poste_url = f"/dashboard/pratiche/apri-pdf/{pratica_id}"
-            ricevuta_poste_label = "Apri ricevuta Telegramma"
+            ricevuta_poste_url = f"/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}"
+            ricevuta_poste_label = "Ricevuta Poste"
 
         if costo_valorizzato is not None:
             try:
@@ -10817,17 +10817,32 @@ def dashboard_pratiche(stato: str = None):
 
         if stato_pratica == "INVIATO_POSTE":
             if ricevuta_poste_url:
-                ricevuta_poste_html = f"""
-                    <span class="receipt-pill receipt-ok">
-                        ✅ Ricevuta salvata
-                    </span>
+                if p.get("tipo_servizio") == "TELEGRAMMA":
+                    ricevuta_poste_html = f"""
+                        <a class="btn-action"
+                           href="/dashboard/pratiche/apri-pdf/{pratica_id}"
+                           target="_blank">
+                            ✅ Ricevuta cliente
+                        </a>
 
-                    <a class="btn-action"
-                       href="{ricevuta_poste_url}"
-                       target="_blank">
-                        {ricevuta_poste_label}
-                    </a>
-                """
+                        <a class="btn-action"
+                           href="/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}"
+                           target="_blank">
+                            🏛️ Ricevuta Poste
+                        </a>
+                    """
+                else:
+                    ricevuta_poste_html = f"""
+                        <span class="receipt-pill receipt-ok">
+                             ✅ Ricevuta salvata
+                        </span>
+
+                        <a class="btn-action"
+                           href="{ricevuta_poste_url}"
+                           target="_blank">
+                            {ricevuta_poste_label}
+                        </a>
+                    """
             else:
                 ricevuta_poste_html = f"""
                     <span class="receipt-pill receipt-wait">
@@ -11920,6 +11935,183 @@ def dashboard_salva_ricevuta_poste(pratica_id: str):
             "pratica_id": pratica_id,
             "error": str(e)
         }
+
+@app.get("/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}")
+def dashboard_ricevuta_poste_telegramma(pratica_id: str):
+    import io
+    import json
+    import datetime
+
+    result = supabase.table("pratiche") \
+        .select("*") \
+        .eq("id", pratica_id) \
+        .single() \
+        .execute()
+
+    if not result.data:
+        return {
+            "success": False,
+            "error": "Pratica non trovata",
+            "pratica_id": pratica_id
+        }
+
+    pratica = result.data
+
+    if pratica.get("tipo_servizio") != "TELEGRAMMA":
+        return {
+            "success": False,
+            "error": "Questa pratica non è un Telegramma",
+            "pratica_id": pratica_id
+        }
+
+    def parse_json(value):
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except Exception:
+                return {"raw": value}
+        return {}
+
+    mittente = parse_json(pratica.get("mittente"))
+    destinatario = parse_json(pratica.get("destinatario"))
+    poste_response = parse_json(pratica.get("poste_response"))
+
+    numero_accettazione = pratica.get("numero_raccomandata") or "-"
+
+    id_richiesta = (
+        pratica.get("id_richiesta")
+        or poste_response.get("id_richiesta")
+        or poste_response.get("guid")
+        or "-"
+    )
+
+    id_telegramma = "-"
+
+    try:
+        flow = poste_response.get("telegramma_flow_complete") or {}
+        complete_response = flow.get("complete_response") or {}
+        id_telegramma = (
+            complete_response.get("id_telegramma")
+            or complete_response.get("IDTelegramma")
+            or "-"
+        )
+    except Exception:
+        pass
+
+    if id_telegramma == "-":
+        try:
+            submit_response = poste_response.get("submit_response") or {}
+            telegramma = submit_response.get("telegramma") or {}
+            destinatari = telegramma.get("Destinatari") or {}
+            lista = destinatari.get("TelegrammaDestinatario") or []
+            if isinstance(lista, list) and lista:
+                id_telegramma = lista[0].get("IDTelegramma") or "-"
+        except Exception:
+            pass
+
+    stato_poste = "-"
+
+    try:
+        flow = poste_response.get("telegramma_flow_complete") or {}
+        stato_poste = (
+            flow.get("final_state")
+            or flow.get("state")
+            or poste_response.get("stato_poste")
+            or "-"
+        )
+    except Exception:
+        pass
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+
+    width, height = A4
+    y = height - 2.2 * cm
+
+    c.setFont("Helvetica-Bold", 18)
+    c.drawCentredString(width / 2, y, "RICEVUTA POSTE TELEGRAMMA")
+    y -= 1.0 * cm
+
+    c.setFont("Helvetica", 10)
+    c.drawCentredString(width / 2, y, "Documento interno operatore - Eccomi Posta")
+    y -= 1.4 * cm
+
+    def draw_label(label, value):
+        nonlocal y
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(2 * cm, y, label)
+        c.setFont("Helvetica", 11)
+        c.drawString(7 * cm, y, str(value or "-"))
+        y -= 0.65 * cm
+
+    draw_label("Ordine Shopify:", pratica.get("order_name") or pratica.get("shopify_order_name") or "-")
+    draw_label("Servizio:", "TELEGRAMMA")
+    draw_label("Numero accettazione:", numero_accettazione)
+    draw_label("ID Telegramma:", id_telegramma)
+    draw_label("ID richiesta / GUID:", id_richiesta)
+    draw_label("Stato Poste:", stato_poste)
+
+    y -= 0.6 * cm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "MITTENTE")
+    y -= 0.6 * cm
+
+    c.setFont("Helvetica", 10)
+    for riga in [
+        mittente.get("nome") or mittente.get("raw") or "-",
+        f"{mittente.get('via') or ''} {mittente.get('civico') or ''}".strip(),
+        f"{mittente.get('cap') or ''} {mittente.get('comune') or ''} ({mittente.get('provincia') or ''})".strip()
+    ]:
+        if riga:
+            c.drawString(2 * cm, y, riga)
+            y -= 0.5 * cm
+
+    y -= 0.5 * cm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "DESTINATARIO")
+    y -= 0.6 * cm
+
+    c.setFont("Helvetica", 10)
+    for riga in [
+        destinatario.get("nome") or destinatario.get("raw") or "-",
+        f"{destinatario.get('via') or ''} {destinatario.get('civico') or ''}".strip(),
+        f"{destinatario.get('cap') or ''} {destinatario.get('comune') or ''} ({destinatario.get('provincia') or ''})".strip()
+    ]:
+        if riga:
+            c.drawString(2 * cm, y, riga)
+            y -= 0.5 * cm
+
+    y -= 0.5 * cm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "TESTO TELEGRAMMA")
+    y -= 0.7 * cm
+
+    c.setFont("Times-Roman", 12)
+    testo = str(pratica.get("testo") or "").strip()
+    c.drawString(2 * cm, y, testo or "-")
+
+    c.setFont("Helvetica", 9)
+    c.drawString(
+        2 * cm,
+        1.5 * cm,
+        "Ricevuta tecnica interna generata dai dati di invio Poste H2H."
+    )
+
+    c.save()
+    buffer.seek(0)
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="ricevuta-poste-telegramma-{pratica.get("order_name") or pratica_id}.pdf"'
+        }
+    )
 
 @app.get("/dashboard/pratiche/{pratica_id}", response_class=HTMLResponse)
 def dashboard_pratica_dettaglio(pratica_id: str):
