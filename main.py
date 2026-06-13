@@ -10816,28 +10816,11 @@ def dashboard_pratiche(stato: str = None):
 
             ricevuta_poste_telegramma_url = (
                 pr_telegramma.get("pdf_ricevuta_poste_url")
+                or pr_telegramma.get("pdf_poste_originale_url")
                 or pr_telegramma.get("ricevuta_poste_url")
                 or pr_telegramma.get("pdf_ricevuta_url")
                 or pr_telegramma.get("ricevuta_url")
             )
-
-            # Fallback per Telegramma manuale:
-            # se non è un invio H2H automatico e abbiamo già una ricevuta caricata,
-            # usiamo quella come Ricevuta Poste.
-            is_telegramma_h2h = bool(
-                p.get("id_richiesta")
-                or pr_telegramma.get("telegramma_flow_complete")
-                or pr_telegramma.get("submit_response")
-                or pr_telegramma.get("guid")
-            )
-
-            if (
-                p.get("tipo_servizio") == "TELEGRAMMA"
-                and not ricevuta_poste_telegramma_url
-                and not is_telegramma_h2h
-                and ricevuta_cliente_url_pratica
-            ):
-                ricevuta_poste_telegramma_url = ricevuta_cliente_url_pratica
 
         except Exception:
             ricevuta_poste_telegramma_url = None
@@ -11987,9 +11970,7 @@ def dashboard_salva_ricevuta_poste(pratica_id: str):
 
 @app.get("/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}")
 def dashboard_ricevuta_poste_telegramma(pratica_id: str):
-    import io
     import json
-    import datetime
 
     result = supabase.table("pratiche") \
         .select("*") \
@@ -12013,153 +11994,32 @@ def dashboard_ricevuta_poste_telegramma(pratica_id: str):
             "pratica_id": pratica_id
         }
 
-    def parse_json(value):
-        if isinstance(value, dict):
-            return value
-        if isinstance(value, str):
-            try:
-                return json.loads(value)
-            except Exception:
-                return {"raw": value}
-        return {}
+    poste_response = pratica.get("poste_response") or {}
 
-    mittente = parse_json(pratica.get("mittente"))
-    destinatario = parse_json(pratica.get("destinatario"))
-    poste_response = parse_json(pratica.get("poste_response"))
-
-    numero_accettazione = pratica.get("numero_raccomandata") or "-"
-
-    id_richiesta = (
-        pratica.get("id_richiesta")
-        or poste_response.get("id_richiesta")
-        or poste_response.get("guid")
-        or "-"
-    )
-
-    id_telegramma = "-"
-
-    try:
-        flow = poste_response.get("telegramma_flow_complete") or {}
-        complete_response = flow.get("complete_response") or {}
-        id_telegramma = (
-            complete_response.get("id_telegramma")
-            or complete_response.get("IDTelegramma")
-            or "-"
-        )
-    except Exception:
-        pass
-
-    if id_telegramma == "-":
+    if isinstance(poste_response, str):
         try:
-            submit_response = poste_response.get("submit_response") or {}
-            telegramma = submit_response.get("telegramma") or {}
-            destinatari = telegramma.get("Destinatari") or {}
-            lista = destinatari.get("TelegrammaDestinatario") or []
-            if isinstance(lista, list) and lista:
-                id_telegramma = lista[0].get("IDTelegramma") or "-"
+            poste_response = json.loads(poste_response)
         except Exception:
-            pass
+            poste_response = {}
 
-    stato_poste = "-"
-
-    try:
-        flow = poste_response.get("telegramma_flow_complete") or {}
-        stato_poste = (
-            flow.get("final_state")
-            or flow.get("state")
-            or poste_response.get("stato_poste")
-            or "-"
-        )
-    except Exception:
-        pass
-
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-
-    width, height = A4
-    y = height - 2.2 * cm
-
-    c.setFont("Helvetica-Bold", 18)
-    c.drawCentredString(width / 2, y, "RICEVUTA POSTE TELEGRAMMA")
-    y -= 1.0 * cm
-
-    c.setFont("Helvetica", 10)
-    c.drawCentredString(width / 2, y, "Documento interno operatore - Eccomi Posta")
-    y -= 1.4 * cm
-
-    def draw_label(label, value):
-        nonlocal y
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(2 * cm, y, label)
-        c.setFont("Helvetica", 11)
-        c.drawString(7 * cm, y, str(value or "-"))
-        y -= 0.65 * cm
-
-    draw_label("Ordine Shopify:", pratica.get("order_name") or pratica.get("shopify_order_name") or "-")
-    draw_label("Servizio:", "TELEGRAMMA")
-    draw_label("Numero accettazione:", numero_accettazione)
-    draw_label("ID Telegramma:", id_telegramma)
-    draw_label("ID richiesta / GUID:", id_richiesta)
-    draw_label("Stato Poste:", stato_poste)
-
-    y -= 0.6 * cm
-
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(2 * cm, y, "MITTENTE")
-    y -= 0.6 * cm
-
-    c.setFont("Helvetica", 10)
-    for riga in [
-        mittente.get("nome") or mittente.get("raw") or "-",
-        f"{mittente.get('via') or ''} {mittente.get('civico') or ''}".strip(),
-        f"{mittente.get('cap') or ''} {mittente.get('comune') or ''} ({mittente.get('provincia') or ''})".strip()
-    ]:
-        if riga:
-            c.drawString(2 * cm, y, riga)
-            y -= 0.5 * cm
-
-    y -= 0.5 * cm
-
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(2 * cm, y, "DESTINATARIO")
-    y -= 0.6 * cm
-
-    c.setFont("Helvetica", 10)
-    for riga in [
-        destinatario.get("nome") or destinatario.get("raw") or "-",
-        f"{destinatario.get('via') or ''} {destinatario.get('civico') or ''}".strip(),
-        f"{destinatario.get('cap') or ''} {destinatario.get('comune') or ''} ({destinatario.get('provincia') or ''})".strip()
-    ]:
-        if riga:
-            c.drawString(2 * cm, y, riga)
-            y -= 0.5 * cm
-
-    y -= 0.5 * cm
-
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(2 * cm, y, "TESTO TELEGRAMMA")
-    y -= 0.7 * cm
-
-    c.setFont("Times-Roman", 12)
-    testo = str(pratica.get("testo") or "").strip()
-    c.drawString(2 * cm, y, testo or "-")
-
-    c.setFont("Helvetica", 9)
-    c.drawString(
-        2 * cm,
-        1.5 * cm,
-        "Ricevuta tecnica interna generata dai dati di invio Poste H2H."
+    ricevuta_poste_url = (
+        poste_response.get("pdf_ricevuta_poste_url")
+        or poste_response.get("pdf_poste_originale_url")
+        or poste_response.get("ricevuta_poste_url")
+        or poste_response.get("pdf_pagamento_poste_url")
+        or poste_response.get("ricevuta_pagamento_poste_url")
     )
 
-    c.save()
-    buffer.seek(0)
-
-    return Response(
-        content=buffer.getvalue(),
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'inline; filename="ricevuta-poste-telegramma-{pratica.get("order_name") or pratica_id}.pdf"'
+    if not ricevuta_poste_url:
+        return {
+            "success": False,
+            "error": "Ricevuta Poste Telegramma non ancora disponibile",
+            "pratica_id": pratica_id
         }
+
+    return RedirectResponse(
+        url=ricevuta_poste_url,
+        status_code=302
     )
 
 @app.get("/dashboard/pratiche/{pratica_id}", response_class=HTMLResponse)
