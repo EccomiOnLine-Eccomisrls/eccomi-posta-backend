@@ -1917,7 +1917,164 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
             "error": str(e)
         }        
 
+def auto_telegramma_post_pagamento(pratica_id: str):
+    """
+    AUTO TELEGRAMMA POST-PAGAMENTO
+
+    TEST:
+    - se POSTE_H2H_TOL_SERVICE_URL contiene sptest
+    - richiede AUTO_TELEGRAMMA_TEST_POST_PAGAMENTO_ENABLED=true
+
+    PRODUZIONE:
+    - se POSTE_H2H_TOL_SERVICE_URL NON contiene sptest
+    - richiede AUTO_TELEGRAMMA_PROD_POST_PAGAMENTO_ENABLED=true
+    """
+
+    try:
+        service_url = str(POSTE_H2H_TOL_SERVICE_URL or "")
+        is_test_env = "sptest" in service_url.lower()
+
+        test_enabled = os.getenv(
+            "AUTO_TELEGRAMMA_TEST_POST_PAGAMENTO_ENABLED",
+            "false"
+        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+
+        prod_enabled = os.getenv(
+            "AUTO_TELEGRAMMA_PROD_POST_PAGAMENTO_ENABLED",
+            "false"
+        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+
+        mode = "TEST" if is_test_env else "PROD"
+
+        if is_test_env and not test_enabled:
+            return {
+                "success": True,
+                "skipped": True,
+                "step": "AUTO_TELEGRAMMA_TEST_DISABLED",
+                "mode": mode,
+                "message": "Auto Telegramma TEST post-pagamento disattivato"
+            }
+
+        if not is_test_env and not prod_enabled:
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "AUTO_TELEGRAMMA_PROD_BLOCKED",
+                "mode": mode,
+                "error": "Auto Telegramma PRODUZIONE disattivato",
+                "service_url": service_url
+            }
+
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "AUTO_TELEGRAMMA_PRATICA_NON_TROVATA",
+                "mode": mode,
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        tipo_servizio = (pratica.get("tipo_servizio") or "").upper()
+        stato = pratica.get("stato") or ""
+        email_sent = bool_from_any(pratica.get("email_sent"))
+
+        if tipo_servizio != "TELEGRAMMA":
+            return {
+                "success": True,
+                "skipped": True,
+                "step": "AUTO_TELEGRAMMA_NON_TELEGRAMMA",
+                "mode": mode,
+                "tipo_servizio": tipo_servizio
+            }
+
+        if stato == "INVIATO_POSTE" and email_sent:
+            return {
+                "success": True,
+                "skipped": True,
+                "step": "AUTO_TELEGRAMMA_GIA_COMPLETO",
+                "mode": mode,
+                "stato": stato,
+                "email_sent": email_sent
+            }
+
+        preventivo_result = dashboard_telegramma_preventivo(
+            pratica_id=pratica_id,
+            redirect=0
+        )
+
+        if isinstance(preventivo_result, dict) and preventivo_result.get("success") is False:
+            return {
+                "success": False,
+                "step": "AUTO_TELEGRAMMA_ERRORE_PREVENTIVO",
+                "mode": mode,
+                "preventivo_result": preventivo_result
+            }
+
+        invio_result = telegramma_invia_completo(
+            pratica_id=pratica_id
+        )
+
+        if not isinstance(invio_result, dict) or not invio_result.get("success"):
+            return {
+                "success": False,
+                "step": "AUTO_TELEGRAMMA_ERRORE_INVIO_H2H",
+                "mode": mode,
+                "invio_result": invio_result
+            }
+
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        pratica = pratica_res.data or pratica
+
+        try:
+            pdf_cliente_url = ensure_pdf_cliente_telegramma(pratica)
+        except Exception as pdf_err:
+            return {
+                "success": False,
+                "step": "AUTO_TELEGRAMMA_ERRORE_PDF_CLIENTE",
+                "mode": mode,
+                "error": str(pdf_err)
+            }
+
+        email_result = dashboard_invia_email_cliente(pratica_id)
+
+        return {
+            "success": True,
+            "step": "AUTO_TELEGRAMMA_POST_PAGAMENTO_COMPLETO",
+            "mode": mode,
+            "pratica_id": pratica_id,
+            "pdf_cliente_url": pdf_cliente_url,
+            "preventivo_result": preventivo_result,
+            "invio_result": invio_result,
+            "email_result": str(email_result)
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_AUTO_TELEGRAMMA_POST_PAGAMENTO",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
+
 def auto_telegramma_test_post_pagamento(pratica_id: str):
+    """
+    Compatibilità con il webhook Shopify già esistente.
+    Ora usa la funzione unica TEST/PROD.
+    """
+    return auto_telegramma_post_pagamento(pratica_id)
 
     
 @app.get("/dashboard/pratiche/telegramma-preventivo/{pratica_id}")
