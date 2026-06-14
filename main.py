@@ -11519,12 +11519,36 @@ def dashboard_pratiche(stato: str = None):
         stato_pratica = p.get("stato", "-")
         has_rr = bool_from_any(p.get("ricevuta_ritorno"))
 
-        if p.get("tipo_servizio") == "TELEGRAMMA":
-            pdf_cliente_href = f"/dashboard/pratiche/pdf-telegramma/{pratica_id}"
-            pdf_cliente_label = "PDF Telegramma"
+        tipo_servizio_upper = str(p.get("tipo_servizio") or "").upper().strip()
+
+        # 1) PDF documento = contenuto scritto/caricato dal cliente
+        if tipo_servizio_upper == "TELEGRAMMA":
+            pdf_documento_href = f"/dashboard/pratiche/pdf-telegramma/{pratica_id}"
+            pdf_documento_label = "📄 PDF documento Telegramma"
+        elif tipo_servizio_upper == "RACCOMANDATA":
+            pdf_documento_href = p.get("pdf_url") or f"/dashboard/pratiche/pdf/{p.get('id_richiesta') or pratica_id}"
+            pdf_documento_label = "📄 PDF documento Raccomandata"
         else:
-            pdf_cliente_href = f"/dashboard/pratiche/pdf/{p.get('id_richiesta') or pratica_id}"
-            pdf_cliente_label = "PDF Cliente"
+            pdf_documento_href = p.get("pdf_url") or f"/dashboard/pratiche/pdf/{p.get('id_richiesta') or pratica_id}"
+            pdf_documento_label = "📄 PDF documento"
+
+        # 2) Ricevuta cliente = documento Eccomi per il cliente
+        ricevuta_cliente_html = ""
+
+        if stato_pratica == "INVIATO_POSTE":
+            ricevuta_cliente_html = f"""
+                <a class="btn-action"
+                   href="/dashboard/pratiche/apri-pdf/{pratica_id}"
+                   target="_blank">
+                    ✅ Ricevuta cliente
+                </a>
+            """
+        else:
+            ricevuta_cliente_html = """
+                <span class="btn-action btn-disabled">
+                    ✅ Ricevuta cliente non pronta
+                </span>
+            """
 
         servizio_display = p.get("tipo_servizio") or "-"
 
@@ -11570,38 +11594,26 @@ def dashboard_pratiche(stato: str = None):
             costo_display = None
 
         if stato_pratica == "INVIATO_POSTE":
-            if p.get("tipo_servizio") == "TELEGRAMMA":
+                if p.get("tipo_servizio") == "TELEGRAMMA":
                 if ricevuta_poste_telegramma_url:
                     ricevuta_poste_html = f"""
                         <a class="btn-action"
-                           href="/dashboard/pratiche/apri-pdf/{pratica_id}"
-                           target="_blank">
-                            ✅ Ricevuta cliente
-                        </a>
-
-                        <a class="btn-action"
                            href="{ricevuta_poste_telegramma_url}"
                            target="_blank">
-                            🏛️ Ricevuta Poste
+                            🏛️ Ricevuta Poste interna
                         </a>
                     """
                 else:
-                    ricevuta_poste_html = f"""
-                        <a class="btn-action"
-                           href="/dashboard/pratiche/apri-pdf/{pratica_id}"
-                           target="_blank">
-                            ✅ Ricevuta cliente
-                        </a>
-
+                    ricevuta_poste_html = """
                         <span class="btn-action btn-disabled">
-                            🏛️ Ricevuta Poste non ancora disponibile
+                            🏛️ Ricevuta Poste interna non ancora disponibile
                         </span>
                     """
 
             elif ricevuta_poste_url:
                 ricevuta_poste_html = f"""
                     <span class="receipt-pill receipt-ok">
-                        ✅ Ricevuta salvata
+                        🏛️ Ricevuta Poste interna salvata
                     </span>
 
                     <a class="btn-action"
@@ -11613,7 +11625,7 @@ def dashboard_pratiche(stato: str = None):
             else:
                 ricevuta_poste_html = f"""
                     <span class="receipt-pill receipt-wait">
-                        📥 Ricevuta da recuperare
+                        🏛️ Ricevuta Poste interna da recuperare
                     </span>
 
                     <a class="btn-action"
@@ -11978,6 +11990,8 @@ def dashboard_pratiche(stato: str = None):
                        target="_blank">
                         {pdf_cliente_label}
                     </a>
+                    
+                    {ricevuta_cliente_html}
 
                     {email_cliente_html}
                     
