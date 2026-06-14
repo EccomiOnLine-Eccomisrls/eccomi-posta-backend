@@ -11703,23 +11703,6 @@ def dashboard_pratiche(stato: str = None):
                         🔎 Monitora
                     </a>
                 """
-
-        order_display = (
-        
-        if stato_pratica == "INVIATO_POSTE":
-            monitor_target = (
-                p.get("id_richiesta")
-                or pratica_id
-                or ""
-            )
-            
-            if monitor_target:
-                monitor_btn = f"""
-                    <a class="btn-action"
-                       href="/dashboard/pratiche/monitora-view/{monitor_target}"
-                        🔎 Monitora
-                    </a>
-                """
                 
         order_display = (
             p.get("shopify_order_name")
@@ -11727,7 +11710,7 @@ def dashboard_pratiche(stato: str = None):
             or p.get("order_name")
             or "-"
         )
-
+        
         created_raw = p.get("created_at") or ""
         data_breve = created_raw.replace("T", " ")[:16]
 
