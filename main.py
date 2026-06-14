@@ -9350,6 +9350,292 @@ def dashboard_apri_pdf_pratica(pratica_id: str):
             "pratica_id": pratica_id
         }
 
+def genera_pdf_cliente_raccomandata_bytes(pratica: dict, numero_raccomandata: str):
+    """
+    Genera la ricevuta cliente Eccomi Posta per Raccomandata.
+    NON chiama Poste.
+    NON invia email.
+    NON genera costi.
+    """
+
+    buffer = BytesIO()
+
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    y = height - 2.2 * cm
+
+    def clean_pdf_text(value):
+        return str(value or "-").replace("\n", " ").strip()
+
+    order_name = (
+        pratica.get("shopify_order_name")
+        or pratica.get("order_name")
+        or pratica.get("order_id")
+        or "-"
+    )
+
+    mitt_nome, mitt_indirizzo, mitt_localita = _ecx_addr_label(pratica.get("mittente"))
+    dest_nome, dest_indirizzo, dest_localita = _ecx_addr_label(pratica.get("destinatario"))
+
+    c.setFont("Helvetica-Bold", 22)
+    c.drawCentredString(width / 2, y, "ECCOMI POSTA")
+
+    y -= 0.7 * cm
+    c.setFont("Helvetica", 12)
+    c.drawCentredString(width / 2, y, "Servizi Postali Digitali")
+
+    y -= 1.1 * cm
+    c.line(2 * cm, y, width - 2 * cm, y)
+
+    y -= 1.3 * cm
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(2 * cm, y, "Ricevuta cliente Raccomandata")
+
+    y -= 1.2 * cm
+
+    box_x = 2 * cm
+    box_y = y - 2.2 * cm
+    box_w = width - 4 * cm
+    box_h = 2.4 * cm
+
+    c.roundRect(box_x, box_y, box_w, box_h, 8, stroke=1, fill=0)
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(box_x + 0.6 * cm, y - 0.5 * cm, "Numero Raccomandata")
+    c.drawString(box_x + 8.2 * cm, y - 0.5 * cm, "Stato")
+
+    c.setFont("Helvetica-Bold", 15)
+    c.drawString(box_x + 0.6 * cm, y - 1.25 * cm, clean_pdf_text(numero_raccomandata))
+
+    c.setFont("Helvetica", 12)
+    c.drawString(box_x + 8.2 * cm, y - 1.25 * cm, "Accettata da Poste Italiane")
+
+    y = box_y - 1.1 * cm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "Ordine Eccomi")
+    c.setFont("Helvetica", 11)
+    c.drawString(6 * cm, y, clean_pdf_text(order_name))
+
+    y -= 1.0 * cm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "Mittente")
+    y -= 0.55 * cm
+
+    c.setFont("Helvetica", 11)
+    c.drawString(2 * cm, y, clean_pdf_text(mitt_nome))
+    y -= 0.45 * cm
+    c.drawString(2 * cm, y, clean_pdf_text(mitt_indirizzo))
+    y -= 0.45 * cm
+    c.drawString(2 * cm, y, clean_pdf_text(mitt_localita))
+
+    y -= 1.0 * cm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "Destinatario")
+    y -= 0.55 * cm
+
+    c.setFont("Helvetica", 11)
+    c.drawString(2 * cm, y, clean_pdf_text(dest_nome))
+    y -= 0.45 * cm
+    c.drawString(2 * cm, y, clean_pdf_text(dest_indirizzo))
+    y -= 0.45 * cm
+    c.drawString(2 * cm, y, clean_pdf_text(dest_localita))
+
+    y -= 1.0 * cm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "Data generazione ricevuta")
+    c.setFont("Helvetica", 11)
+    c.drawString(7.2 * cm, y, datetime.datetime.now().strftime("%d/%m/%Y %H:%M"))
+
+    y -= 1.4 * cm
+
+    c.setFont("Helvetica", 10)
+    testo = (
+        "La presente ricevuta conferma che Eccomi Posta ha preso in carico "
+        "la pratica del cliente e che la raccomandata risulta inviata/accettata "
+        "tramite il circuito Poste Italiane."
+    )
+
+    max_width = width - 4 * cm
+    line = ""
+
+    for word in testo.split():
+        test_line = (line + " " + word).strip()
+
+        if c.stringWidth(test_line, "Helvetica", 10) <= max_width:
+            line = test_line
+        else:
+            c.drawString(2 * cm, y, line)
+            y -= 0.45 * cm
+            line = word
+
+    if line:
+        c.drawString(2 * cm, y, line)
+
+    c.line(2 * cm, 2.0 * cm, width - 2 * cm, 2.0 * cm)
+
+    c.setFont("Helvetica", 8)
+    c.drawString(
+        2 * cm,
+        1.55 * cm,
+        "Eccomi Posta è un servizio digitale di gestione spedizioni. Ricevuta generata da Eccomi Online."
+    )
+
+    c.save()
+
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+@app.get("/dashboard/pratiche/genera-ricevuta-cliente/{pratica_id}")
+def dashboard_genera_ricevuta_cliente(pratica_id: str):
+    """
+    Genera la ricevuta cliente Eccomi Posta.
+    NON chiama Poste.
+    NON invia email.
+    NON genera costi.
+    """
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return HTMLResponse(
+                f"""
+                <html>
+                <body style="font-family:Arial;padding:30px;">
+                    <h2>Pratica non trovata</h2>
+                    <p>ID: {pratica_id}</p>
+                    <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+                </body>
+                </html>
+                """,
+                status_code=404
+            )
+
+        pratica = pratica_res.data
+
+        pdf_esistente = pratica.get("pdf_ricevuta_cliente_url")
+
+        if pdf_esistente:
+            return RedirectResponse(
+                url="/dashboard/pratiche",
+                status_code=303
+            )
+
+        tipo_servizio = str(pratica.get("tipo_servizio") or "").upper().strip()
+
+        if tipo_servizio == "TELEGRAMMA":
+            pdf_cliente_url = ensure_pdf_cliente_telegramma(pratica)
+
+            return RedirectResponse(
+                url="/dashboard/pratiche",
+                status_code=303
+            )
+
+        numero_raccomandata = pratica.get("numero_raccomandata") or ""
+
+        if not numero_raccomandata:
+            poste_response = pratica.get("poste_response") or {}
+
+            if isinstance(poste_response, str):
+                try:
+                    poste_response = json.loads(poste_response)
+                except Exception:
+                    poste_response = {}
+
+            if isinstance(poste_response, dict):
+                numero_raccomandata = (
+                    poste_response.get("numero_raccomandata")
+                    or poste_response.get("tracking")
+                    or poste_response.get("tracking_number")
+                    or poste_response.get("numero_accettazione")
+                    or ""
+                )
+
+        if not numero_raccomandata:
+            return HTMLResponse(
+                f"""
+                <html>
+                <body style="font-family:Arial;padding:30px;">
+                    <h2>Numero raccomandata mancante</h2>
+                    <p>Non posso generare la ricevuta cliente senza numero raccomandata.</p>
+                    <p>Pratica: {pratica_id}</p>
+                    <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+                </body>
+                </html>
+                """,
+                status_code=400
+            )
+
+        pdf_bytes = genera_pdf_cliente_raccomandata_bytes(
+            pratica=pratica,
+            numero_raccomandata=numero_raccomandata
+        )
+
+        storage_path = f"raccomandate/{pratica_id}/ricevuta_cliente.pdf"
+
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            storage_path,
+            pdf_bytes,
+            file_options={
+                "content-type": "application/pdf",
+                "upsert": "true"
+            }
+        )
+
+        pdf_cliente_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
+            storage_path
+        )
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        if not isinstance(poste_response, dict):
+            poste_response = {}
+
+        poste_response["pdf_ricevuta_cliente_url"] = pdf_cliente_url
+        poste_response["pdf_cliente_generato_da"] = "dashboard_genera_ricevuta_cliente"
+        poste_response["pdf_cliente_generato_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        supabase.table("pratiche").update({
+            "pdf_ricevuta_cliente_url": pdf_cliente_url,
+            "poste_response": poste_response,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }).eq("id", pratica_id).execute()
+
+        return RedirectResponse(
+            url="/dashboard/pratiche",
+            status_code=303
+        )
+
+    except Exception as e:
+        return HTMLResponse(
+            f"""
+            <html>
+            <body style="font-family:Arial;padding:30px;">
+                <h2>Errore generazione ricevuta cliente</h2>
+                <pre>{str(e)}</pre>
+                <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+            </body>
+            </html>
+            """,
+            status_code=500
+        )
+
 @app.get("/dashboard/pratiche/telegramma-manuale/{pratica_id}", response_class=HTMLResponse)
 def dashboard_telegramma_manuale_form(pratica_id: str):
     try:
@@ -11560,10 +11846,12 @@ def dashboard_pratiche(stato: str = None):
                 """
 
             else:
-                ricevuta_cliente_html = """
-                    <span class="btn-action btn-disabled">
-                        ✅ Ricevuta cliente da generare
-                    </span>
+                ricevuta_cliente_html = f"""
+                    <a class="btn-action"
+                       href="/dashboard/pratiche/genera-ricevuta-cliente/{pratica_id}"
+                       onclick="return confirm('Generare la ricevuta cliente Eccomi per questa pratica? Non verrà chiamata Poste e non verrà inviata email.')">
+                        ✅ Genera ricevuta cliente
+                    </a>
                 """
         else:
             ricevuta_cliente_html = """
