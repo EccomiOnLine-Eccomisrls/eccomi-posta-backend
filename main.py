@@ -11684,7 +11684,24 @@ def dashboard_pratiche(stato: str = None):
                     📧 Email non pronta
                 </span>
             """
-
+        monitor_btn = ""
+        
+        if stato_pratica == "INVIATO_POSTE":
+            monitor_target = (
+                p.get("id_richiesta")
+                or pratica_id
+                or ""
+            )
+            
+            if monitor_target:
+                monitor_btn = f"""
+                    <a class="btn-action"
+                       href="/dashboard/pratiche/monitora/{monitor_target}"
+                       target="_blank">
+                        🔎 Monitora
+                    </a>
+                """
+                
         order_display = (
             p.get("shopify_order_name")
             or h2h_by_pdf.get(pdf_url_pratica)
@@ -11961,6 +11978,8 @@ def dashboard_pratiche(stato: str = None):
                     </a>
 
                     {email_cliente_html}
+                    
+                    {monitor_btn}
 
                     {ricevuta_poste_html}
 
