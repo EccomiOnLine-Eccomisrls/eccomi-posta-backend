@@ -11535,14 +11535,36 @@ def dashboard_pratiche(stato: str = None):
         # 2) Ricevuta cliente = documento Eccomi per il cliente
         ricevuta_cliente_html = ""
 
+        ricevuta_cliente_url_pratica = (
+            p.get("pdf_ricevuta_cliente_url")
+            or ""
+        )
+
         if stato_pratica == "INVIATO_POSTE":
-            ricevuta_cliente_html = f"""
-                <a class="btn-action"
-                   href="/dashboard/pratiche/apri-pdf/{pratica_id}"
-                   target="_blank">
-                    ✅ Ricevuta cliente
-                </a>
-            """
+            if ricevuta_cliente_url_pratica:
+                ricevuta_cliente_html = f"""
+                    <a class="btn-action"
+                       href="{ricevuta_cliente_url_pratica}"
+                       target="_blank">
+                        ✅ Ricevuta cliente
+                    </a>
+                """
+
+            elif tipo_servizio_upper == "TELEGRAMMA":
+                ricevuta_cliente_html = f"""
+                    <a class="btn-action"
+                       href="/dashboard/pratiche/apri-pdf/{pratica_id}"
+                       target="_blank">
+                        ✅ Ricevuta cliente
+                    </a>
+                """
+
+            else:
+                ricevuta_cliente_html = """
+                    <span class="btn-action btn-disabled">
+                        ✅ Ricevuta cliente da generare
+                    </span>
+                """
         else:
             ricevuta_cliente_html = """
                 <span class="btn-action btn-disabled">
