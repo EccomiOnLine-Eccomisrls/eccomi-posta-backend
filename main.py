@@ -14255,11 +14255,10 @@ def dashboard_monitora_pratica_view(pratica_id: str):
             status_code=500
         )
 
-
 @app.get("/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}")
 def dashboard_ricevuta_poste_telegramma(pratica_id: str):
     """
-    Genera/apre PDF interno dal monitoraggio Telegramma.
+    Genera/apre PDF interno Eccomi/Poste per Telegramma.
     NON chiama Poste.
     NON invia email.
     NON genera costi.
@@ -14326,23 +14325,6 @@ def dashboard_ricevuta_poste_telegramma(pratica_id: str):
             return RedirectResponse(
                 url=pdf_esistente,
                 status_code=303
-            )
-
-        get_status_result = poste_response.get("get_status_result") or {}
-
-        if not get_status_result:
-            return HTMLResponse(
-                f"""
-                <html>
-                <body style="font-family:Arial;padding:30px;">
-                    <h2>Monitoraggio non ancora disponibile</h2>
-                    <p>Prima premi <strong>Monitora</strong> sulla pratica, poi genera il PDF interno.</p>
-                    <p>Pratica: {pratica_id}</p>
-                    <a href="/dashboard/pratiche">← Torna alla dashboard</a>
-                </body>
-                </html>
-                """,
-                status_code=400
             )
 
         pdf_bytes = genera_pdf_interno_monitoraggio_telegramma_bytes(pratica)
