@@ -11696,8 +11696,7 @@ def dashboard_pratiche(stato: str = None):
             if monitor_target:
                 monitor_btn = f"""
                     <a class="btn-action"
-                       href="/dashboard/pratiche/monitora/{monitor_target}"
-                       target="_blank">
+                       href="/dashboard/pratiche/monitora/{monitor_target}">
                         🔎 Monitora
                     </a>
                 """
@@ -13213,6 +13212,380 @@ def aggiorna_monitoraggio_pratica(pratica_id: str, pratica: dict, monitor_payloa
 
     except Exception as e:
         print("ERRORE_AGGIORNA_MONITORAGGIO_PRATICA:", e)
+
+@app.get("/dashboard/pratiche/monitora-view/{pratica_id}", response_class=HTMLResponse)
+def dashboard_monitora_pratica_view(pratica_id: str):
+    """
+    Pagina operatore per monitorare una pratica Poste.
+    Mostra risultato in HTML leggibile, non JSON tecnico.
+    NON invia nulla a Poste.
+    """
+
+    def esc(value):
+        return (
+            str(value or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+
+    try:
+        monitor_result = dashboard_monitora_pratica_poste(pratica_id)
+
+        if not isinstance(monitor_result, dict):
+            monitor_result = {
+                "success": False,
+                "step": "RISPOSTA_NON_VALIDA",
+                "raw": str(monitor_result)
+            }
+
+        success = bool(monitor_result.get("success"))
+        step = monitor_result.get("step") or "-"
+        pratica_id_effettivo = monitor_result.get("pratica_id") or pratica_id
+
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id_effettivo) \
+            .limit(1) \
+            .execute()
+
+        pratica = pratica_res.data[0] if pratica_res.data else {}
+
+        tipo_servizio = str(pratica.get("tipo_servizio") or monitor_result.get("tipo_servizio") or "-").upper()
+        order_name = (
+            pratica.get("shopify_order_name")
+            or pratica.get("order_name")
+            or pratica.get("order_id")
+            or "-"
+        )
+
+        stato_pratica = pratica.get("stato") or "-"
+        cliente_email = pratica.get("cliente_email") or "-"
+
+        numero_raccomandata = (
+            pratica.get("numero_raccomandata")
+            or monitor_result.get("id_telegramma")
+            or "-"
+        )
+
+        stato_monitoraggio = (
+            monitor_result.get("stato_monitoraggio")
+            or monitor_result.get("state")
+            or step
+            or "-"
+        )
+
+        state_poste = monitor_result.get("state") or "-"
+        id_telegramma = monitor_result.get("id_telegramma") or "-"
+        h2h_order_id = monitor_result.get("h2h_order_id") or "-"
+        id_richiesta = monitor_result.get("id_richiesta") or pratica.get("id_richiesta") or "-"
+        pdf_ricevuta_url = monitor_result.get("pdf_ricevuta_url") or ""
+
+        if success:
+            header_color = "#16a34a"
+            header_icon = "✅"
+            header_title = "Monitoraggio completato"
+            header_subtitle = "La pratica è stata controllata correttamente sui sistemi Poste."
+        else:
+            header_color = "#dc2626"
+            header_icon = "⚠️"
+            header_title = "Monitoraggio non completato"
+            header_subtitle = monitor_result.get("error") or monitor_result.get("message") or "Controlla i dettagli tecnici."
+
+        if tipo_servizio == "TELEGRAMMA":
+            if state_poste == "Printing":
+                human_status = "Telegramma in lavorazione/stampa presso Poste"
+                status_color = "#2563eb"
+                status_icon = "🖨️"
+            elif state_poste in ["Confirmed"]:
+                human_status = "Telegramma confermato da Poste"
+                status_color = "#16a34a"
+                status_icon = "✅"
+            elif state_poste in ["Delivered", "Recapitato", "Consegnato"]:
+                human_status = "Telegramma consegnato"
+                status_color = "#16a34a"
+                status_icon = "📬"
+            else:
+                human_status = stato_monitoraggio
+                status_color = "#6366f1"
+                status_icon = "📨"
+
+            servizio_box = f"""
+            <div class="status-card">
+                <div class="status-icon">{status_icon}</div>
+                <div>
+                    <h2>{esc(human_status)}</h2>
+                    <p>Stato tecnico Poste: <strong>{esc(state_poste)}</strong></p>
+                    <p>Numero Telegramma: <strong>{esc(id_telegramma)}</strong></p>
+                </div>
+            </div>
+            """
+
+        elif tipo_servizio == "RACCOMANDATA":
+            if pdf_ricevuta_url:
+                human_status = "Ricevuta ufficiale Poste disponibile"
+                status_color = "#16a34a"
+                status_icon = "📄"
+            else:
+                human_status = "Ricevuta Poste non ancora disponibile"
+                status_color = "#f97316"
+                status_icon = "⏳"
+
+            ricevuta_button = ""
+
+            if pdf_ricevuta_url:
+                ricevuta_button = f"""
+                <a class="btn-main"
+                   href="{esc(pdf_ricevuta_url)}"
+                   target="_blank">
+                    📄 Apri ricevuta ufficiale Poste
+                </a>
+                """
+
+            servizio_box = f"""
+            <div class="status-card">
+                <div class="status-icon">{status_icon}</div>
+                <div>
+                    <h2>{esc(human_status)}</h2>
+                    <p>ID richiesta Poste: <strong>{esc(id_richiesta)}</strong></p>
+                    <p>Ordine tecnico H2H: <strong>{esc(h2h_order_id)}</strong></p>
+                    {ricevuta_button}
+                </div>
+            </div>
+            """
+
+        else:
+            status_color = "#6b7280"
+            servizio_box = f"""
+            <div class="status-card">
+                <div class="status-icon">ℹ️</div>
+                <div>
+                    <h2>Servizio non riconosciuto</h2>
+                    <p>{esc(tipo_servizio)}</p>
+                </div>
+            </div>
+            """
+
+        raw_json = json.dumps(monitor_result, ensure_ascii=False, indent=2)
+
+        html = f"""
+        <html>
+        <head>
+            <title>Monitoraggio pratica {esc(order_name)}</title>
+            <meta charset="utf-8">
+            <style>
+                body {{
+                    font-family: Arial, Helvetica, sans-serif;
+                    background: #f4f6f9;
+                    padding: 30px;
+                    color: #111827;
+                }}
+
+                .page {{
+                    max-width: 980px;
+                    margin: 0 auto;
+                }}
+
+                .top {{
+                    background: {header_color};
+                    color: white;
+                    padding: 28px;
+                    border-radius: 22px;
+                    box-shadow: 0 8px 24px rgba(0,0,0,.12);
+                    margin-bottom: 22px;
+                }}
+
+                .top h1 {{
+                    margin: 0 0 8px 0;
+                    font-size: 34px;
+                }}
+
+                .top p {{
+                    margin: 0;
+                    font-size: 17px;
+                    opacity: .95;
+                }}
+
+                .grid {{
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 16px;
+                    margin-bottom: 18px;
+                }}
+
+                .card {{
+                    background: white;
+                    border-radius: 18px;
+                    padding: 20px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,.06);
+                }}
+
+                .card h3 {{
+                    margin-top: 0;
+                    color: #0f172a;
+                }}
+
+                .status-card {{
+                    background: white;
+                    border-left: 8px solid {status_color};
+                    border-radius: 18px;
+                    padding: 24px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,.06);
+                    display: flex;
+                    gap: 18px;
+                    align-items: flex-start;
+                    margin-bottom: 18px;
+                }}
+
+                .status-icon {{
+                    font-size: 44px;
+                    line-height: 1;
+                }}
+
+                .status-card h2 {{
+                    margin: 0 0 10px 0;
+                    font-size: 25px;
+                    color: #111827;
+                }}
+
+                .badge {{
+                    display: inline-block;
+                    background: #eef3ff;
+                    color: #2563eb;
+                    padding: 8px 12px;
+                    border-radius: 999px;
+                    font-weight: bold;
+                }}
+
+                .btn-row {{
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    margin: 22px 0;
+                }}
+
+                .btn-main {{
+                    display: inline-block;
+                    background: #2563eb;
+                    color: white;
+                    padding: 12px 18px;
+                    border-radius: 12px;
+                    text-decoration: none;
+                    font-weight: bold;
+                }}
+
+                .btn-secondary {{
+                    display: inline-block;
+                    background: #e5e7eb;
+                    color: #111827;
+                    padding: 12px 18px;
+                    border-radius: 12px;
+                    text-decoration: none;
+                    font-weight: bold;
+                }}
+
+                pre {{
+                    background: #111827;
+                    color: #d1d5db;
+                    padding: 18px;
+                    border-radius: 14px;
+                    overflow: auto;
+                    max-height: 480px;
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                    font-size: 13px;
+                }}
+
+                @media (max-width: 760px) {{
+                    body {{
+                        padding: 14px;
+                    }}
+
+                    .top h1 {{
+                        font-size: 26px;
+                    }}
+
+                    .grid {{
+                        grid-template-columns: 1fr;
+                    }}
+
+                    .status-card {{
+                        flex-direction: column;
+                    }}
+                }}
+            </style>
+        </head>
+
+        <body>
+            <div class="page">
+                <div class="top">
+                    <h1>{header_icon} {esc(header_title)}</h1>
+                    <p>{esc(header_subtitle)}</p>
+                </div>
+
+                <div class="btn-row">
+                    <a class="btn-secondary" href="/dashboard/pratiche">
+                        ← Torna alla dashboard
+                    </a>
+
+                    <a class="btn-secondary" href="/dashboard/pratiche/{esc(pratica_id_effettivo)}">
+                        Dettaglio pratica
+                    </a>
+
+                    <a class="btn-main" href="/dashboard/pratiche/monitora-view/{esc(pratica_id)}">
+                        🔄 Ricontrolla ora
+                    </a>
+                </div>
+
+                {servizio_box}
+
+                <div class="grid">
+                    <div class="card">
+                        <h3>📌 Pratica</h3>
+                        <p><strong>Ordine:</strong> {esc(order_name)}</p>
+                        <p><strong>Servizio:</strong> <span class="badge">{esc(tipo_servizio)}</span></p>
+                        <p><strong>Stato dashboard:</strong> {esc(stato_pratica)}</p>
+                        <p><strong>Email cliente:</strong> {esc(cliente_email)}</p>
+                    </div>
+
+                    <div class="card">
+                        <h3>🏛️ Dati Poste</h3>
+                        <p><strong>ID richiesta:</strong> {esc(id_richiesta)}</p>
+                        <p><strong>Numero/Tracking:</strong> {esc(numero_raccomandata)}</p>
+                        <p><strong>Stato monitoraggio:</strong> {esc(stato_monitoraggio)}</p>
+                        <p><strong>Step:</strong> {esc(step)}</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>🧪 Dettaglio tecnico</h3>
+                    <pre>{esc(raw_json)}</pre>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        return HTMLResponse(html)
+
+    except Exception as e:
+        errore = esc(str(e))
+
+        return HTMLResponse(
+            f"""
+            <html>
+            <body style="font-family:Arial;padding:30px;background:#f4f6f9;">
+                <div style="background:white;border-radius:16px;padding:24px;max-width:800px;margin:auto;">
+                    <h1>⚠️ Errore monitoraggio pratica</h1>
+                    <p>{errore}</p>
+                    <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+                </div>
+            </body>
+            </html>
+            """,
+            status_code=500
+        )
 
 
 @app.get("/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}")
