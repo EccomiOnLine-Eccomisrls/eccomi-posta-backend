@@ -9523,7 +9523,7 @@ def genera_pdf_cliente_raccomandata_bytes(pratica: dict, numero_raccomandata: st
     c.drawString(
         2 * cm,
         1.55 * cm,
-        "Eccomi Posta - Servizio digitale di gestione spedizioni - www.eccomionline.com"
+        "Documento di conferma del servizio Eccomi Posta. Non costituisce documento fiscale."
     )
 
     c.save()
@@ -10028,7 +10028,7 @@ def genera_pdf_cliente_telegramma_bytes(
     c.drawString(
         2 * cm,
         1.55 * cm,
-        "Eccomi Posta è un servizio digitale di gestione spedizioni. Ricevuta generata da Eccomi Online."
+        "Documento di conferma del servizio Eccomi Posta. Non costituisce documento fiscale."
     )
 
     c.save()
