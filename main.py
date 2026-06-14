@@ -11594,7 +11594,7 @@ def dashboard_pratiche(stato: str = None):
             costo_display = None
 
         if stato_pratica == "INVIATO_POSTE":
-                if p.get("tipo_servizio") == "TELEGRAMMA":
+            if p.get("tipo_servizio") == "TELEGRAMMA":
                 if ricevuta_poste_telegramma_url:
                     ricevuta_poste_html = f"""
                         <a class="btn-action"
