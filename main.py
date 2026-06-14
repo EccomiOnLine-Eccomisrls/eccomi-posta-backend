@@ -9533,21 +9533,23 @@ def genera_pdf_cliente_raccomandata_bytes(pratica: dict, numero_raccomandata: st
 
 
 @app.get("/dashboard/pratiche/genera-ricevuta-cliente/{pratica_id}")
-def dashboard_genera_ricevuta_cliente(pratica_id: str):
+def dashboard_genera_ricevuta_cliente(pratica_id: str, apri: int = 0):
     """
-    Genera la ricevuta cliente Eccomi Posta.
-    NON chiama Poste.
-    NON invia email.
-    NON genera costi.
+    Genera la ricevuta cliente Eccomi Posta UNA SOLA VOLTA.
+    Regole:
+    - NON chiama Poste
+    - NON invia email
+    - NON genera costi
+    - se pdf_ricevuta_cliente_url esiste già: apre quella e basta
+    - se email_sent=True ma manca il PDF: blocca per verifica manuale
+    - se manca la ricevuta e non è stata inviata email: genera, salva e apre
     """
-
     try:
         pratica_res = supabase.table("pratiche") \
             .select("*") \
             .eq("id", pratica_id) \
             .single() \
             .execute()
-
         if not pratica_res.data:
             return HTMLResponse(
                 f"""
@@ -9561,40 +9563,62 @@ def dashboard_genera_ricevuta_cliente(pratica_id: str):
                 """,
                 status_code=404
             )
-
         pratica = pratica_res.data
-
-        pdf_esistente = pratica.get("pdf_ricevuta_cliente_url")
-
-        # Per la Raccomandata permettiamo la rigenerazione,
-        # così correggiamo ricevute create con template vecchio.
-        if pdf_esistente and str(pratica.get("tipo_servizio") or "").upper().strip() == "TELEGRAMMA":
+        tipo_servizio = str(pratica.get("tipo_servizio") or "").upper().strip()
+        pdf_esistente = pratica.get("pdf_ricevuta_cliente_url") or ""
+        email_gia_inviata = bool_from_any(pratica.get("email_sent"))
+        # =====================================================
+        # 1) Se la ricevuta cliente esiste già, NON si rigenera.
+        #    Si apre quella esistente.
+        # =====================================================
+        if pdf_esistente:
             return RedirectResponse(
-                url="/dashboard/pratiche",
+                url=pdf_esistente if apri else "/dashboard/pratiche",
                 status_code=303
             )
-
-        tipo_servizio = str(pratica.get("tipo_servizio") or "").upper().strip()
-
+        # =====================================================
+        # 2) Se la mail risulta già inviata ma manca il PDF,
+        #    blocchiamo la generazione automatica.
+        #    Non alteriamo una pratica già comunicata al cliente.
+        # =====================================================
+        if email_gia_inviata:
+            return HTMLResponse(
+                f"""
+                <html>
+                <body style="font-family:Arial;padding:30px;">
+                    <h2>Ricevuta cliente bloccata</h2>
+                    <p>Questa pratica risulta già comunicata al cliente via email.</p>
+                    <p>Per sicurezza non genero ricevute automatiche su pratiche già inviate.</p>
+                    <p><strong>Pratica:</strong> {pratica_id}</p>
+                    <p><strong>Servizio:</strong> {tipo_servizio or "-"}</p>
+                    <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+                </body>
+                </html>
+                """,
+                status_code=409
+            )
+        # =====================================================
+        # 3) Telegramma: se manca la ricevuta cliente,
+        #    usa il flusso già esistente e funzionante.
+        # =====================================================
         if tipo_servizio == "TELEGRAMMA":
             pdf_cliente_url = ensure_pdf_cliente_telegramma(pratica)
-
             return RedirectResponse(
-                url="/dashboard/pratiche",
+                url=pdf_cliente_url if apri else "/dashboard/pratiche",
                 status_code=303
             )
-
+        # =====================================================
+        # 4) Raccomandata: genera ricevuta cliente Eccomi.
+        #    NON chiama Poste.
+        # =====================================================
         numero_raccomandata = pratica.get("numero_raccomandata") or ""
-
         if not numero_raccomandata:
             poste_response = pratica.get("poste_response") or {}
-
             if isinstance(poste_response, str):
                 try:
                     poste_response = json.loads(poste_response)
                 except Exception:
                     poste_response = {}
-
             if isinstance(poste_response, dict):
                 numero_raccomandata = (
                     poste_response.get("numero_raccomandata")
@@ -9603,7 +9627,6 @@ def dashboard_genera_ricevuta_cliente(pratica_id: str):
                     or poste_response.get("numero_accettazione")
                     or ""
                 )
-
         if not numero_raccomandata:
             return HTMLResponse(
                 f"""
@@ -9611,21 +9634,18 @@ def dashboard_genera_ricevuta_cliente(pratica_id: str):
                 <body style="font-family:Arial;padding:30px;">
                     <h2>Numero raccomandata mancante</h2>
                     <p>Non posso generare la ricevuta cliente senza numero raccomandata.</p>
-                    <p>Pratica: {pratica_id}</p>
+                    <p><strong>Pratica:</strong> {pratica_id}</p>
                     <a href="/dashboard/pratiche">← Torna alla dashboard</a>
                 </body>
                 </html>
                 """,
                 status_code=400
             )
-
         pdf_bytes = genera_pdf_cliente_raccomandata_bytes(
             pratica=pratica,
             numero_raccomandata=numero_raccomandata
         )
-
         storage_path = f"raccomandate/{pratica_id}/ricevuta_cliente.pdf"
-
         supabase.storage.from_(SUPABASE_BUCKET).upload(
             storage_path,
             pdf_bytes,
@@ -9634,37 +9654,29 @@ def dashboard_genera_ricevuta_cliente(pratica_id: str):
                 "upsert": "true"
             }
         )
-
         pdf_cliente_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
             storage_path
         )
-
         poste_response = pratica.get("poste_response") or {}
-
         if isinstance(poste_response, str):
             try:
                 poste_response = json.loads(poste_response)
             except Exception:
                 poste_response = {}
-
         if not isinstance(poste_response, dict):
             poste_response = {}
-
         poste_response["pdf_ricevuta_cliente_url"] = pdf_cliente_url
         poste_response["pdf_cliente_generato_da"] = "dashboard_genera_ricevuta_cliente"
         poste_response["pdf_cliente_generato_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-
         supabase.table("pratiche").update({
             "pdf_ricevuta_cliente_url": pdf_cliente_url,
             "poste_response": poste_response,
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }).eq("id", pratica_id).execute()
-
         return RedirectResponse(
-            url="/dashboard/pratiche",
+            url=pdf_cliente_url if apri else "/dashboard/pratiche",
             status_code=303
         )
-
     except Exception as e:
         return HTMLResponse(
             f"""
@@ -11959,6 +11971,8 @@ def dashboard_pratiche(stato: str = None):
             or ""
         )
 
+        email_gia_inviata = bool_from_any(p.get("email_sent"))
+
         if stato_pratica == "INVIATO_POSTE":
             if ricevuta_cliente_url_pratica:
                 ricevuta_cliente_html = f"""
@@ -11967,6 +11981,13 @@ def dashboard_pratiche(stato: str = None):
                        target="_blank">
                         ✅ Ricevuta cliente
                     </a>
+                """
+
+            elif email_gia_inviata:
+                ricevuta_cliente_html = """
+                    <span class="btn-action btn-disabled">
+                        ✅ Ricevuta cliente già inviata - verifica manuale
+                    </span>
                 """
 
             elif tipo_servizio_upper == "TELEGRAMMA":
@@ -11978,13 +11999,21 @@ def dashboard_pratiche(stato: str = None):
                     </a>
                 """
 
-            else:
+            elif tipo_servizio_upper == "RACCOMANDATA":
                 ricevuta_cliente_html = f"""
                     <a class="btn-action"
-                       href="/dashboard/pratiche/genera-ricevuta-cliente/{pratica_id}"
-                       onclick="return confirm('Generare la ricevuta cliente Eccomi per questa pratica? Non verrà chiamata Poste e non verrà inviata email.')">
-                        ✅ Genera ricevuta cliente
+                       href="/dashboard/pratiche/genera-ricevuta-cliente/{pratica_id}?apri=1"
+                       target="_blank"
+                       onclick="return confirm('Generare la ricevuta cliente Eccomi? Non verrà chiamata Poste e non verrà inviata email.')">
+                        ✅ Ricevuta cliente
                     </a>
+                """
+
+            else:
+                ricevuta_cliente_html = """
+                    <span class="btn-action btn-disabled">
+                        ✅ Ricevuta cliente non pronta
+                    </span>
                 """
         else:
             ricevuta_cliente_html = """
