@@ -11986,7 +11986,7 @@ def dashboard_pratiche(stato: str = None):
                     </a>
 
                     <a class="btn-action"
-                       href="{pdf_cliente_href}"
+                       href="{pdf_documento_href}"
                        target="_blank">
                         {pdf_cliente_label}
                     </a>
