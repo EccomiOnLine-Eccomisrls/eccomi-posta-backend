@@ -11684,7 +11684,27 @@ def dashboard_pratiche(stato: str = None):
                     📧 Email non pronta
                 </span>
             """
+
         monitor_btn = ""
+
+        stato_monitorabile = str(stato_pratica or "").upper().strip()
+
+        if stato_monitorabile in ["INVIATO_POSTE", "COMPLETATO"]:
+            monitor_target = (
+                p.get("id_richiesta")
+                or pratica_id
+                or ""
+            )
+
+            if monitor_target:
+                monitor_btn = f"""
+                    <a class="btn-action btn-monitor"
+                       href="/dashboard/pratiche/monitora-view/{monitor_target}">
+                        🔎 Monitora
+                    </a>
+                """
+
+        order_display = (
         
         if stato_pratica == "INVIATO_POSTE":
             monitor_target = (
