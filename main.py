@@ -9352,17 +9352,18 @@ def dashboard_apri_pdf_pratica(pratica_id: str):
 
 def genera_pdf_cliente_raccomandata_bytes(pratica: dict, numero_raccomandata: str):
     """
-    Genera la ricevuta cliente Eccomi Posta per Raccomandata.
+    Genera il documento cliente Eccomi Posta per Raccomandata.
     NON chiama Poste.
     NON invia email.
     NON genera costi.
+    NON è documento fiscale.
     """
 
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
 
     width, height = A4
-    y = height - 2.2 * cm
+    y = height - 2.0 * cm
 
     def clean_pdf_text(value):
         return str(value or "-").replace("\n", " ").strip()
@@ -9425,11 +9426,11 @@ def genera_pdf_cliente_raccomandata_bytes(pratica: dict, numero_raccomandata: st
     y -= 0.95 * cm
     c.line(2 * cm, y, width - 2 * cm, y)
 
-    y -= 1.15 * cm
-    c.setFont("Helvetica-Bold", 19)
-    c.drawString(2 * cm, y, "Ricevuta cliente Raccomandata")
-
     y -= 1.1 * cm
+    c.setFont("Helvetica-Bold", 19)
+    c.drawString(2 * cm, y, "Conferma invio Raccomandata")
+
+    y -= 1.05 * cm
 
     # Box numero/stato
     box_x = 2 * cm
@@ -9449,7 +9450,7 @@ def genera_pdf_cliente_raccomandata_bytes(pratica: dict, numero_raccomandata: st
     c.setFont("Helvetica", 12)
     c.drawString(box_x + 8.4 * cm, y - 1.2 * cm, "Accettata da Poste Italiane")
 
-    y = box_y - 0.9 * cm
+    y = box_y - 0.85 * cm
 
     # Dati pratica
     c.setFont("Helvetica-Bold", 12)
@@ -9459,26 +9460,26 @@ def genera_pdf_cliente_raccomandata_bytes(pratica: dict, numero_raccomandata: st
     c.setFont("Helvetica-Bold", 10)
     c.drawString(2 * cm, y, "Ordine Eccomi:")
     c.setFont("Helvetica", 10)
-    c.drawString(5.2 * cm, y, clean_pdf_text(order_name_clean))
+    c.drawString(5.4 * cm, y, clean_pdf_text(order_name_clean))
     y -= 0.5 * cm
 
     c.setFont("Helvetica-Bold", 10)
     c.drawString(2 * cm, y, "Servizio:")
     c.setFont("Helvetica", 10)
-    c.drawString(5.2 * cm, y, clean_pdf_text(servizio_label))
+    c.drawString(5.4 * cm, y, clean_pdf_text(servizio_label))
     y -= 0.5 * cm
 
     c.setFont("Helvetica-Bold", 10)
     c.drawString(2 * cm, y, "Email cliente:")
     c.setFont("Helvetica", 10)
-    c.drawString(5.2 * cm, y, clean_pdf_text(cliente_email))
+    c.drawString(5.4 * cm, y, clean_pdf_text(cliente_email))
     y -= 0.5 * cm
 
     c.setFont("Helvetica-Bold", 10)
-    c.drawString(2 * cm, y, "Data ricevuta:")
+    c.drawString(2 * cm, y, "Data documento:")
     c.setFont("Helvetica", 10)
-    c.drawString(5.2 * cm, y, clean_pdf_text(data_operazione))
-    y -= 0.9 * cm
+    c.drawString(5.4 * cm, y, clean_pdf_text(data_operazione))
+    y -= 0.85 * cm
 
     # Mittente
     c.setFont("Helvetica-Bold", 12)
@@ -9489,7 +9490,7 @@ def genera_pdf_cliente_raccomandata_bytes(pratica: dict, numero_raccomandata: st
     y = draw_wrapped(mitt_indirizzo, 2 * cm, y, "Helvetica", 10)
     y = draw_wrapped(mitt_localita, 2 * cm, y, "Helvetica", 10)
 
-    y -= 0.45 * cm
+    y -= 0.35 * cm
 
     # Destinatario
     c.setFont("Helvetica-Bold", 12)
@@ -9500,18 +9501,17 @@ def genera_pdf_cliente_raccomandata_bytes(pratica: dict, numero_raccomandata: st
     y = draw_wrapped(dest_indirizzo, 2 * cm, y, "Helvetica", 10)
     y = draw_wrapped(dest_localita, 2 * cm, y, "Helvetica", 10)
 
-    y -= 0.55 * cm
+    y -= 0.45 * cm
 
-    # Testo ricevuta
+    # Conferma
     c.setFont("Helvetica-Bold", 12)
     c.drawString(2 * cm, y, "Conferma Eccomi Posta")
     y -= 0.55 * cm
 
     testo = (
-        "La presente ricevuta conferma che Eccomi Posta ha preso in carico "
-        "la pratica del cliente e che la raccomandata risulta inviata o accettata "
-        "tramite il circuito Poste Italiane. Il presente documento e' destinato "
-        "al cliente come ricevuta del servizio gestito da Eccomi Posta."
+        "Il presente documento conferma la presa in carico della pratica "
+        "e l'avvenuto invio o accettazione della raccomandata tramite "
+        "il servizio Eccomi Posta."
     )
 
     y = draw_wrapped(testo, 2 * cm, y, "Helvetica", 10)
@@ -9810,7 +9810,7 @@ def _ecx_dict(value):
 def _ecx_addr_label(data):
     """
     Legge mittente/destinatario sia da campi strutturati
-    sia da campo raw, senza rompere i dati già esistenti.
+    sia dal campo raw già salvato nelle pratiche.
     """
 
     raw_text = ""
@@ -9879,6 +9879,7 @@ def _ecx_addr_label(data):
     ).strip()
 
     indirizzo = " ".join([x for x in [via, civico] if x]).strip()
+
     localita = " ".join([
         x for x in [
             cap,
@@ -9887,8 +9888,8 @@ def _ecx_addr_label(data):
         ] if x
     ]).strip()
 
-    # Fallback sui dati raw tipo:
-    # "SALVATORE DEL LIBANO - Viale ... 321, 00131 Roma (RM)"
+    # Fallback per dati tipo:
+    # "SALVATORE DEL LIBANO - Viale Stefano D'Arrigo 321, 00131 Roma (RM)"
     if raw_text and (not nome or not indirizzo):
         parts = [
             x.strip()
@@ -9906,7 +9907,6 @@ def _ecx_addr_label(data):
             if len(parts) >= 3 and not localita:
                 localita = " - ".join(parts[2:])
 
-        # Se il raw non ha separatori, almeno non lasciamo tutto vuoto
         if not nome and raw_text:
             nome = raw_text
 
