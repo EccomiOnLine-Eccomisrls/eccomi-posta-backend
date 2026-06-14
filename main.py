@@ -14258,61 +14258,6 @@ def dashboard_monitora_pratica_view(pratica_id: str):
 
 @app.get("/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}")
 def dashboard_ricevuta_poste_telegramma(pratica_id: str):
-    import json
-
-    result = supabase.table("pratiche") \
-        .select("*") \
-        .eq("id", pratica_id) \
-        .single() \
-        .execute()
-
-    if not result.data:
-        return {
-            "success": False,
-            "error": "Pratica non trovata",
-            "pratica_id": pratica_id
-        }
-
-    pratica = result.data
-
-    if pratica.get("tipo_servizio") != "TELEGRAMMA":
-        return {
-            "success": False,
-            "error": "Questa pratica non è un Telegramma",
-            "pratica_id": pratica_id
-        }
-
-    poste_response = pratica.get("poste_response") or {}
-
-    if isinstance(poste_response, str):
-        try:
-            poste_response = json.loads(poste_response)
-        except Exception:
-            poste_response = {}
-
-    ricevuta_poste_url = (
-        poste_response.get("pdf_ricevuta_poste_url")
-        or poste_response.get("pdf_poste_originale_url")
-        or poste_response.get("ricevuta_poste_url")
-        or poste_response.get("pdf_pagamento_poste_url")
-        or poste_response.get("ricevuta_pagamento_poste_url")
-    )
-
-    if not ricevuta_poste_url:
-        return {
-            "success": False,
-            "error": "Ricevuta Poste Telegramma non ancora disponibile",
-            "pratica_id": pratica_id
-        }
-
-    return RedirectResponse(
-        url=ricevuta_poste_url,
-        status_code=302
-    )
-
-
-@app.get("/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}")
-def dashboard_ricevuta_poste_telegramma(pratica_id: str):
     """
     Genera/apre PDF interno dal monitoraggio Telegramma.
     NON chiama Poste.
