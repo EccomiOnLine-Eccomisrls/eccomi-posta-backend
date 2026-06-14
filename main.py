@@ -11696,7 +11696,7 @@ def dashboard_pratiche(stato: str = None):
             if monitor_target:
                 monitor_btn = f"""
                     <a class="btn-action"
-                       href="/dashboard/pratiche/monitora/{monitor_target}">
+                       href="/dashboard/pratiche/monitora-view/{monitor_target}"
                         🔎 Monitora
                     </a>
                 """
