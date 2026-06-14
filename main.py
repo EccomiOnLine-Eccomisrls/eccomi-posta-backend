@@ -9531,6 +9531,185 @@ def genera_pdf_cliente_raccomandata_bytes(pratica: dict, numero_raccomandata: st
 
     return buffer.getvalue()
 
+def genera_pdf_interno_monitoraggio_telegramma_bytes(pratica: dict):
+    """
+    Genera PDF interno Eccomi/Poste dal monitoraggio Telegramma già presente.
+    NON chiama Poste.
+    NON invia email.
+    NON genera costi.
+    """
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+
+    width, height = A4
+    y = height - 2.0 * cm
+
+    def clean(value):
+        return str(value or "-").replace("\n", " ").strip()
+
+    poste_response = pratica.get("poste_response") or {}
+
+    if isinstance(poste_response, str):
+        try:
+            poste_response = json.loads(poste_response)
+        except Exception:
+            poste_response = {}
+
+    if not isinstance(poste_response, dict):
+        poste_response = {}
+
+    get_status_result = poste_response.get("get_status_result") or {}
+    status = get_status_result.get("Status") or {}
+
+    result = get_status_result.get("Result") or {}
+    result_description = result.get("Description") or "-"
+
+    telegramma_status_details = status.get("TelegramStatusDetails") or {}
+    telegramma_status_detail_type = telegramma_status_details.get("TelegrammaStatusDetailsType") or []
+
+    if isinstance(telegramma_status_detail_type, dict):
+        telegramma_status_detail_type = [telegramma_status_detail_type]
+
+    primo_dettaglio = telegramma_status_detail_type[0] if telegramma_status_detail_type else {}
+
+    id_telegramma = (
+        poste_response.get("id_telegramma")
+        or primo_dettaglio.get("IDTelegramma")
+        or "-"
+    )
+
+    stato_poste = (
+        poste_response.get("state")
+        or primo_dettaglio.get("State")
+        or "-"
+    )
+
+    id_richiesta = (
+        pratica.get("id_richiesta")
+        or poste_response.get("id_richiesta")
+        or status.get("GTDMessage")
+        or "-"
+    )
+
+    numero_accettazione = (
+        pratica.get("numero_raccomandata")
+        or poste_response.get("numero_accettazione")
+        or poste_response.get("tracking")
+        or poste_response.get("tracking_number")
+        or "-"
+    )
+
+    order_name = (
+        pratica.get("shopify_order_name")
+        or pratica.get("order_name")
+        or pratica.get("order_id")
+        or "-"
+    )
+
+    try:
+        order_name = clean_order_display(order_name)
+    except Exception:
+        pass
+
+    cliente_email = pratica.get("cliente_email") or pratica.get("email_to") or "-"
+    data_controllo = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    # Header
+    c.setFont("Helvetica-Bold", 22)
+    c.drawCentredString(width / 2, y, "ECCOMI POSTA")
+
+    y -= 0.65 * cm
+    c.setFont("Helvetica", 12)
+    c.drawCentredString(width / 2, y, "Documento interno di monitoraggio Poste")
+
+    y -= 0.95 * cm
+    c.line(2 * cm, y, width - 2 * cm, y)
+
+    y -= 1.1 * cm
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(2 * cm, y, "Telegramma - Esito monitoraggio Poste")
+
+    y -= 1.0 * cm
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, "Ordine:")
+    c.setFont("Helvetica", 11)
+    c.drawString(6 * cm, y, clean(order_name))
+    y -= 0.6 * cm
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, "Servizio:")
+    c.setFont("Helvetica", 11)
+    c.drawString(6 * cm, y, "TELEGRAMMA")
+    y -= 0.6 * cm
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, "Email cliente:")
+    c.setFont("Helvetica", 11)
+    c.drawString(6 * cm, y, clean(cliente_email))
+    y -= 0.6 * cm
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, "ID richiesta:")
+    c.setFont("Helvetica", 11)
+    c.drawString(6 * cm, y, clean(id_richiesta))
+    y -= 0.6 * cm
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, "Numero accettazione:")
+    c.setFont("Helvetica", 11)
+    c.drawString(6 * cm, y, clean(numero_accettazione))
+    y -= 0.6 * cm
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, "Numero Telegramma:")
+    c.setFont("Helvetica", 11)
+    c.drawString(6 * cm, y, clean(id_telegramma))
+    y -= 0.6 * cm
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, "Stato Poste:")
+    c.setFont("Helvetica", 11)
+    c.drawString(6 * cm, y, clean(stato_poste))
+    y -= 0.6 * cm
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, "Data controllo:")
+    c.setFont("Helvetica", 11)
+    c.drawString(6 * cm, y, clean(data_controllo))
+    y -= 1.0 * cm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "Esito tecnico")
+    y -= 0.6 * cm
+
+    c.setFont("Helvetica", 10)
+    c.drawString(2 * cm, y, clean(result_description)[:110])
+    y -= 0.7 * cm
+
+    c.setFont("Helvetica", 10)
+    c.drawString(
+        2 * cm,
+        y,
+        "Documento interno generato da Eccomi Posta sulla base del monitoraggio Poste."
+    )
+
+    # Footer
+    c.line(2 * cm, 2.0 * cm, width - 2 * cm, 2.0 * cm)
+
+    c.setFont("Helvetica", 8)
+    c.drawString(
+        2 * cm,
+        1.55 * cm,
+        "Documento interno Eccomi Posta. Non costituisce documento fiscale."
+    )
+
+    c.save()
+    buffer.seek(0)
+
+    return buffer.getvalue()
+
 
 @app.get("/dashboard/pratiche/genera-ricevuta-cliente/{pratica_id}")
 def dashboard_genera_ricevuta_cliente(pratica_id: str, apri: int = 0):
@@ -14130,6 +14309,143 @@ def dashboard_ricevuta_poste_telegramma(pratica_id: str):
         url=ricevuta_poste_url,
         status_code=302
     )
+
+
+@app.get("/dashboard/pratiche/ricevuta-poste-telegramma/{pratica_id}")
+def dashboard_ricevuta_poste_telegramma(pratica_id: str):
+    """
+    Genera/apre PDF interno dal monitoraggio Telegramma.
+    NON chiama Poste.
+    NON invia email.
+    NON genera costi.
+    """
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return HTMLResponse(
+                f"""
+                <html>
+                <body style="font-family:Arial;padding:30px;">
+                    <h2>Pratica non trovata</h2>
+                    <p>ID: {pratica_id}</p>
+                    <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+                </body>
+                </html>
+                """,
+                status_code=404
+            )
+
+        pratica = pratica_res.data
+
+        tipo_servizio = str(pratica.get("tipo_servizio") or "").upper().strip()
+
+        if tipo_servizio != "TELEGRAMMA":
+            return HTMLResponse(
+                f"""
+                <html>
+                <body style="font-family:Arial;padding:30px;">
+                    <h2>Servizio non valido</h2>
+                    <p>Questa funzione è disponibile solo per Telegramma.</p>
+                    <p>Pratica: {pratica_id}</p>
+                    <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+                </body>
+                </html>
+                """,
+                status_code=400
+            )
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        if not isinstance(poste_response, dict):
+            poste_response = {}
+
+        pdf_esistente = (
+            poste_response.get("ricevuta_poste_telegramma_url")
+            or poste_response.get("pdf_ricevuta_poste_interna_url")
+            or ""
+        )
+
+        if pdf_esistente:
+            return RedirectResponse(
+                url=pdf_esistente,
+                status_code=303
+            )
+
+        get_status_result = poste_response.get("get_status_result") or {}
+
+        if not get_status_result:
+            return HTMLResponse(
+                f"""
+                <html>
+                <body style="font-family:Arial;padding:30px;">
+                    <h2>Monitoraggio non ancora disponibile</h2>
+                    <p>Prima premi <strong>Monitora</strong> sulla pratica, poi genera il PDF interno.</p>
+                    <p>Pratica: {pratica_id}</p>
+                    <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+                </body>
+                </html>
+                """,
+                status_code=400
+            )
+
+        pdf_bytes = genera_pdf_interno_monitoraggio_telegramma_bytes(pratica)
+
+        storage_path = f"telegrammi/{pratica_id}/ricevuta_poste_interna_monitoraggio.pdf"
+
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            storage_path,
+            pdf_bytes,
+            file_options={
+                "content-type": "application/pdf",
+                "upsert": "true"
+            }
+        )
+
+        pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
+            storage_path
+        )
+
+        poste_response["ricevuta_poste_telegramma_url"] = pdf_url
+        poste_response["pdf_ricevuta_poste_interna_url"] = pdf_url
+        poste_response["ricevuta_poste_telegramma_generata_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        poste_response["ricevuta_poste_telegramma_generata_da"] = "dashboard_ricevuta_poste_telegramma"
+
+        supabase.table("pratiche").update({
+            "poste_response": poste_response,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }).eq("id", pratica_id).execute()
+
+        return RedirectResponse(
+            url=pdf_url,
+            status_code=303
+        )
+
+    except Exception as e:
+        return HTMLResponse(
+            f"""
+            <html>
+            <body style="font-family:Arial;padding:30px;">
+                <h2>Errore ricevuta Poste interna Telegramma</h2>
+                <pre>{str(e)}</pre>
+                <a href="/dashboard/pratiche">← Torna alla dashboard</a>
+            </body>
+            </html>
+            """,
+            status_code=500
+        )
+
 
 @app.get("/dashboard/pratiche/{pratica_id}", response_class=HTMLResponse)
 def dashboard_pratica_dettaglio(pratica_id: str):
