@@ -9359,14 +9359,38 @@ def genera_pdf_cliente_raccomandata_bytes(pratica: dict, numero_raccomandata: st
     """
 
     buffer = BytesIO()
-
     c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
 
+    width, height = A4
     y = height - 2.2 * cm
 
     def clean_pdf_text(value):
         return str(value or "-").replace("\n", " ").strip()
+
+    def draw_wrapped(text, x, y, font_name="Helvetica", font_size=10, max_width=None, line_height=0.45 * cm):
+        if max_width is None:
+            max_width = width - 4 * cm
+
+        c.setFont(font_name, font_size)
+
+        words = clean_pdf_text(text).split()
+        line = ""
+
+        for word in words:
+            test_line = (line + " " + word).strip()
+
+            if c.stringWidth(test_line, font_name, font_size) <= max_width:
+                line = test_line
+            else:
+                c.drawString(x, y, line)
+                y -= line_height
+                line = word
+
+        if line:
+            c.drawString(x, y, line)
+            y -= line_height
+
+        return y
 
     order_name = (
         pratica.get("shopify_order_name")
@@ -9375,119 +9399,136 @@ def genera_pdf_cliente_raccomandata_bytes(pratica: dict, numero_raccomandata: st
         or "-"
     )
 
+    try:
+        order_name_clean = clean_order_display(order_name)
+    except Exception:
+        order_name_clean = order_name
+
+    cliente_email = pratica.get("cliente_email") or pratica.get("email_to") or "-"
+
     mitt_nome, mitt_indirizzo, mitt_localita = _ecx_addr_label(pratica.get("mittente"))
     dest_nome, dest_indirizzo, dest_localita = _ecx_addr_label(pratica.get("destinatario"))
 
+    has_rr = bool_from_any(pratica.get("ricevuta_ritorno"))
+    servizio_label = "Raccomandata con ricevuta di ritorno" if has_rr else "Raccomandata"
+
+    data_operazione = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    # Header
     c.setFont("Helvetica-Bold", 22)
     c.drawCentredString(width / 2, y, "ECCOMI POSTA")
 
-    y -= 0.7 * cm
+    y -= 0.65 * cm
     c.setFont("Helvetica", 12)
     c.drawCentredString(width / 2, y, "Servizi Postali Digitali")
 
-    y -= 1.1 * cm
+    y -= 0.95 * cm
     c.line(2 * cm, y, width - 2 * cm, y)
 
-    y -= 1.3 * cm
-    c.setFont("Helvetica-Bold", 20)
+    y -= 1.15 * cm
+    c.setFont("Helvetica-Bold", 19)
     c.drawString(2 * cm, y, "Ricevuta cliente Raccomandata")
 
-    y -= 1.2 * cm
+    y -= 1.1 * cm
 
+    # Box numero/stato
     box_x = 2 * cm
     box_y = y - 2.2 * cm
     box_w = width - 4 * cm
-    box_h = 2.4 * cm
+    box_h = 2.35 * cm
 
     c.roundRect(box_x, box_y, box_w, box_h, 8, stroke=1, fill=0)
 
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(box_x + 0.6 * cm, y - 0.5 * cm, "Numero Raccomandata")
-    c.drawString(box_x + 8.2 * cm, y - 0.5 * cm, "Stato")
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(box_x + 0.6 * cm, y - 0.45 * cm, "Numero Raccomandata")
+    c.drawString(box_x + 8.4 * cm, y - 0.45 * cm, "Stato")
 
     c.setFont("Helvetica-Bold", 15)
-    c.drawString(box_x + 0.6 * cm, y - 1.25 * cm, clean_pdf_text(numero_raccomandata))
+    c.drawString(box_x + 0.6 * cm, y - 1.2 * cm, clean_pdf_text(numero_raccomandata))
 
     c.setFont("Helvetica", 12)
-    c.drawString(box_x + 8.2 * cm, y - 1.25 * cm, "Accettata da Poste Italiane")
+    c.drawString(box_x + 8.4 * cm, y - 1.2 * cm, "Accettata da Poste Italiane")
 
-    y = box_y - 1.1 * cm
+    y = box_y - 0.9 * cm
 
+    # Dati pratica
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(2 * cm, y, "Ordine Eccomi")
-    c.setFont("Helvetica", 11)
-    c.drawString(6 * cm, y, clean_pdf_text(order_name))
+    c.drawString(2 * cm, y, "Dati pratica")
+    y -= 0.6 * cm
 
-    y -= 1.0 * cm
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(2 * cm, y, "Ordine Eccomi:")
+    c.setFont("Helvetica", 10)
+    c.drawString(5.2 * cm, y, clean_pdf_text(order_name_clean))
+    y -= 0.5 * cm
 
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(2 * cm, y, "Servizio:")
+    c.setFont("Helvetica", 10)
+    c.drawString(5.2 * cm, y, clean_pdf_text(servizio_label))
+    y -= 0.5 * cm
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(2 * cm, y, "Email cliente:")
+    c.setFont("Helvetica", 10)
+    c.drawString(5.2 * cm, y, clean_pdf_text(cliente_email))
+    y -= 0.5 * cm
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(2 * cm, y, "Data ricevuta:")
+    c.setFont("Helvetica", 10)
+    c.drawString(5.2 * cm, y, clean_pdf_text(data_operazione))
+    y -= 0.9 * cm
+
+    # Mittente
     c.setFont("Helvetica-Bold", 12)
     c.drawString(2 * cm, y, "Mittente")
     y -= 0.55 * cm
 
-    c.setFont("Helvetica", 11)
-    c.drawString(2 * cm, y, clean_pdf_text(mitt_nome))
-    y -= 0.45 * cm
-    c.drawString(2 * cm, y, clean_pdf_text(mitt_indirizzo))
-    y -= 0.45 * cm
-    c.drawString(2 * cm, y, clean_pdf_text(mitt_localita))
+    y = draw_wrapped(mitt_nome, 2 * cm, y, "Helvetica", 10)
+    y = draw_wrapped(mitt_indirizzo, 2 * cm, y, "Helvetica", 10)
+    y = draw_wrapped(mitt_localita, 2 * cm, y, "Helvetica", 10)
 
-    y -= 1.0 * cm
+    y -= 0.45 * cm
 
+    # Destinatario
     c.setFont("Helvetica-Bold", 12)
     c.drawString(2 * cm, y, "Destinatario")
     y -= 0.55 * cm
 
-    c.setFont("Helvetica", 11)
-    c.drawString(2 * cm, y, clean_pdf_text(dest_nome))
-    y -= 0.45 * cm
-    c.drawString(2 * cm, y, clean_pdf_text(dest_indirizzo))
-    y -= 0.45 * cm
-    c.drawString(2 * cm, y, clean_pdf_text(dest_localita))
+    y = draw_wrapped(dest_nome, 2 * cm, y, "Helvetica", 10)
+    y = draw_wrapped(dest_indirizzo, 2 * cm, y, "Helvetica", 10)
+    y = draw_wrapped(dest_localita, 2 * cm, y, "Helvetica", 10)
 
-    y -= 1.0 * cm
+    y -= 0.55 * cm
 
+    # Testo ricevuta
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(2 * cm, y, "Data generazione ricevuta")
-    c.setFont("Helvetica", 11)
-    c.drawString(7.2 * cm, y, datetime.datetime.now().strftime("%d/%m/%Y %H:%M"))
+    c.drawString(2 * cm, y, "Conferma Eccomi Posta")
+    y -= 0.55 * cm
 
-    y -= 1.4 * cm
-
-    c.setFont("Helvetica", 10)
     testo = (
         "La presente ricevuta conferma che Eccomi Posta ha preso in carico "
-        "la pratica del cliente e che la raccomandata risulta inviata/accettata "
-        "tramite il circuito Poste Italiane."
+        "la pratica del cliente e che la raccomandata risulta inviata o accettata "
+        "tramite il circuito Poste Italiane. Il presente documento e' destinato "
+        "al cliente come ricevuta del servizio gestito da Eccomi Posta."
     )
 
-    max_width = width - 4 * cm
-    line = ""
+    y = draw_wrapped(testo, 2 * cm, y, "Helvetica", 10)
 
-    for word in testo.split():
-        test_line = (line + " " + word).strip()
-
-        if c.stringWidth(test_line, "Helvetica", 10) <= max_width:
-            line = test_line
-        else:
-            c.drawString(2 * cm, y, line)
-            y -= 0.45 * cm
-            line = word
-
-    if line:
-        c.drawString(2 * cm, y, line)
-
+    # Footer
     c.line(2 * cm, 2.0 * cm, width - 2 * cm, 2.0 * cm)
 
     c.setFont("Helvetica", 8)
     c.drawString(
         2 * cm,
         1.55 * cm,
-        "Eccomi Posta è un servizio digitale di gestione spedizioni. Ricevuta generata da Eccomi Online."
+        "Eccomi Posta - Servizio digitale di gestione spedizioni - www.eccomionline.com"
     )
 
     c.save()
-
     buffer.seek(0)
+
     return buffer.getvalue()
 
 
@@ -9525,7 +9566,9 @@ def dashboard_genera_ricevuta_cliente(pratica_id: str):
 
         pdf_esistente = pratica.get("pdf_ricevuta_cliente_url")
 
-        if pdf_esistente:
+        # Per la Raccomandata permettiamo la rigenerazione,
+        # così correggiamo ricevute create con template vecchio.
+        if pdf_esistente and str(pratica.get("tipo_servizio") or "").upper().strip() == "TELEGRAMMA":
             return RedirectResponse(
                 url="/dashboard/pratiche",
                 status_code=303
@@ -9753,19 +9796,109 @@ def _ecx_dict(value):
 
 
 def _ecx_addr_label(data):
-    data = _ecx_dict(data)
+    """
+    Legge mittente/destinatario sia da campi strutturati
+    sia da campo raw, senza rompere i dati già esistenti.
+    """
 
-    nome = str(data.get("nome") or "").strip()
-    via = str(data.get("via") or data.get("indirizzo") or "").strip()
-    civico = str(data.get("civico") or "").strip()
-    cap = str(data.get("cap") or "").strip()
-    comune = str(data.get("comune") or "").strip()
-    provincia = str(data.get("provincia") or "").strip()
+    raw_text = ""
+    data_dict = {}
+
+    if isinstance(data, dict):
+        data_dict = data
+        raw_text = str(
+            data.get("raw")
+            or data.get("full")
+            or data.get("testo")
+            or data.get("label")
+            or ""
+        ).strip()
+
+    elif isinstance(data, str):
+        try:
+            parsed = json.loads(data)
+
+            if isinstance(parsed, dict):
+                data_dict = parsed
+                raw_text = str(
+                    parsed.get("raw")
+                    or parsed.get("full")
+                    or parsed.get("testo")
+                    or parsed.get("label")
+                    or ""
+                ).strip()
+            else:
+                raw_text = data.strip()
+
+        except Exception:
+            raw_text = data.strip()
+
+    nome = str(
+        data_dict.get("nome")
+        or data_dict.get("nominativo")
+        or data_dict.get("ragione_sociale")
+        or data_dict.get("ragioneSociale")
+        or data_dict.get("full_name")
+        or ""
+    ).strip()
+
+    via = str(
+        data_dict.get("via")
+        or data_dict.get("indirizzo")
+        or data_dict.get("address")
+        or data_dict.get("strada")
+        or ""
+    ).strip()
+
+    civico = str(data_dict.get("civico") or "").strip()
+    cap = str(data_dict.get("cap") or "").strip()
+
+    comune = str(
+        data_dict.get("comune")
+        or data_dict.get("citta")
+        or data_dict.get("città")
+        or ""
+    ).strip()
+
+    provincia = str(
+        data_dict.get("provincia")
+        or data_dict.get("prov")
+        or ""
+    ).strip()
 
     indirizzo = " ".join([x for x in [via, civico] if x]).strip()
-    localita = " ".join([x for x in [cap, comune, f"({provincia})" if provincia else ""] if x]).strip()
+    localita = " ".join([
+        x for x in [
+            cap,
+            comune,
+            f"({provincia})" if provincia else ""
+        ] if x
+    ]).strip()
 
-    return nome, indirizzo, localita
+    # Fallback sui dati raw tipo:
+    # "SALVATORE DEL LIBANO - Viale ... 321, 00131 Roma (RM)"
+    if raw_text and (not nome or not indirizzo):
+        parts = [
+            x.strip()
+            for x in raw_text.replace("\n", " - ").split(" - ")
+            if x.strip()
+        ]
+
+        if parts:
+            if not nome:
+                nome = parts[0]
+
+            if len(parts) >= 2 and not indirizzo:
+                indirizzo = parts[1]
+
+            if len(parts) >= 3 and not localita:
+                localita = " - ".join(parts[2:])
+
+        # Se il raw non ha separatori, almeno non lasciamo tutto vuoto
+        if not nome and raw_text:
+            nome = raw_text
+
+    return nome or "-", indirizzo or "-", localita or "-"
 
 
 def genera_pdf_cliente_telegramma_bytes(
