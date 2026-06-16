@@ -12498,6 +12498,269 @@ def dashboard_raccomandata_test_calcola(pratica_id: str):
             "xml_received": xml_received
         }
 
+@app.get("/dashboard/pratiche/raccomandata-test-finalizza/{pratica_id}")
+def dashboard_raccomandata_test_finalizza(pratica_id: str):
+    """
+    TEST Raccomandata H2H - PreConferma TEST.
+
+    Usa SOLO ambiente Poste TEST.
+
+    Fa:
+    - legge id_richiesta_test e guid_utente_test salvati da raccomandata-test-calcola
+    - chiama PreConferma TEST con autoConferma=True
+    - salva risultato dentro poste_response["raccomandata_test"]
+
+    NON cambia stato reale della pratica.
+    NON salva numero_raccomandata reale.
+    NON invia email.
+    NON usa produzione.
+    """
+
+    history = HistoryPlugin()
+
+    try:
+        # =====================================================
+        # 1. Carica pratica
+        # =====================================================
+
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_FINALIZZA_PRATICA_NON_TROVATA",
+                "pratica_id": pratica_id,
+                "error": "Pratica non trovata"
+            }
+
+        pratica = pratica_res.data
+
+        tipo_servizio = str(
+            pratica.get("tipo_servizio") or ""
+        ).upper().strip()
+
+        if tipo_servizio != "RACCOMANDATA":
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_FINALIZZA_SERVIZIO_NON_VALIDO",
+                "pratica_id": pratica_id,
+                "tipo_servizio": tipo_servizio,
+                "error": "Questo test è disponibile solo per Raccomandata"
+            }
+
+        # =====================================================
+        # 2. Legge dati TEST salvati dal primo step
+        # =====================================================
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        if not isinstance(poste_response, dict):
+            poste_response = {}
+
+        raccomandata_test = poste_response.get("raccomandata_test") or {}
+
+        if not isinstance(raccomandata_test, dict):
+            raccomandata_test = {}
+
+        id_richiesta_test = raccomandata_test.get("id_richiesta_test") or ""
+        guid_utente_test = raccomandata_test.get("guid_utente_test") or ""
+
+        if not id_richiesta_test or not guid_utente_test:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_DATI_PRECONFERMA_MANCANTI",
+                "pratica_id": pratica_id,
+                "error": "Prima devi eseguire raccomandata-test-calcola. Mancano id_richiesta_test o guid_utente_test.",
+                "id_richiesta_test": id_richiesta_test,
+                "guid_utente_test": guid_utente_test
+            }
+
+        # =====================================================
+        # 3. Client Poste TEST
+        # =====================================================
+
+        client, service = poste_client_test(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        RichiestaType = client.get_type("ns1:Richiesta")
+
+        richiesta = RichiestaType(
+            IDRichiesta=id_richiesta_test,
+            GuidUtente=guid_utente_test
+        )
+
+        # =====================================================
+        # 4. PreConferma TEST
+        # =====================================================
+
+        pre_result = service.PreConferma(
+            Richieste=[richiesta],
+            autoConferma=True
+        )
+
+        pre_plain = make_json_safe(
+            zeep_to_plain(pre_result)
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        # =====================================================
+        # 5. Estrazione dati TEST in modo prudente
+        # =====================================================
+
+        numero_raccomandata_test = ""
+        id_ricevuta_test = ""
+        id_ordine_poste_test = ""
+        costo_test_finale = None
+
+        try:
+            id_ordine_poste_test = str(pre_result.IdOrdine)
+        except Exception:
+            id_ordine_poste_test = ""
+
+        try:
+            destinatari_racc = (
+                pre_result
+                .DestinatariRaccomandata
+                .ArrayOfDestinatarioRaccomandata
+            )
+
+            if isinstance(destinatari_racc, list) and destinatari_racc:
+                primo = destinatari_racc[0]
+            else:
+                primo = destinatari_racc
+
+            numero_raccomandata_test = str(
+                getattr(primo, "NumeroRaccomandata", "") or ""
+            )
+
+            id_ricevuta_test = str(
+                getattr(primo, "IdRicevuta", "") or ""
+            )
+
+        except Exception:
+            pass
+
+        try:
+            costo_test_finale = float(
+                pre_result.Valorizzazione.Totale.ImportoTotale
+            )
+        except Exception:
+            costo_test_finale = None
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # =====================================================
+        # 6. Salva SOLO dati TEST
+        # =====================================================
+
+        raccomandata_test["preconferma_test"] = {
+            "step": "RACCOMANDATA_TEST_PRECONFERMA",
+            "ambiente": "TEST",
+            "id_richiesta_test": id_richiesta_test,
+            "guid_utente_test": guid_utente_test,
+            "id_ordine_poste_test": id_ordine_poste_test,
+            "numero_raccomandata_test": numero_raccomandata_test,
+            "id_ricevuta_test": id_ricevuta_test,
+            "costo_test_finale": costo_test_finale,
+            "preconferma_result": pre_plain,
+            "preconferma_raw": str(pre_result),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received,
+            "tested_at": now_iso
+        }
+
+        raccomandata_test["ultimo_step"] = "RACCOMANDATA_TEST_PRECONFERMA"
+        raccomandata_test["numero_raccomandata_test"] = numero_raccomandata_test
+        raccomandata_test["id_ricevuta_test"] = id_ricevuta_test
+        raccomandata_test["id_ordine_poste_test"] = id_ordine_poste_test
+        raccomandata_test["costo_test_finale"] = costo_test_finale
+
+        poste_response["raccomandata_test"] = raccomandata_test
+
+        supabase.table("pratiche").update({
+            "poste_response": poste_response,
+            "updated_at": now_iso
+        }).eq("id", pratica_id).execute()
+
+        return {
+            "success": True,
+            "step": "RACCOMANDATA_TEST_PRECONFERMA",
+            "ambiente": "TEST",
+            "pratica_id": pratica_id,
+            "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+            "id_richiesta_test": id_richiesta_test,
+            "guid_utente_test": guid_utente_test,
+            "id_ordine_poste_test": id_ordine_poste_test,
+            "numero_raccomandata_test": numero_raccomandata_test,
+            "id_ricevuta_test": id_ricevuta_test,
+            "costo_test_finale": costo_test_finale,
+            "message": "PreConferma TEST eseguita. Nessuna email, nessun cambio stato reale, nessuna produzione."
+        }
+
+    except Exception as e:
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        return {
+            "success": False,
+            "step": "ERRORE_RACCOMANDATA_TEST_PRECONFERMA",
+            "ambiente": "TEST",
+            "pratica_id": pratica_id,
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
         
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
