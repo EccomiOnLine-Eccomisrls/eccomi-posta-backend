@@ -12761,6 +12761,363 @@ def dashboard_raccomandata_test_finalizza(pratica_id: str):
             "xml_received": xml_received
         }
 
+def _ecx_bytes_from_h2h_contenuto(value):
+    """
+    Converte il campo Contenuto restituito da Poste in bytes.
+    Poste può restituire bytes, bytearray, lista di interi o stringa base64.
+    """
+
+    if value is None:
+        return b""
+
+    if isinstance(value, bytes):
+        return value
+
+    if isinstance(value, bytearray):
+        return bytes(value)
+
+    if isinstance(value, list):
+        try:
+            return bytes(value)
+        except Exception:
+            return b""
+
+    if isinstance(value, str):
+        try:
+            return base64.b64decode(value)
+        except Exception:
+            return value.encode("utf-8")
+
+    return b""
+
+
+@app.get("/dashboard/pratiche/raccomandata-test-ricevuta/{pratica_id}")
+def dashboard_raccomandata_test_ricevuta(pratica_id: str):
+    """
+    TEST Raccomandata H2H - RecuperaRicevutaAccettazione TEST.
+
+    Usa SOLO ambiente Poste TEST.
+
+    Fa:
+    - legge id_richiesta_test salvato nello step PreConferma TEST
+    - chiama RecuperaRicevutaAccettazione in TEST
+    - salva la ricevuta PDF in base64 dentro poste_response["raccomandata_test"]
+
+    NON cambia stato reale.
+    NON salva ricevuta produzione.
+    NON invia email.
+    NON usa produzione.
+    """
+
+    history = HistoryPlugin()
+
+    try:
+        # =====================================================
+        # 1. Carica pratica
+        # =====================================================
+
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_RICEVUTA_PRATICA_NON_TROVATA",
+                "pratica_id": pratica_id,
+                "error": "Pratica non trovata"
+            }
+
+        pratica = pratica_res.data
+
+        tipo_servizio = str(
+            pratica.get("tipo_servizio") or ""
+        ).upper().strip()
+
+        if tipo_servizio != "RACCOMANDATA":
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_RICEVUTA_SERVIZIO_NON_VALIDO",
+                "pratica_id": pratica_id,
+                "tipo_servizio": tipo_servizio,
+                "error": "Questo test è disponibile solo per Raccomandata"
+            }
+
+        # =====================================================
+        # 2. Legge dati TEST già salvati
+        # =====================================================
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        if not isinstance(poste_response, dict):
+            poste_response = {}
+
+        raccomandata_test = poste_response.get("raccomandata_test") or {}
+
+        if not isinstance(raccomandata_test, dict):
+            raccomandata_test = {}
+
+        id_richiesta_test = (
+            raccomandata_test.get("id_richiesta_test")
+            or raccomandata_test.get("preconferma_test", {}).get("id_richiesta_test")
+            or ""
+        )
+
+        numero_raccomandata_test = (
+            raccomandata_test.get("numero_raccomandata_test")
+            or raccomandata_test.get("preconferma_test", {}).get("numero_raccomandata_test")
+            or ""
+        )
+
+        if not id_richiesta_test:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_RICEVUTA_ID_RICHIESTA_MANCANTE",
+                "pratica_id": pratica_id,
+                "error": "Prima devi eseguire raccomandata-test-calcola e raccomandata-test-finalizza."
+            }
+
+        # =====================================================
+        # 3. Client Poste TEST
+        # =====================================================
+
+        client, service = poste_client_test(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        # =====================================================
+        # 4. RecuperaRicevutaAccettazione TEST
+        # =====================================================
+
+        try:
+            ricevuta_result = service.RecuperaRicevutaAccettazione(
+                IdRichiesta=id_richiesta_test
+            )
+        except TypeError:
+            ricevuta_result = service.RecuperaRicevutaAccettazione(
+                IDRichiesta=id_richiesta_test
+            )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        # =====================================================
+        # 5. Estrae contenuto ricevuta
+        # =====================================================
+
+        contenuto = getattr(ricevuta_result, "Contenuto", None)
+        estensione = str(getattr(ricevuta_result, "Estensione", "pdf") or "pdf")
+        data_accettazione = str(getattr(ricevuta_result, "DataAccettazione", "") or "")
+
+        ricevuta_bytes = _ecx_bytes_from_h2h_contenuto(contenuto)
+
+        if not ricevuta_bytes:
+            ricevuta_plain = make_json_safe(
+                zeep_to_plain(ricevuta_result)
+            )
+
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_RICEVUTA_CONTENUTO_MANCANTE",
+                "ambiente": "TEST",
+                "pratica_id": pratica_id,
+                "id_richiesta_test": id_richiesta_test,
+                "numero_raccomandata_test": numero_raccomandata_test,
+                "ricevuta_result": ricevuta_plain,
+                "xml_sent": xml_sent,
+                "xml_received": xml_received,
+                "error": "Poste TEST non ha restituito il contenuto della ricevuta."
+            }
+
+        ricevuta_base64 = base64.b64encode(ricevuta_bytes).decode("utf-8")
+        ricevuta_size = len(ricevuta_bytes)
+
+        ricevuta_plain = make_json_safe(
+            zeep_to_plain(ricevuta_result)
+        )
+
+        if isinstance(ricevuta_plain, dict) and "Contenuto" in ricevuta_plain:
+            ricevuta_plain["Contenuto"] = f"<{ricevuta_size} bytes>"
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # =====================================================
+        # 6. Salva SOLO ricevuta TEST dentro poste_response
+        # =====================================================
+
+        raccomandata_test["ricevuta_accettazione_test"] = {
+            "step": "RACCOMANDATA_TEST_RICEVUTA_ACCETTAZIONE",
+            "ambiente": "TEST",
+            "id_richiesta_test": id_richiesta_test,
+            "numero_raccomandata_test": numero_raccomandata_test,
+            "estensione": estensione,
+            "data_accettazione": data_accettazione,
+            "size_bytes": ricevuta_size,
+            "contenuto_base64": ricevuta_base64,
+            "ricevuta_result": ricevuta_plain,
+            "xml_sent": xml_sent,
+            "xml_received": xml_received,
+            "tested_at": now_iso
+        }
+
+        raccomandata_test["ultimo_step"] = "RACCOMANDATA_TEST_RICEVUTA_ACCETTAZIONE"
+        raccomandata_test["ricevuta_accettazione_test_presente"] = True
+        raccomandata_test["ricevuta_accettazione_test_size_bytes"] = ricevuta_size
+        raccomandata_test["ricevuta_accettazione_test_estensione"] = estensione
+        raccomandata_test["ricevuta_accettazione_test_data"] = data_accettazione
+
+        poste_response["raccomandata_test"] = raccomandata_test
+
+        supabase.table("pratiche").update({
+            "poste_response": poste_response,
+            "updated_at": now_iso
+        }).eq("id", pratica_id).execute()
+
+        return {
+            "success": True,
+            "step": "RACCOMANDATA_TEST_RICEVUTA_ACCETTAZIONE",
+            "ambiente": "TEST",
+            "pratica_id": pratica_id,
+            "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+            "id_richiesta_test": id_richiesta_test,
+            "numero_raccomandata_test": numero_raccomandata_test,
+            "estensione": estensione,
+            "data_accettazione": data_accettazione,
+            "size_bytes": ricevuta_size,
+            "open_pdf_url": f"/dashboard/pratiche/raccomandata-test-ricevuta-pdf/{pratica_id}",
+            "message": "Ricevuta Accettazione TEST recuperata e salvata. Nessuna email, nessun cambio stato reale, nessuna produzione."
+        }
+
+    except Exception as e:
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        return {
+            "success": False,
+            "step": "ERRORE_RACCOMANDATA_TEST_RICEVUTA_ACCETTAZIONE",
+            "ambiente": "TEST",
+            "pratica_id": pratica_id,
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+
+@app.get("/dashboard/pratiche/raccomandata-test-ricevuta-pdf/{pratica_id}")
+def dashboard_raccomandata_test_ricevuta_pdf(pratica_id: str):
+    """
+    Apre/scarica la ricevuta accettazione TEST salvata.
+    NON usa Poste.
+    NON usa produzione.
+    """
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_RICEVUTA_PDF_PRATICA_NON_TROVATA",
+                "pratica_id": pratica_id,
+                "error": "Pratica non trovata"
+            }
+
+        pratica = pratica_res.data
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        if not isinstance(poste_response, dict):
+            poste_response = {}
+
+        raccomandata_test = poste_response.get("raccomandata_test") or {}
+
+        ricevuta_test = raccomandata_test.get("ricevuta_accettazione_test") or {}
+
+        contenuto_base64 = ricevuta_test.get("contenuto_base64") or ""
+
+        if not contenuto_base64:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_RICEVUTA_PDF_NON_PRESENTE",
+                "pratica_id": pratica_id,
+                "error": "Ricevuta TEST non presente. Prima esegui raccomandata-test-ricevuta."
+            }
+
+        pdf_bytes = base64.b64decode(contenuto_base64)
+
+        filename = f"ricevuta-raccomandata-test-{pratica_id}.pdf"
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"'
+            }
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_RACCOMANDATA_TEST_RICEVUTA_PDF",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
         
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
