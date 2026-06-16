@@ -145,6 +145,35 @@ POSTE_H2H_SERVICE_URL = "https://cewebservices.posteitaliane.it/ROLGC/RolService
 POSTE_H2H_BINDING = "{http://ComunicazioniElettroniche.ROL.WS}BasicHttpBinding_ROLServiceSoap"
 
 # ---------------------------------------------------------
+# POSTE H2H RACCOMANDATA - AMBIENTE TEST SEPARATO
+# ---------------------------------------------------------
+
+POSTE_H2H_ROL_WSDL_TEST = os.getenv(
+    "POSTE_H2H_ROL_WSDL_TEST",
+    ""
+).strip()
+
+POSTE_H2H_SERVICE_URL_TEST = os.getenv(
+    "POSTE_H2H_SERVICE_URL_TEST",
+    ""
+).strip()
+
+POSTE_H2H_USERID_TEST = os.getenv(
+    "POSTE_H2H_USERID_TEST",
+    ""
+).strip()
+
+POSTE_H2H_PASSWORD_TEST = os.getenv(
+    "POSTE_H2H_PASSWORD_TEST",
+    ""
+).strip()
+
+POSTE_H2H_CONTRACT_ID_TEST = os.getenv(
+    "POSTE_H2H_CONTRACT_ID_TEST",
+    ""
+).strip()
+
+# ---------------------------------------------------------
 # POSTE H2H TELEGRAMMA - TOL
 # ---------------------------------------------------------
 
@@ -600,6 +629,67 @@ def poste_client(timeout=60, extra_plugins=None):
 
     return client, service
 
+class ForcePosteAddressPluginTest(Plugin):
+    def egress(self, envelope, http_headers, operation, binding_options):
+        for el in envelope.xpath("//*[local-name()='To']"):
+            el.text = POSTE_H2H_SERVICE_URL_TEST
+
+        return envelope, http_headers
+
+
+def poste_client_test(timeout=60, extra_plugins=None):
+    """
+    Client Poste H2H Raccomandata in ambiente TEST.
+    Usa SOLO variabili *_TEST.
+    NON tocca produzione.
+    """
+
+    if not POSTE_H2H_ROL_WSDL_TEST:
+        raise RuntimeError("POSTE_H2H_ROL_WSDL_TEST mancante")
+
+    if not POSTE_H2H_SERVICE_URL_TEST:
+        raise RuntimeError("POSTE_H2H_SERVICE_URL_TEST mancante")
+
+    if not POSTE_H2H_USERID_TEST:
+        raise RuntimeError("POSTE_H2H_USERID_TEST mancante")
+
+    if not POSTE_H2H_PASSWORD_TEST:
+        raise RuntimeError("POSTE_H2H_PASSWORD_TEST mancante")
+
+    if not POSTE_H2H_CONTRACT_ID_TEST:
+        raise RuntimeError("POSTE_H2H_CONTRACT_ID_TEST mancante")
+
+    session = Session()
+    session.auth = HTTPBasicAuth(
+        POSTE_H2H_USERID_TEST,
+        POSTE_H2H_PASSWORD_TEST
+    )
+    session.verify = False
+
+    transport = Transport(session=session, timeout=timeout)
+
+    plugins = [
+        ForcePosteAddressPluginTest()
+    ]
+
+    if extra_plugins:
+        plugins.extend(extra_plugins)
+
+    client = Client(
+        wsdl=POSTE_H2H_ROL_WSDL_TEST,
+        transport=transport,
+        plugins=plugins
+    )
+
+    service = client.create_service(
+        POSTE_H2H_BINDING,
+        POSTE_H2H_SERVICE_URL_TEST
+    )
+
+    service._binding_options["address"] = POSTE_H2H_SERVICE_URL_TEST
+
+    return client, service
+
 def telegramma_client(timeout=60, extra_plugins=None):
     session = Session()
     session.auth = HTTPBasicAuth(
@@ -860,6 +950,48 @@ def test_poste_h2h():
 
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+@app.get("/poste/h2h/test-raccomandata/check")
+def test_raccomandata_h2h_check():
+    """
+    Verifica ambiente TEST Raccomandata H2H.
+    NON invia raccomandate.
+    NON genera costi.
+    NON finalizza nulla.
+    """
+
+    try:
+        client, service = poste_client_test(timeout=30)
+
+        operations = []
+
+        for srv in client.wsdl.services.values():
+            for port in srv.ports.values():
+                operations.extend(list(port.binding._operations.keys()))
+
+        return {
+            "success": True,
+            "mode": "RACCOMANDATA_TEST",
+            "wsdl_test": POSTE_H2H_ROL_WSDL_TEST,
+            "service_url_test": POSTE_H2H_SERVICE_URL_TEST,
+            "userid_test_present": bool(POSTE_H2H_USERID_TEST),
+            "password_test_present": bool(POSTE_H2H_PASSWORD_TEST),
+            "contract_id_test_present": bool(POSTE_H2H_CONTRACT_ID_TEST),
+            "operations": operations
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "mode": "RACCOMANDATA_TEST",
+            "step": "ERRORE_CHECK_RACCOMANDATA_TEST",
+            "error": str(e),
+            "wsdl_test": POSTE_H2H_ROL_WSDL_TEST,
+            "service_url_test": POSTE_H2H_SERVICE_URL_TEST,
+            "userid_test_present": bool(POSTE_H2H_USERID_TEST),
+            "password_test_present": bool(POSTE_H2H_PASSWORD_TEST),
+            "contract_id_test_present": bool(POSTE_H2H_CONTRACT_ID_TEST)
+        }
 
 @app.get("/poste/h2h/telegramma/operations")
 def telegramma_operations():
