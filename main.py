@@ -13488,7 +13488,7 @@ def dashboard_raccomandata_test_stato_documento(pratica_id: str):
 
         try:
             stato_result = service.RecuperaStatoIdRichiesta(
-                IDRichiesta=id_richiesta_test
+                IdRichiesta=id_richiesta_test
             )
 
             stato_plain = make_json_safe(
