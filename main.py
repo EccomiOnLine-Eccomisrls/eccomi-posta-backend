@@ -14361,8 +14361,8 @@ def dashboard_pratiche(stato: str = None):
                 </span>
             """
 
-        elif stato_pratica in [“RICEVUTO_PAGATO”, “IN_LAVORAZIONE”] and h2h_order_id:
-        direct_button_html = “”
+            elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
+                direct_button_html = ""
 
                 if POSTE_INVIO_MODE == "auto" and POSTE_INVIO_DIRETTO_ENABLED:
                     direct_button_html = (
