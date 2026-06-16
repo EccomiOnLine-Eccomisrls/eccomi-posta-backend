@@ -12760,7 +12760,7 @@ def dashboard_raccomandata_test_finalizza(pratica_id: str):
             "xml_sent": xml_sent,
             "xml_received": xml_received
         }
-
+        
 def _ecx_bytes_from_h2h_contenuto(value):
     """
     Converte il campo Contenuto restituito da Poste in bytes.
@@ -12783,12 +12783,50 @@ def _ecx_bytes_from_h2h_contenuto(value):
             return b""
 
     if isinstance(value, str):
+        clean_value = value.strip()
+
+        if not clean_value:
+            return b""
+
+        # Se è già un PDF testuale
+        if clean_value.startswith("%PDF"):
+            return clean_value.encode("utf-8")
+
+        # Prova base64
         try:
-            return base64.b64decode(value)
+            return base64.b64decode(clean_value, validate=False)
         except Exception:
-            return value.encode("utf-8")
+            return clean_value.encode("utf-8")
 
     return b""
+
+
+def _ecx_find_first_value_by_keys(obj, keys):
+    """
+    Cerca in modo ricorsivo il primo valore utile in un dict/lista
+    usando una lista di chiavi possibili.
+    """
+
+    if obj is None:
+        return None
+
+    if isinstance(obj, dict):
+        for k in keys:
+            if k in obj and obj.get(k) not in [None, ""]:
+                return obj.get(k)
+
+        for value in obj.values():
+            found = _ecx_find_first_value_by_keys(value, keys)
+            if found not in [None, ""]:
+                return found
+
+    if isinstance(obj, list):
+        for item in obj:
+            found = _ecx_find_first_value_by_keys(item, keys)
+            if found not in [None, ""]:
+                return found
+
+    return None
 
 
 @app.get("/dashboard/pratiche/raccomandata-test-ricevuta/{pratica_id}")
@@ -12799,8 +12837,9 @@ def dashboard_raccomandata_test_ricevuta(pratica_id: str):
     Usa SOLO ambiente Poste TEST.
 
     Fa:
-    - legge id_richiesta_test salvato nello step PreConferma TEST
+    - legge id_richiesta_test / id_ricevuta_test salvati nello step PreConferma TEST
     - chiama RecuperaRicevutaAccettazione in TEST
+    - verifica che il contenuto sia un PDF reale
     - salva la ricevuta PDF in base64 dentro poste_response["raccomandata_test"]
 
     NON cambia stato reale.
@@ -12865,15 +12904,26 @@ def dashboard_raccomandata_test_ricevuta(pratica_id: str):
         if not isinstance(raccomandata_test, dict):
             raccomandata_test = {}
 
+        preconferma_test = raccomandata_test.get("preconferma_test") or {}
+
+        if not isinstance(preconferma_test, dict):
+            preconferma_test = {}
+
         id_richiesta_test = (
             raccomandata_test.get("id_richiesta_test")
-            or raccomandata_test.get("preconferma_test", {}).get("id_richiesta_test")
+            or preconferma_test.get("id_richiesta_test")
             or ""
         )
 
         numero_raccomandata_test = (
             raccomandata_test.get("numero_raccomandata_test")
-            or raccomandata_test.get("preconferma_test", {}).get("numero_raccomandata_test")
+            or preconferma_test.get("numero_raccomandata_test")
+            or ""
+        )
+
+        id_ricevuta_test = (
+            raccomandata_test.get("id_ricevuta_test")
+            or preconferma_test.get("id_ricevuta_test")
             or ""
         )
 
@@ -12896,16 +12946,95 @@ def dashboard_raccomandata_test_ricevuta(pratica_id: str):
 
         # =====================================================
         # 4. RecuperaRicevutaAccettazione TEST
+        #    Proviamo più firme perché Poste può essere sensibile
+        #    al nome esatto del parametro.
         # =====================================================
 
-        try:
-            ricevuta_result = service.RecuperaRicevutaAccettazione(
-                IdRichiesta=id_richiesta_test
-            )
-        except TypeError:
-            ricevuta_result = service.RecuperaRicevutaAccettazione(
-                IDRichiesta=id_richiesta_test
-            )
+        ricevuta_result = None
+        ultimo_errore = None
+        tentativi = []
+
+        possible_calls = []
+
+        if id_ricevuta_test:
+            possible_calls.append({
+                "label": "IdRicevuta",
+                "kwargs": {
+                    "IdRicevuta": id_ricevuta_test
+                }
+            })
+
+            possible_calls.append({
+                "label": "IDRicevuta",
+                "kwargs": {
+                    "IDRicevuta": id_ricevuta_test
+                }
+            })
+
+            possible_calls.append({
+                "label": "IdRichiesta + IdRicevuta",
+                "kwargs": {
+                    "IdRichiesta": id_richiesta_test,
+                    "IdRicevuta": id_ricevuta_test
+                }
+            })
+
+            possible_calls.append({
+                "label": "IDRichiesta + IDRicevuta",
+                "kwargs": {
+                    "IDRichiesta": id_richiesta_test,
+                    "IDRicevuta": id_ricevuta_test
+                }
+            })
+
+        possible_calls.append({
+            "label": "IdRichiesta",
+            "kwargs": {
+                "IdRichiesta": id_richiesta_test
+            }
+        })
+
+        possible_calls.append({
+            "label": "IDRichiesta",
+            "kwargs": {
+                "IDRichiesta": id_richiesta_test
+            }
+        })
+
+        for call in possible_calls:
+            try:
+                ricevuta_result = service.RecuperaRicevutaAccettazione(
+                    **call["kwargs"]
+                )
+
+                tentativi.append({
+                    "label": call["label"],
+                    "success": True
+                })
+
+                break
+
+            except Exception as ex:
+                ultimo_errore = str(ex)
+
+                tentativi.append({
+                    "label": call["label"],
+                    "success": False,
+                    "error": str(ex)
+                })
+
+        if ricevuta_result is None:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_RICEVUTA_CHIAMATA_KO",
+                "ambiente": "TEST",
+                "pratica_id": pratica_id,
+                "id_richiesta_test": id_richiesta_test,
+                "id_ricevuta_test": id_ricevuta_test,
+                "numero_raccomandata_test": numero_raccomandata_test,
+                "tentativi": tentativi,
+                "error": ultimo_errore or "RecuperaRicevutaAccettazione non riuscita"
+            }
 
         xml_sent = None
         xml_received = None
@@ -12932,16 +13061,104 @@ def dashboard_raccomandata_test_ricevuta(pratica_id: str):
         # 5. Estrae contenuto ricevuta
         # =====================================================
 
+        ricevuta_plain = make_json_safe(
+            zeep_to_plain(ricevuta_result)
+        )
+
         contenuto = getattr(ricevuta_result, "Contenuto", None)
-        estensione = str(getattr(ricevuta_result, "Estensione", "pdf") or "pdf")
-        data_accettazione = str(getattr(ricevuta_result, "DataAccettazione", "") or "")
+
+        if contenuto is None:
+            contenuto = _ecx_find_first_value_by_keys(
+                ricevuta_plain,
+                [
+                    "Contenuto",
+                    "contenuto",
+                    "Content",
+                    "content",
+                    "File",
+                    "file",
+                    "Documento",
+                    "documento",
+                    "Ricevuta",
+                    "ricevuta"
+                ]
+            )
+
+        estensione = str(
+            getattr(ricevuta_result, "Estensione", "")
+            or _ecx_find_first_value_by_keys(
+                ricevuta_plain,
+                ["Estensione", "estensione", "Extension", "extension"]
+            )
+            or "pdf"
+        )
+
+        data_accettazione = str(
+            getattr(ricevuta_result, "DataAccettazione", "")
+            or _ecx_find_first_value_by_keys(
+                ricevuta_plain,
+                ["DataAccettazione", "dataAccettazione", "Data", "data"]
+            )
+            or ""
+        )
 
         ricevuta_bytes = _ecx_bytes_from_h2h_contenuto(contenuto)
 
-        if not ricevuta_bytes:
-            ricevuta_plain = make_json_safe(
-                zeep_to_plain(ricevuta_result)
+        ricevuta_size = len(ricevuta_bytes)
+
+        content_preview_text = ""
+
+        try:
+            content_preview_text = ricevuta_bytes[:160].decode(
+                "utf-8",
+                errors="replace"
             )
+        except Exception:
+            content_preview_text = ""
+
+        content_base64_preview = ""
+
+        try:
+            content_base64_preview = base64.b64encode(
+                ricevuta_bytes[:160]
+            ).decode("utf-8")
+        except Exception:
+            content_base64_preview = ""
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # =====================================================
+        # 6. Se manca contenuto
+        # =====================================================
+
+        if not ricevuta_bytes:
+            if isinstance(ricevuta_plain, dict) and "Contenuto" in ricevuta_plain:
+                ricevuta_plain["Contenuto"] = "<vuoto>"
+
+            raccomandata_test["ricevuta_accettazione_test_debug"] = {
+                "step": "RACCOMANDATA_TEST_RICEVUTA_CONTENUTO_MANCANTE",
+                "ambiente": "TEST",
+                "id_richiesta_test": id_richiesta_test,
+                "id_ricevuta_test": id_ricevuta_test,
+                "numero_raccomandata_test": numero_raccomandata_test,
+                "estensione": estensione,
+                "data_accettazione": data_accettazione,
+                "tentativi": tentativi,
+                "ricevuta_result": ricevuta_plain,
+                "xml_sent": xml_sent,
+                "xml_received": xml_received,
+                "tested_at": now_iso
+            }
+
+            raccomandata_test["ultimo_step"] = "RACCOMANDATA_TEST_RICEVUTA_CONTENUTO_MANCANTE"
+            raccomandata_test["ricevuta_accettazione_test_presente"] = False
+
+            poste_response["raccomandata_test"] = raccomandata_test
+
+            supabase.table("pratiche").update({
+                "poste_response": poste_response,
+                "updated_at": now_iso
+            }).eq("id", pratica_id).execute()
 
             return {
                 "success": False,
@@ -12949,38 +13166,88 @@ def dashboard_raccomandata_test_ricevuta(pratica_id: str):
                 "ambiente": "TEST",
                 "pratica_id": pratica_id,
                 "id_richiesta_test": id_richiesta_test,
+                "id_ricevuta_test": id_ricevuta_test,
                 "numero_raccomandata_test": numero_raccomandata_test,
+                "tentativi": tentativi,
+                "message": "Poste TEST ha risposto, ma non ha restituito contenuto ricevuta."
+            }
+
+        # =====================================================
+        # 7. Validazione PDF reale
+        # =====================================================
+
+        is_pdf = ricevuta_bytes.startswith(b"%PDF")
+
+        if str(estensione).lower().strip() == "pdf" and not is_pdf:
+            if isinstance(ricevuta_plain, dict) and "Contenuto" in ricevuta_plain:
+                ricevuta_plain["Contenuto"] = f"<{ricevuta_size} bytes non PDF>"
+
+            raccomandata_test["ricevuta_accettazione_test_debug"] = {
+                "step": "RACCOMANDATA_TEST_RICEVUTA_NON_PDF",
+                "ambiente": "TEST",
+                "id_richiesta_test": id_richiesta_test,
+                "id_ricevuta_test": id_ricevuta_test,
+                "numero_raccomandata_test": numero_raccomandata_test,
+                "estensione": estensione,
+                "data_accettazione": data_accettazione,
+                "size_bytes": ricevuta_size,
+                "content_preview_text": content_preview_text,
+                "content_base64_preview": content_base64_preview,
+                "tentativi": tentativi,
                 "ricevuta_result": ricevuta_plain,
                 "xml_sent": xml_sent,
                 "xml_received": xml_received,
-                "error": "Poste TEST non ha restituito il contenuto della ricevuta."
+                "tested_at": now_iso
             }
 
-        ricevuta_base64 = base64.b64encode(ricevuta_bytes).decode("utf-8")
-        ricevuta_size = len(ricevuta_bytes)
+            raccomandata_test["ultimo_step"] = "RACCOMANDATA_TEST_RICEVUTA_NON_PDF"
+            raccomandata_test["ricevuta_accettazione_test_presente"] = False
+            raccomandata_test["ricevuta_accettazione_test_size_bytes"] = ricevuta_size
 
-        ricevuta_plain = make_json_safe(
-            zeep_to_plain(ricevuta_result)
-        )
+            poste_response["raccomandata_test"] = raccomandata_test
+
+            supabase.table("pratiche").update({
+                "poste_response": poste_response,
+                "updated_at": now_iso
+            }).eq("id", pratica_id).execute()
+
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_RICEVUTA_NON_PDF",
+                "ambiente": "TEST",
+                "pratica_id": pratica_id,
+                "id_richiesta_test": id_richiesta_test,
+                "id_ricevuta_test": id_ricevuta_test,
+                "numero_raccomandata_test": numero_raccomandata_test,
+                "estensione": estensione,
+                "data_accettazione": data_accettazione,
+                "size_bytes": ricevuta_size,
+                "content_preview_text": content_preview_text,
+                "content_base64_preview": content_base64_preview,
+                "tentativi": tentativi,
+                "message": "Poste TEST ha risposto, ma il contenuto ricevuto non è un PDF valido."
+            }
+
+        # =====================================================
+        # 8. Salva ricevuta TEST valida
+        # =====================================================
+
+        ricevuta_base64 = base64.b64encode(ricevuta_bytes).decode("utf-8")
 
         if isinstance(ricevuta_plain, dict) and "Contenuto" in ricevuta_plain:
             ricevuta_plain["Contenuto"] = f"<{ricevuta_size} bytes>"
-
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-
-        # =====================================================
-        # 6. Salva SOLO ricevuta TEST dentro poste_response
-        # =====================================================
 
         raccomandata_test["ricevuta_accettazione_test"] = {
             "step": "RACCOMANDATA_TEST_RICEVUTA_ACCETTAZIONE",
             "ambiente": "TEST",
             "id_richiesta_test": id_richiesta_test,
+            "id_ricevuta_test": id_ricevuta_test,
             "numero_raccomandata_test": numero_raccomandata_test,
             "estensione": estensione,
             "data_accettazione": data_accettazione,
             "size_bytes": ricevuta_size,
             "contenuto_base64": ricevuta_base64,
+            "tentativi": tentativi,
             "ricevuta_result": ricevuta_plain,
             "xml_sent": xml_sent,
             "xml_received": xml_received,
@@ -13007,6 +13274,7 @@ def dashboard_raccomandata_test_ricevuta(pratica_id: str):
             "pratica_id": pratica_id,
             "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
             "id_richiesta_test": id_richiesta_test,
+            "id_ricevuta_test": id_ricevuta_test,
             "numero_raccomandata_test": numero_raccomandata_test,
             "estensione": estensione,
             "data_accettazione": data_accettazione,
@@ -13100,6 +13368,15 @@ def dashboard_raccomandata_test_ricevuta_pdf(pratica_id: str):
 
         pdf_bytes = base64.b64decode(contenuto_base64)
 
+        if not pdf_bytes.startswith(b"%PDF"):
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_RICEVUTA_PDF_NON_VALIDO",
+                "pratica_id": pratica_id,
+                "size_bytes": len(pdf_bytes),
+                "error": "Il contenuto salvato non è un PDF valido."
+            }
+
         filename = f"ricevuta-raccomandata-test-{pratica_id}.pdf"
 
         return Response(
@@ -13117,7 +13394,6 @@ def dashboard_raccomandata_test_ricevuta_pdf(pratica_id: str):
             "pratica_id": pratica_id,
             "error": str(e)
         }
-
         
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
