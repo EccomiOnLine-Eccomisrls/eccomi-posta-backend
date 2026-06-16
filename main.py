@@ -6416,34 +6416,34 @@ def invia_email_cliente_raccomandata(
 @app.get("/poste/h2h/finalizza/{order_id}")
 def confirm_poste_order(order_id: str):
 
-history = HistoryPlugin()
+    history = HistoryPlugin()
 
-try:
-    poste_invio_mode = os.getenv("POSTE_INVIO_MODE", "manual").strip().lower()
+    try:
+        poste_invio_mode = os.getenv("POSTE_INVIO_MODE", "manual").strip().lower()
 
-    if poste_invio_mode == "disabled":
-        return {
-            "success": False,
-            "blocked": True,
-            "step": "POSTE_FINALIZZA_DISABILITATO",
-            "order_id": order_id,
-            "error": "Finalizzazione Poste produzione disabilitata da POSTE_INVIO_MODE."
-        }
+        if poste_invio_mode == "disabled":
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "POSTE_FINALIZZA_DISABILITATO",
+                "order_id": order_id,
+                "error": "Finalizzazione Poste produzione disabilitata da POSTE_INVIO_MODE."
+            }
 
-    if poste_invio_mode not in ["manual", "auto"]:
-        return {
-            "success": False,
-            "blocked": True,
-            "step": "POSTE_INVIO_MODE_NON_VALIDO",
-            "order_id": order_id,
-            "mode": poste_invio_mode,
-            "error": "POSTE_INVIO_MODE non valido. Valori ammessi: manual, auto, disabled."
-        }
+        if poste_invio_mode not in ["manual", "auto"]:
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "POSTE_INVIO_MODE_NON_VALIDO",
+                "order_id": order_id,
+                "mode": poste_invio_mode,
+                "error": "POSTE_INVIO_MODE non valido. Valori ammessi: manual, auto, disabled."
+            }
 
-    client, service = poste_client(
-        timeout=120,
-        extra_plugins=[history]
-    )
+        client, service = poste_client(
+            timeout=120,
+            extra_plugins=[history]
+        )
 
         ordine_res = supabase.table("poste_h2h_orders") \
             .select("*") \
@@ -12062,6 +12062,27 @@ def dashboard_invia_diretto_poste(pratica_id: str):
     """
 
     try:
+        poste_invio_mode = os.getenv("POSTE_INVIO_MODE", "manual").strip().lower()
+
+        direct_enabled = os.getenv(
+            "POSTE_INVIO_DIRETTO_ENABLED",
+            "false"
+        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+
+        if poste_invio_mode != "auto" or not direct_enabled:
+            print(
+                "INVIO DIRETTO POSTE BLOCCATO:",
+                {
+                    "pratica_id": pratica_id,
+                    "POSTE_INVIO_MODE": poste_invio_mode,
+                    "POSTE_INVIO_DIRETTO_ENABLED": direct_enabled
+                }
+            )
+
+            return RedirectResponse(
+                url="/dashboard/pratiche",
+                status_code=302
+            )
         h2h_order_id = resolve_h2h_order_id(pratica_id)
 
         if not h2h_order_id:
@@ -14340,21 +14361,33 @@ def dashboard_pratiche(stato: str = None):
                 </span>
             """
 
-        elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
-            invia_poste_html = (
-                '<a class="btn-action" '
-                f'href="/dashboard/pratiche/invia-poste/{pratica_id}" '
-                'onclick="return confirm(\'Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.\')">'
-                '💶 Calcola prezzo Poste'
-                '</a>'
+        elif stato_pratica in [“RICEVUTO_PAGATO”, “IN_LAVORAZIONE”] and h2h_order_id:
+        direct_button_html = “”
 
-                '<a class="btn-action btn-send" '
-                f'href="/dashboard/pratiche/invia-diretto-poste/{pratica_id}" '
-                'onclick="return confirm(\'ATTENZIONE: questa azione invia realmente la raccomandata a Poste e può generare costo H2H. Confermi di voler procedere?\')">'
-                '🚀 Invia diretto Poste'
-                '</a>'
-            )
-
+                if POSTE_INVIO_MODE == "auto" and POSTE_INVIO_DIRETTO_ENABLED:
+                    direct_button_html = (
+                        '<a class="btn-action btn-send" '
+                        f'href="/dashboard/pratiche/invia-diretto-poste/{pratica_id}" '
+                        'onclick="return confirm(\'ATTENZIONE: questa azione calcola e FINALIZZA realmente la raccomandata a Poste. Può generare costo H2H. Confermi?\')">'
+                        '🚀 Invia diretto Poste'
+                        '</a>'
+                    )
+                else:
+                    direct_button_html = (
+                        '<span class="btn-action btn-disabled" '
+                        'title="Invio diretto disattivato: usare prima Calcola prezzo Poste, poi Finalizza Poste.">'
+                        '🚀 Diretto disattivato'
+                        '</span>'
+                    )
+                invia_poste_html = (
+                    '<a class="btn-action" '
+                    f'href="/dashboard/pratiche/invia-poste/{pratica_id}" '
+                    'onclick="return confirm(\'Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.\')">'
+                    '💶 Calcola prezzo Poste'
+                    '</a>'
+                    + direct_button_html
+                )
+                
         elif p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "PREZZATA_DA_CONFERMARE":
             invia_poste_html = f"""
                 {prezzo_poste_html}
