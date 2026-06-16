@@ -14360,33 +14360,34 @@ def dashboard_pratiche(stato: str = None):
                     🔒 Poste bloccato
                 </span>
             """
+        elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
+            direct_button_html = ""
 
-            elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
-                direct_button_html = ""
-
-                if POSTE_INVIO_MODE == "auto" and POSTE_INVIO_DIRETTO_ENABLED:
-                    direct_button_html = (
-                        '<a class="btn-action btn-send" '
-                        f'href="/dashboard/pratiche/invia-diretto-poste/{pratica_id}" '
-                        'onclick="return confirm(\'ATTENZIONE: questa azione calcola e FINALIZZA realmente la raccomandata a Poste. Può generare costo H2H. Confermi?\')">'
-                        '🚀 Invia diretto Poste'
-                        '</a>'
-                    )
-                else:
-                    direct_button_html = (
-                        '<span class="btn-action btn-disabled" '
-                        'title="Invio diretto disattivato: usare prima Calcola prezzo Poste, poi Finalizza Poste.">'
-                        '🚀 Diretto disattivato'
-                        '</span>'
-                    )
-                invia_poste_html = (
-                    '<a class="btn-action" '
-                    f'href="/dashboard/pratiche/invia-poste/{pratica_id}" '
-                    'onclick="return confirm(\'Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.\')">'
-                    '💶 Calcola prezzo Poste'
+            if POSTE_INVIO_MODE == "auto" and POSTE_INVIO_DIRETTO_ENABLED:
+                direct_button_html = (
+                    '<a class="btn-action btn-send" '
+                    f'href="/dashboard/pratiche/invia-diretto-poste/{pratica_id}" '
+                    'onclick="return confirm(\'ATTENZIONE: questa azione calcola e FINALIZZA realmente la raccomandata a Poste. Può generare costo H2H. Confermi?\')">'
+                    '🚀 Invia diretto Poste'
                     '</a>'
-                    + direct_button_html
                 )
+            else:
+                direct_button_html = (
+                    '<span class="btn-action btn-disabled" '
+                    'title="Invio diretto disattivato: usare prima Calcola prezzo Poste, poi Finalizza Poste.">'
+                    '🚀 Diretto disattivato'
+                    '</span>'
+                )
+
+            invia_poste_html = (
+                '<a class="btn-action" '
+                f'href="/dashboard/pratiche/invia-poste/{pratica_id}" '
+                'onclick="return confirm(\'Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.\')">'
+                '💶 Calcola prezzo Poste'
+                '</a>'
+            + direct_button_html
+        )
+        
                 
         elif p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "PREZZATA_DA_CONFERMARE":
             invia_poste_html = f"""
