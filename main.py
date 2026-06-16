@@ -13394,6 +13394,411 @@ def dashboard_raccomandata_test_ricevuta_pdf(pratica_id: str):
             "pratica_id": pratica_id,
             "error": str(e)
         }
+
+@app.get("/dashboard/pratiche/raccomandata-test-stato-documento/{pratica_id}")
+def dashboard_raccomandata_test_stato_documento(pratica_id: str):
+    """
+    TEST Raccomandata H2H - Stato + Documento Finale TEST.
+
+    Usa SOLO ambiente Poste TEST.
+
+    Fa:
+    - RecuperaStatoIdRichiesta TEST
+    - RecuperaDocumentoFinale TEST se presente numero_raccomandata_test
+
+    NON cambia stato reale.
+    NON invia email.
+    NON usa produzione.
+    """
+
+    history = HistoryPlugin()
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_STATO_DOC_PRATICA_NON_TROVATA",
+                "pratica_id": pratica_id,
+                "error": "Pratica non trovata"
+            }
+
+        pratica = pratica_res.data
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        if not isinstance(poste_response, dict):
+            poste_response = {}
+
+        raccomandata_test = poste_response.get("raccomandata_test") or {}
+
+        if not isinstance(raccomandata_test, dict):
+            raccomandata_test = {}
+
+        preconferma_test = raccomandata_test.get("preconferma_test") or {}
+
+        if not isinstance(preconferma_test, dict):
+            preconferma_test = {}
+
+        id_richiesta_test = (
+            raccomandata_test.get("id_richiesta_test")
+            or preconferma_test.get("id_richiesta_test")
+            or ""
+        )
+
+        numero_raccomandata_test = (
+            raccomandata_test.get("numero_raccomandata_test")
+            or preconferma_test.get("numero_raccomandata_test")
+            or ""
+        )
+
+        if not id_richiesta_test:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_STATO_DOC_ID_RICHIESTA_MANCANTE",
+                "pratica_id": pratica_id,
+                "error": "Manca id_richiesta_test. Esegui prima calcola e finalizza TEST."
+            }
+
+        client, service = poste_client_test(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # =====================================================
+        # 1. RecuperaStatoIdRichiesta TEST
+        # =====================================================
+
+        stato_result = None
+        stato_error = None
+        stato_plain = None
+
+        try:
+            stato_result = service.RecuperaStatoIdRichiesta(
+                IDRichiesta=id_richiesta_test
+            )
+
+            stato_plain = make_json_safe(
+                zeep_to_plain(stato_result)
+            )
+
+        except Exception as e:
+            stato_error = str(e)
+
+        xml_stato_sent = None
+        xml_stato_received = None
+
+        try:
+            xml_stato_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_stato_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        # =====================================================
+        # 2. RecuperaDocumentoFinale TEST
+        # =====================================================
+
+        documento_result = None
+        documento_plain = None
+        documento_error = None
+        documento_bytes = b""
+        documento_size = 0
+        documento_is_pdf = False
+        documento_estensione = "pdf"
+        documento_md5 = ""
+        documento_base64 = ""
+        documento_preview_text = ""
+        documento_tentativi = []
+
+        if numero_raccomandata_test:
+            possible_doc_calls = [
+                {
+                    "label": "NumeroRaccomandata",
+                    "kwargs": {
+                        "NumeroRaccomandata": numero_raccomandata_test
+                    }
+                },
+                {
+                    "label": "NumeroLettera",
+                    "kwargs": {
+                        "NumeroLettera": numero_raccomandata_test
+                    }
+                },
+                {
+                    "label": "Numero",
+                    "kwargs": {
+                        "Numero": numero_raccomandata_test
+                    }
+                },
+                {
+                    "label": "numeroRaccomandata",
+                    "kwargs": {
+                        "numeroRaccomandata": numero_raccomandata_test
+                    }
+                }
+            ]
+
+            for call in possible_doc_calls:
+                try:
+                    documento_result = service.RecuperaDocumentoFinale(
+                        **call["kwargs"]
+                    )
+
+                    documento_tentativi.append({
+                        "label": call["label"],
+                        "success": True
+                    })
+
+                    break
+
+                except Exception as ex:
+                    documento_error = str(ex)
+
+                    documento_tentativi.append({
+                        "label": call["label"],
+                        "success": False,
+                        "error": str(ex)
+                    })
+
+            if documento_result is not None:
+                documento_plain = make_json_safe(
+                    zeep_to_plain(documento_result)
+                )
+
+                documento_obj = getattr(documento_result, "Documento", None)
+
+                contenuto = None
+
+                if documento_obj is not None:
+                    contenuto = getattr(documento_obj, "Contenuto", None)
+                    documento_estensione = str(getattr(documento_obj, "Estensione", "") or "pdf")
+                    documento_md5 = str(getattr(documento_obj, "MD5", "") or "")
+
+                if contenuto is None:
+                    contenuto = _ecx_find_first_value_by_keys(
+                        documento_plain,
+                        [
+                            "Contenuto",
+                            "contenuto",
+                            "Content",
+                            "content",
+                            "Documento",
+                            "documento"
+                        ]
+                    )
+
+                documento_bytes = _ecx_bytes_from_h2h_contenuto(contenuto)
+                documento_size = len(documento_bytes)
+                documento_is_pdf = documento_bytes.startswith(b"%PDF")
+
+                try:
+                    documento_preview_text = documento_bytes[:160].decode(
+                        "utf-8",
+                        errors="replace"
+                    )
+                except Exception:
+                    documento_preview_text = ""
+
+                if documento_is_pdf:
+                    documento_base64 = base64.b64encode(documento_bytes).decode("utf-8")
+
+                    if isinstance(documento_plain, dict):
+                        # Evita di salvare il file intero duplicato dentro il plain.
+                        doc_plain_contenuto = _ecx_find_first_value_by_keys(
+                            documento_plain,
+                            ["Contenuto", "contenuto"]
+                        )
+
+                        if doc_plain_contenuto:
+                            documento_plain["DocumentoFinaleNote"] = f"Documento PDF presente: {documento_size} bytes"
+
+        # =====================================================
+        # 3. Salvataggio solo dati TEST
+        # =====================================================
+
+        raccomandata_test["stato_documento_test"] = {
+            "step": "RACCOMANDATA_TEST_STATO_DOCUMENTO",
+            "ambiente": "TEST",
+            "id_richiesta_test": id_richiesta_test,
+            "numero_raccomandata_test": numero_raccomandata_test,
+            "stato_result": stato_plain,
+            "stato_error": stato_error,
+            "xml_stato_sent": xml_stato_sent,
+            "xml_stato_received": xml_stato_received,
+            "documento_tentativi": documento_tentativi,
+            "documento_result": documento_plain,
+            "documento_error": documento_error,
+            "documento_size_bytes": documento_size,
+            "documento_is_pdf": documento_is_pdf,
+            "documento_estensione": documento_estensione,
+            "documento_md5": documento_md5,
+            "documento_preview_text": documento_preview_text,
+            "tested_at": now_iso
+        }
+
+        if documento_is_pdf:
+            raccomandata_test["documento_finale_test"] = {
+                "step": "RACCOMANDATA_TEST_DOCUMENTO_FINALE",
+                "ambiente": "TEST",
+                "numero_raccomandata_test": numero_raccomandata_test,
+                "estensione": documento_estensione,
+                "md5": documento_md5,
+                "size_bytes": documento_size,
+                "contenuto_base64": documento_base64,
+                "tested_at": now_iso
+            }
+
+            raccomandata_test["documento_finale_test_presente"] = True
+            raccomandata_test["documento_finale_test_size_bytes"] = documento_size
+        else:
+            raccomandata_test["documento_finale_test_presente"] = False
+            raccomandata_test["documento_finale_test_size_bytes"] = documento_size
+
+        raccomandata_test["ultimo_step"] = "RACCOMANDATA_TEST_STATO_DOCUMENTO"
+
+        poste_response["raccomandata_test"] = raccomandata_test
+
+        supabase.table("pratiche").update({
+            "poste_response": poste_response,
+            "updated_at": now_iso
+        }).eq("id", pratica_id).execute()
+
+        return {
+            "success": True,
+            "step": "RACCOMANDATA_TEST_STATO_DOCUMENTO",
+            "ambiente": "TEST",
+            "pratica_id": pratica_id,
+            "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+            "id_richiesta_test": id_richiesta_test,
+            "numero_raccomandata_test": numero_raccomandata_test,
+            "stato_result": stato_plain,
+            "stato_error": stato_error,
+            "documento_tentativi": documento_tentativi,
+            "documento_error": documento_error,
+            "documento_size_bytes": documento_size,
+            "documento_is_pdf": documento_is_pdf,
+            "documento_preview_text": documento_preview_text,
+            "open_documento_finale_test_url": (
+                f"/dashboard/pratiche/raccomandata-test-documento-finale-pdf/{pratica_id}"
+                if documento_is_pdf else None
+            ),
+            "message": "Stato e Documento Finale TEST verificati. Nessuna email, nessun cambio stato reale, nessuna produzione."
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_RACCOMANDATA_TEST_STATO_DOCUMENTO",
+            "ambiente": "TEST",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
+
+@app.get("/dashboard/pratiche/raccomandata-test-documento-finale-pdf/{pratica_id}")
+def dashboard_raccomandata_test_documento_finale_pdf(pratica_id: str):
+    """
+    Apre/scarica il Documento Finale TEST salvato.
+    NON usa Poste.
+    NON usa produzione.
+    """
+
+    try:
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_DOCUMENTO_FINALE_PDF_PRATICA_NON_TROVATA",
+                "pratica_id": pratica_id,
+                "error": "Pratica non trovata"
+            }
+
+        pratica = pratica_res.data
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        if not isinstance(poste_response, dict):
+            poste_response = {}
+
+        raccomandata_test = poste_response.get("raccomandata_test") or {}
+
+        documento_test = raccomandata_test.get("documento_finale_test") or {}
+
+        contenuto_base64 = documento_test.get("contenuto_base64") or ""
+
+        if not contenuto_base64:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_DOCUMENTO_FINALE_PDF_NON_PRESENTE",
+                "pratica_id": pratica_id,
+                "error": "Documento finale TEST non presente. Prima esegui raccomandata-test-stato-documento."
+            }
+
+        pdf_bytes = base64.b64decode(contenuto_base64)
+
+        if not pdf_bytes.startswith(b"%PDF"):
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_DOCUMENTO_FINALE_PDF_NON_VALIDO",
+                "pratica_id": pratica_id,
+                "size_bytes": len(pdf_bytes),
+                "error": "Il contenuto salvato non è un PDF valido."
+            }
+
+        filename = f"documento-finale-raccomandata-test-{pratica_id}.pdf"
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"'
+            }
+        )
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_RACCOMANDATA_TEST_DOCUMENTO_FINALE_PDF",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
         
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
