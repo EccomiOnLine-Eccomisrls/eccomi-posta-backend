@@ -6416,13 +6416,34 @@ def invia_email_cliente_raccomandata(
 @app.get("/poste/h2h/finalizza/{order_id}")
 def confirm_poste_order(order_id: str):
 
-    history = HistoryPlugin()
+history = HistoryPlugin()
 
-    try:
-        client, service = poste_client(
-            timeout=120,
-            extra_plugins=[history]
-        )
+try:
+    poste_invio_mode = os.getenv("POSTE_INVIO_MODE", "manual").strip().lower()
+
+    if poste_invio_mode == "disabled":
+        return {
+            "success": False,
+            "blocked": True,
+            "step": "POSTE_FINALIZZA_DISABILITATO",
+            "order_id": order_id,
+            "error": "Finalizzazione Poste produzione disabilitata da POSTE_INVIO_MODE."
+        }
+
+    if poste_invio_mode not in ["manual", "auto"]:
+        return {
+            "success": False,
+            "blocked": True,
+            "step": "POSTE_INVIO_MODE_NON_VALIDO",
+            "order_id": order_id,
+            "mode": poste_invio_mode,
+            "error": "POSTE_INVIO_MODE non valido. Valori ammessi: manual, auto, disabled."
+        }
+
+    client, service = poste_client(
+        timeout=120,
+        extra_plugins=[history]
+    )
 
         ordine_res = supabase.table("poste_h2h_orders") \
             .select("*") \
