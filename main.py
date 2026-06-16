@@ -12142,6 +12142,362 @@ def dashboard_invia_diretto_poste(pratica_id: str):
             url="/dashboard/pratiche?stato=ERRORE_POSTE",
             status_code=302
         )
+
+@app.get("/dashboard/pratiche/raccomandata-test-calcola/{pratica_id}")
+def dashboard_raccomandata_test_calcola(pratica_id: str):
+    """
+    TEST Raccomandata H2H separato.
+
+    Usa SOLO ambiente Poste TEST:
+    - POSTE_H2H_ROL_WSDL_TEST
+    - POSTE_H2H_SERVICE_URL_TEST
+    - POSTE_H2H_USERID_TEST
+    - POSTE_H2H_PASSWORD_TEST
+    - POSTE_H2H_CONTRACT_ID_TEST
+
+    Fa:
+    - Invio TEST
+    - Valorizza TEST
+
+    NON finalizza.
+    NON manda email.
+    NON cambia lo stato reale della pratica.
+    NON salva numero raccomandata reale.
+    NON usa produzione.
+    """
+
+    history = HistoryPlugin()
+
+    try:
+        # =====================================================
+        # 1. Carica pratica
+        # =====================================================
+
+        pratica_res = supabase.table("pratiche") \
+            .select("*") \
+            .eq("id", pratica_id) \
+            .single() \
+            .execute()
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_PRATICA_NON_TROVATA",
+                "pratica_id": pratica_id,
+                "error": "Pratica non trovata"
+            }
+
+        pratica = pratica_res.data
+
+        tipo_servizio = str(
+            pratica.get("tipo_servizio") or ""
+        ).upper().strip()
+
+        if tipo_servizio != "RACCOMANDATA":
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_SERVIZIO_NON_VALIDO",
+                "pratica_id": pratica_id,
+                "tipo_servizio": tipo_servizio,
+                "error": "Questo test è disponibile solo per Raccomandata"
+            }
+
+        pdf_url = pratica.get("pdf_url") or ""
+
+        if not pdf_url:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_PDF_MANCANTE",
+                "pratica_id": pratica_id,
+                "error": "PDF documento mancante"
+            }
+
+        # =====================================================
+        # 2. Scarica PDF documento
+        # =====================================================
+
+        response_pdf = requests.get(pdf_url, timeout=60)
+
+        if response_pdf.status_code != 200:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_DOWNLOAD_PDF_KO",
+                "pratica_id": pratica_id,
+                "status_code": response_pdf.status_code,
+                "error": "Impossibile scaricare PDF documento"
+            }
+
+        pdf_bytes = response_pdf.content
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        md5_pdf = hashlib.md5(pdf_bytes).hexdigest().upper()
+
+        # =====================================================
+        # 3. Client Poste TEST
+        # =====================================================
+
+        client, service = poste_client_test(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        NominativoType = client.get_type("ns1:Nominativo")
+        IndirizzoType = client.get_type("ns1:Indirizzo")
+        MittenteType = client.get_type("ns1:Mittente")
+        DestinatarioType = client.get_type("ns1:Destinatario")
+        DocumentoType = client.get_type("ns1:Documento")
+        RichiestaType = client.get_type("ns1:Richiesta")
+        DatiRicevutaType = client.get_type("ns0:DatiRicevuta")
+
+        has_rr = bool_from_any(pratica.get("ricevuta_ritorno"))
+
+        # =====================================================
+        # 4. Mittente / destinatario reali della pratica
+        # =====================================================
+
+        mittente_data = pratica.get("mittente") or {}
+        destinatario_data = pratica.get("destinatario") or {}
+
+        nom_mitt = build_nominativo_h2h_from_data(
+            mittente_data,
+            NominativoType,
+            IndirizzoType,
+            label="mittente"
+        )
+
+        mittente = MittenteType(
+            Nominativo=nom_mitt,
+            InviaStampa=False
+        )
+
+        dati_ricevuta = DatiRicevutaType(
+            Nominativo=nom_mitt
+        ) if has_rr else None
+
+        nom_dest = build_nominativo_h2h_from_data(
+            destinatario_data,
+            NominativoType,
+            IndirizzoType,
+            label="destinatario"
+        )
+
+        destinatario = DestinatarioType(
+            Nominativo=nom_dest
+        )
+
+        documento = DocumentoType(
+            Immagine=pdf_base64,
+            TipoDocumento="pdf",
+            MD5=md5_pdf
+        )
+
+        # =====================================================
+        # 5. Recupera ID richiesta TEST
+        # =====================================================
+
+        id_result = service.RecuperaIdRichiesta()
+
+        id_richiesta_test = (
+            getattr(id_result, "IDRichiesta", None)
+            or str(id_result)
+        )
+
+        # =====================================================
+        # 6. Invio TEST
+        # =====================================================
+
+        invio_result = service.Invio(
+            IDRichiesta=id_richiesta_test,
+            Cliente=POSTE_H2H_USERID_TEST,
+            CodiceContratto=POSTE_H2H_CONTRACT_ID_TEST,
+            ROLSubmit={
+                "Mittente": mittente,
+                **({"DatiRicevuta": dati_ricevuta} if has_rr else {}),
+                "Destinatari": {
+                    "Destinatario": [destinatario]
+                },
+                "NumeroDestinatari": 1,
+                "Documento": [documento],
+                "Opzioni": {
+                    "OpzionidiStampa": {
+                        "ResolutionX": 300,
+                        "ResolutionY": 300,
+                        "BW": True,
+                        "FronteRetro": False,
+                        "PageSize": "A4"
+                    },
+                    "SecurPaper": False,
+                    "DPM": False,
+                    "DataStampa": datetime.datetime.now().replace(microsecond=0),
+                    "InserisciMittente": True,
+                    "Archiviazione": False,
+                    "AnniArchiviazioneSpecified": False,
+                    "FirmaElettronica": False,
+                    "AnniArchiviazione": 0,
+                    "ArchiviazioneDocumenti": "NESSUNA"
+                },
+                "PrezzaturaSincrona": False,
+                "Nazionale": True,
+                "ForzaInvioDestinazioniValide": True
+            }
+        )
+
+        xml_invio_sent = None
+        xml_invio_received = None
+
+        try:
+            xml_invio_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_invio_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        guid_utente_test = getattr(invio_result, "GuidUtente", None)
+
+        if not guid_utente_test:
+            return {
+                "success": False,
+                "step": "RACCOMANDATA_TEST_GUID_MANCANTE",
+                "pratica_id": pratica_id,
+                "id_richiesta_test": id_richiesta_test,
+                "invio_result": str(invio_result),
+                "xml_invio_sent": xml_invio_sent,
+                "xml_invio_received": xml_invio_received,
+                "error": "GuidUtente non restituito da Poste TEST"
+            }
+
+        richiesta = RichiestaType(
+            IDRichiesta=id_richiesta_test,
+            GuidUtente=guid_utente_test
+        )
+
+        # =====================================================
+        # 7. Valorizza TEST
+        # =====================================================
+
+        valorizza_result = service.Valorizza(
+            Richieste=[richiesta]
+        )
+
+        costo_test = estrai_costo_valorizza(valorizza_result)
+
+        xml_valorizza_sent = None
+        xml_valorizza_received = None
+
+        try:
+            xml_valorizza_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_valorizza_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # =====================================================
+        # 8. Salva SOLO dati TEST dentro poste_response
+        #    Non cambia stato reale.
+        # =====================================================
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        if not isinstance(poste_response, dict):
+            poste_response = {}
+
+        poste_response["raccomandata_test"] = {
+            "step": "RACCOMANDATA_TEST_CALCOLA",
+            "ambiente": "TEST",
+            "service_url_test": POSTE_H2H_SERVICE_URL_TEST,
+            "wsdl_test": POSTE_H2H_ROL_WSDL_TEST,
+            "id_richiesta_test": id_richiesta_test,
+            "guid_utente_test": guid_utente_test,
+            "ricevuta_ritorno": has_rr,
+            "costo_test": costo_test,
+            "invio_result": str(invio_result),
+            "valorizza_result": str(valorizza_result),
+            "xml_invio_sent": xml_invio_sent,
+            "xml_invio_received": xml_invio_received,
+            "xml_valorizza_sent": xml_valorizza_sent,
+            "xml_valorizza_received": xml_valorizza_received,
+            "tested_at": now_iso
+        }
+
+        supabase.table("pratiche").update({
+            "poste_response": poste_response,
+            "updated_at": now_iso
+        }).eq("id", pratica_id).execute()
+
+        return {
+            "success": True,
+            "step": "RACCOMANDATA_TEST_CALCOLA",
+            "ambiente": "TEST",
+            "pratica_id": pratica_id,
+            "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+            "id_richiesta_test": id_richiesta_test,
+            "guid_utente_test": guid_utente_test,
+            "ricevuta_ritorno": has_rr,
+            "costo_test": costo_test,
+            "message": "Raccomandata TEST inviata tecnicamente e valorizzata. Nessuna finalizzazione, nessuna email, nessun cambio stato reale."
+        }
+
+    except Exception as e:
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        return {
+            "success": False,
+            "step": "ERRORE_RACCOMANDATA_TEST_CALCOLA",
+            "ambiente": "TEST",
+            "pratica_id": pratica_id,
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
         
 @app.get("/dashboard/pratiche", response_class=HTMLResponse)
 def dashboard_pratiche(stato: str = None):
