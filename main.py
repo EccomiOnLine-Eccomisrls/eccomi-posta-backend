@@ -12867,7 +12867,7 @@ def dashboard_raccomandata_test_auto(pratica_id: str):
             "error": str(e)
         })
 
-@app.get(”/dashboard/pratiche/raccomandata-test-auto-ui/{pratica_id}”, response_class=HTMLResponse)
+@app.get("/dashboard/pratiche/raccomandata-test-auto-ui/{pratica_id}", response_class=HTMLResponse)
 def dashboard_raccomandata_test_auto_ui(pratica_id: str):
 pratica_id_json = json.dumps(pratica_id)
 
