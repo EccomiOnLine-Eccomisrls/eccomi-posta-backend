@@ -12035,6 +12035,53 @@ async def shopify_raccomandata_order(request: Request):
                         "step": "RACCOMANDATA_TEST_AUTO_WEBHOOK_ERRORE",
                         "error": str(test_error)
                     }
+                try:
+                    pratica_refresh = supabase.table("pratiche") 
+                        .select("poste_response") 
+                        .eq("id", pratica_id) 
+                        .single() 
+                        .execute()
+
+                    poste_response_refresh = {}
+                
+                    if pratica_refresh.data:
+                        poste_response_refresh = pratica_refresh.data.get("poste_response") or {}
+                  
+                    if isinstance(poste_response_refresh, str):
+                        try:
+                            poste_response_refresh = json.loads(poste_response_refresh)
+                        except Exception:
+                            poste_response_refresh = {}
+                            
+                    if not isinstance(poste_response_refresh, dict):
+                        poste_response_refresh = {}
+                    
+                    raccomandata_test_refresh = poste_response_refresh.get("raccomandata_test") or {}
+               
+                    if not isinstance(raccomandata_test_refresh, dict):
+                        raccomandata_test_refresh = {}
+                   
+                    raccomandata_test_refresh["auto_test_webhook_result"] = ecx_clean_for_supabase(test_auto_result)
+                    raccomandata_test_refresh["auto_test_webhook_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                   
+                    if isinstance(test_auto_result, dict):
+                        raccomandata_test_refresh["auto_test_step"] = test_auto_result.get("step")
+                        raccomandata_test_refresh["auto_test_success"] = bool(test_auto_result.get("success"))
+                        raccomandata_test_refresh["auto_test_pending"] = bool(test_auto_result.get("pending"))
+                        
+                        if not test_auto_result.get("success") and not test_auto_result.get("pending"):
+                            raccomandata_test_refresh["auto_test_errore"] = True
+                            raccomandata_test_refresh["auto_test_error"] = test_auto_result.get("error") or test_auto_result.get("message") or "Test automatico non completato"
+                    
+                    poste_response_refresh["raccomandata_test"] = raccomandata_test_refresh
+                    
+                    supabase.table("pratiche").update({
+                        "poste_response": poste_response_refresh,
+                        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    }).eq("id", pratica_id).execute()
+                    
+                except Exception as save_test_error:
+                    print("ERRORE SALVATAGGIO RISULTATO TEST H2H WEBHOOK:", str(save_test_error))
 
             risultati.append({
                 "success": True,
