@@ -15125,20 +15125,27 @@ def dashboard_pratiche(stato: str = None):
                     poste_response_row = json.loads(poste_response_row)
                 except Exception:
                     poste_response_row = {}
+                    
             if not isinstance(poste_response_row, dict):
                 poste_response_row = {}
+                
             raccomandata_test_row = poste_response_row.get("raccomandata_test") or {}
+            
             if not isinstance(raccomandata_test_row, dict):
                 raccomandata_test_row = {}
+                
             test_pdf_ready = bool(
                 raccomandata_test_row.get("documento_finale_test_presente")
             )
+            
             test_auto_done = bool(
                 raccomandata_test_row.get("auto_test_completata")
             )
+            
             test_id_request = str(
                 raccomandata_test_row.get("id_richiesta_test") or ""
             ).strip()
+            
             test_auto_error = bool(
                 raccomandata_test_row.get("auto_test_errore")
             )
@@ -15150,13 +15157,28 @@ def dashboard_pratiche(stato: str = None):
             ).strip()
             test_h2h_badge_html = ""
             test_pdf_button_html = ""
+            test_status = ""
+            
             if test_pdf_ready:
+                test_status = "ok_pdf"
+
+            if not test_status and test_auto_done:
+                test_status = "ok_pdf_wait"
+                
+            if not test_status and (test_auto_error or "STOP" in test_auto_step or "ERRORE" in test_auto_step):
+                test_status = "error"
+
+            if not test_status and (test_id_request or test_auto_pending):
+                test_status = "pending"        
+                
+            if test_status == "ok_pdf":
                 test_h2h_badge_html = (
                     '<span class="btn-action" '
                     'style="background:#dcfce7;color:#166534;font-weight:800;">'
                     'Test H2H OK'
                     '</span>'
                 )
+
                 test_pdf_button_html = (
                     '<a class="btn-action" '
                     f'href="/dashboard/pratiche/raccomandata-test-documento-finale-pdf/{pratica_id}" '
@@ -15164,33 +15186,38 @@ def dashboard_pratiche(stato: str = None):
                     'PDF TEST'
                     '</a>'
                 )
-            elif test_auto_done:
+
+            if test_status == "ok_pdf_wait":
                 test_h2h_badge_html = (
                     '<span class="btn-action" '
                     'style="background:#dcfce7;color:#166534;font-weight:800;">'
                     'Test H2H OK'
                     '</span>'
                 )
-            test_pdf_button_html = (
-                '<span class="btn-action" '
-                'style="background:#e0f2fe;color:#075985;font-weight:800;">'
-                'PDF in attesa'
-                '</span>'
-            )
-            elif test_auto_error or "STOP" in test_auto_step or "ERRORE" in test_auto_step:
+
+                test_pdf_button_html = (
+                    '<span class="btn-action" '
+                    'style="background:#e0f2fe;color:#075985;font-weight:800;">'
+                    'PDF in attesa'
+                    '</span>'
+                )
+
+            if test_status == "error":
                 test_h2h_badge_html = (
                     '<span class="btn-action" '
                     'style="background:#fee2e2;color:#991b1b;font-weight:800;">'
                     'Test H2H errore'
                     '</span>'
                 )
-            elif test_id_request or test_auto_pending:
+                
+            if test_status == "pending":
                 test_h2h_badge_html = (
                     '<span class="btn-action" '
                     'style="background:#fef3c7;color:#92400e;font-weight:800;">'
                     'Test H2H pending'
                     '</span>'
                 )
+            
             test_auto_button_html = (
                 '<a class="btn-action" '
                 f'href="/dashboard/pratiche/raccomandata-test-auto-ui/{pratica_id}" '
@@ -15209,7 +15236,7 @@ def dashboard_pratiche(stato: str = None):
                     'onclick="return confirm(\'ATTENZIONE: questa azione calcola e FINALIZZA realmente la raccomandata a Poste. Puo generare costo H2H. Confermi?\')">'
                     'Invia diretto Poste'
                     '</a>'
-            )
+                )
             else:
                 direct_button_html = (
                     '<span class="btn-action btn-disabled" '
@@ -15217,6 +15244,7 @@ def dashboard_pratiche(stato: str = None):
                     'Diretto disattivato'
                     '</span>'
                 )
+            
             invia_poste_html = (
                 '<a class="btn-action" '
                 f'href="/dashboard/pratiche/invia-poste/{pratica_id}" '
