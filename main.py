@@ -15171,6 +15171,12 @@ def dashboard_pratiche(stato: str = None):
                     'Test H2H OK'
                     '</span>'
                 )
+            test_pdf_button_html = (
+                '<span class="btn-action" '
+                'style="background:#e0f2fe;color:#075985;font-weight:800;">'
+                'PDF in attesa'
+                '</span>'
+            )
             elif test_auto_error or "STOP" in test_auto_step or "ERRORE" in test_auto_step:
                 test_h2h_badge_html = (
                     '<span class="btn-action" '
