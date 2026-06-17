@@ -12681,7 +12681,13 @@ def dashboard_raccomandata_test_auto(pratica_id: str):
             finalizza_result.get("id_ordine_poste_test") or ""
         ).strip()
 
-        if not numero_test or id_ordine_poste_test in ["", "None", "none", "null"]:
+        costo_test_finale = finalizza_result.get("costo_test_finale")
+
+        if (
+            not numero_test
+            or id_ordine_poste_test in ["", "None", "none", "null"]
+            or costo_test_finale is None
+        ):
             return {
                 "success": False,
                 "pending": True,
@@ -12689,9 +12695,9 @@ def dashboard_raccomandata_test_auto(pratica_id: str):
                 "ambiente": "TEST",
                 "pratica_id": pratica_id,
                 "results": results,
+                "retry_url": f"/dashboard/pratiche/raccomandata-test-finalizza/{pratica_id}",
                 "message": "La pipeline TEST ha inviato la raccomandata, ma Poste non ha ancora restituito numero raccomandata/costo. Riprovare la finalizzazione TEST tra qualche minuto."
             }
-
 
         # =====================================================
         # 3. Stato + Documento finale TEST
