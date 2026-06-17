@@ -12036,8 +12036,7 @@ async def shopify_raccomandata_order(request: Request):
                         "error": str(test_error)
                     }
                 try:
-                    pratica_refresh = 
-                    supabase.table("pratiche").select("poste_response").eq("id",
+                    pratica_refresh = supabase.table("pratiche").select("poste_response").eq("id",
                     pratica_id).single().execute()
 
                     poste_response_refresh = {}
