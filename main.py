@@ -7935,7 +7935,7 @@ def build_nominativo_h2h_from_data(data, NominativoType, IndirizzoType, label="i
         Provincia=poste_provincia,
         Indirizzo=IndirizzoType(            
             DUG=poste_dug,
-            Toponimo=poste_toponino,
+            Toponimo=poste_toponimo,
             NumeroCivico=poste_civico
         ),
         TipoIndirizzo="NORMALE",
