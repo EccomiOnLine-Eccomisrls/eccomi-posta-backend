@@ -15032,7 +15032,7 @@ def dashboard_pratiche(stato: str = None):
                 </span>
             """
         elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
-        poste_response_row = p.get(“poste_response) or {}
+            poste_response_row = p.get("poste_response") or {}
 
             if isinstance(poste_response_row, str):
                 try:
