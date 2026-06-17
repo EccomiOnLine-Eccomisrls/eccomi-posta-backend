@@ -12867,6 +12867,338 @@ def dashboard_raccomandata_test_auto(pratica_id: str):
             "error": str(e)
         })
 
+@app.get(”/dashboard/pratiche/raccomandata-test-auto-ui/{pratica_id}”, response_class=HTMLResponse)
+def dashboard_raccomandata_test_auto_ui(pratica_id: str):
+pratica_id_json = json.dumps(pratica_id)
+
+html = f"""
+
+<!doctype html>
+
+<html lang="it">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Test automatico Raccomandata</title>
+    <style>
+        body {{
+            margin: 0;
+            padding: 24px;
+            background: #f4f6fb;
+            color: #111827;
+            font-family: Arial, Helvetica, sans-serif;
+        }}
+    .page {{
+        max-width: 900px;
+        margin: 0 auto;
+    }}
+    .top {{
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+    }}
+    h1 {{
+        margin: 0;
+        font-size: 30px;
+    }}
+    .back {{
+        padding: 11px 15px;
+        border-radius: 12px;
+        background: #eef3ff;
+        color: #1d4ed8;
+        text-decoration: none;
+        font-weight: 800;
+    }}
+    .card {{
+        background: white;
+        border-radius: 18px;
+        padding: 22px;
+        margin-bottom: 16px;
+        box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
+        border: 1px solid #e5e7eb;
+    }}
+    .loading {{
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }}
+    .spinner {{
+        width: 54px;
+        height: 54px;
+        border: 7px solid #dbeafe;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+    }}
+    @keyframes spin {{
+        to {{
+            transform: rotate(360deg);
+        }}
+    }}
+    .badge {{
+        display: inline-block;
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-weight: 800;
+        font-size: 14px;
+    }}
+    .ok {{
+        background: #dcfce7;
+        color: #166534;
+    }}
+    .pending {{
+        background: #fef3c7;
+        color: #92400e;
+    }}
+    .error {{
+        background: #fee2e2;
+        color: #991b1b;
+    }}
+    .grid {{
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+    }}
+    .item {{
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 13px;
+    }}
+    .label {{
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+    }}
+    .value {{
+        font-size: 15px;
+        font-weight: 800;
+        word-break: break-word;
+    }}
+    .actions {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+    }}
+    .btn {{
+        padding: 11px 15px;
+        border-radius: 12px;
+        border: 0;
+        font-weight: 800;
+        text-decoration: none;
+        cursor: pointer;
+        font-size: 15px;
+    }}
+    .btn-blue {{
+        background: #2563eb;
+        color: white;
+    }}
+    .btn-soft {{
+        background: #eef3ff;
+        color: #1d4ed8;
+    }}
+    pre {{
+        background: #0f172a;
+        color: #e5e7eb;
+        padding: 16px;
+        border-radius: 16px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 13px;
+    }}
+    @media (max-width: 720px) {{
+        body {{
+            padding: 14px;
+        }}
+        h1 {{
+            font-size: 24px;
+        }}
+        .grid {{
+            grid-template-columns: 1fr;
+        }}
+    }}
+</style>
+</head>
+<body>
+    <div class="page">
+        <div class="top">
+            <h1>Test automatico Raccomandata</h1>
+            <a class="back" href="/dashboard/pratiche">Torna alla dashboard</a>
+        </div>
+    <div class="card">
+        <div class="loading">
+            <div id="spinner" class="spinner"></div>
+            <div>
+                <div id="badge" class="badge pending">Avvio test</div>
+                <h2 id="title">Sto eseguendo la pipeline TEST</h2>
+                <p id="message">Nessuna produzione, nessuna email, nessun cambio stato reale.</p>
+            </div>
+        </div>
+    </div>
+    <div class="card" id="resultCard" style="display:none;">
+        <h2>Risultato</h2>
+        <div class="grid">
+            <div class="item">
+                <div class="label">Pratica</div>
+                <div class="value" id="praticaValue">-</div>
+            </div>
+            <div class="item">
+                <div class="label">Ordine</div>
+                <div class="value" id="ordineValue">-</div>
+            </div>
+            <div class="item">
+                <div class="label">Step</div>
+                <div class="value" id="stepValue">-</div>
+            </div>
+            <div class="item">
+                <div class="label">ID richiesta TEST</div>
+                <div class="value" id="idRichiestaValue">-</div>
+            </div>
+            <div class="item">
+                <div class="label">Guid TEST</div>
+                <div class="value" id="guidValue">-</div>
+            </div>
+            <div class="item">
+                <div class="label">Numero raccomandata TEST</div>
+                <div class="value" id="numeroValue">-</div>
+            </div>
+            <div class="item">
+                <div class="label">Costo TEST</div>
+                <div class="value" id="costoValue">-</div>
+            </div>
+            <div class="item">
+                <div class="label">Documento PDF</div>
+                <div class="value" id="pdfValue">-</div>
+            </div>
+        </div>
+        <div class="actions" id="actionsBox"></div>
+    </div>
+    <div class="card" id="jsonCard" style="display:none;">
+        <h2>Dettaglio tecnico</h2>
+        <pre id="jsonOutput"></pre>
+    </div>
+</div>
+<script>
+    const praticaId = {pratica_id_json};
+    const apiUrl = "/dashboard/pratiche/raccomandata-test-auto/" + encodeURIComponent(praticaId);
+    function setText(id, value) {{
+        const el = document.getElementById(id);
+        if (el) {{
+            el.textContent = value || "-";
+        }}
+    }}
+    function setStatus(typeClass, badgeText, titleText, messageText) {{
+        const badge = document.getElementById("badge");
+        const spinner = document.getElementById("spinner");
+        badge.className = "badge " + typeClass;
+        badge.textContent = badgeText;
+        document.getElementById("title").textContent = titleText;
+        document.getElementById("message").textContent = messageText || "";
+        if (typeClass !== "pending") {{
+            spinner.style.display = "none";
+        }}
+    }}
+    function addLink(label, href, className) {{
+        const box = document.getElementById("actionsBox");
+        const a = document.createElement("a");
+        a.href = href;
+        a.className = "btn " + className;
+        a.textContent = label;
+        box.appendChild(a);
+    }}
+    function addRetry() {{
+        const box = document.getElementById("actionsBox");
+        const btn = document.createElement("button");
+        btn.className = "btn btn-blue";
+        btn.textContent = "Riprova test";
+        btn.onclick = function () {{
+            window.location.reload();
+        }};
+        box.appendChild(btn);
+    }}
+    async function runTest() {{
+        setText("praticaValue", praticaId);
+        try {{
+            const res = await fetch(apiUrl, {{
+                method: "GET",
+                cache: "no-store"
+            }});
+            const data = await res.json();
+            document.getElementById("resultCard").style.display = "block";
+            document.getElementById("jsonCard").style.display = "block";
+            document.getElementById("jsonOutput").textContent = JSON.stringify(data, null, 2);
+            setText("ordineValue", data.order_name);
+            setText("stepValue", data.step);
+            setText("idRichiestaValue", data.id_richiesta_test);
+            setText("guidValue", data.guid_utente_test);
+            setText("numeroValue", data.numero_raccomandata_test);
+            setText("costoValue", data.costo_test_finale ? String(data.costo_test_finale) + " euro" : "-");
+            setText("pdfValue", data.documento_is_pdf ? "Presente" : "Non pronto");
+            const box = document.getElementById("actionsBox");
+            box.innerHTML = "";
+            addLink("Torna alla dashboard", "/dashboard/pratiche", "btn-soft");
+            addLink("Anteprima XML", "/poste/h2h/preview-xml/" + encodeURIComponent(praticaId), "btn-soft");
+            let pdfUrl = null;
+            if (data.results && data.results.stato_documento) {{
+                pdfUrl = data.results.stato_documento.open_documento_finale_test_url;
+            }}
+            if (pdfUrl) {{
+                addLink("Apri PDF TEST", pdfUrl, "btn-blue");
+            }}
+            if (data.success === true) {{
+                setStatus(
+                    "ok",
+                    "TEST completato",
+                    "Pipeline TEST completata",
+                    data.message || "Test completato. Produzione non toccata."
+                );
+            }} else if (data.pending === true) {{
+                setStatus(
+                    "pending",
+                    "In attesa",
+                    "Poste non e ancora pronta",
+                    data.message || "Riprova tra qualche minuto."
+                );
+                addRetry();
+            }} else {{
+                setStatus(
+                    "error",
+                    "Attenzione",
+                    "Test non completato",
+                    data.message || data.error || "Controllare il dettaglio tecnico."
+                );
+                addRetry();
+            }}
+        }} catch (err) {{
+            document.getElementById("resultCard").style.display = "block";
+            document.getElementById("jsonCard").style.display = "block";
+            document.getElementById("jsonOutput").textContent = String(err);
+            setStatus(
+                "error",
+                "Errore",
+                "Errore durante il test",
+                String(err)
+            );
+            addLink("Torna alla dashboard", "/dashboard/pratiche", "btn-soft");
+            addRetry();
+        }}
+    }}
+    window.addEventListener("load", runTest);
+</script>
+</body>
+</html>
+    """
+return HTMLResponse(content=html)
+
+
 @app.get("/dashboard/pratiche/raccomandata-test-finalizza/{pratica_id}")
 def dashboard_raccomandata_test_finalizza(pratica_id: str):
     """
@@ -14702,7 +15034,7 @@ def dashboard_pratiche(stato: str = None):
         elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
             test_auto_button_html = (
                 '<a class="btn-action" '
-                f'href="/dashboard/pratiche/raccomandata-test-auto/{pratica_id}" '
+                f'href="/dashboard/pratiche/raccomandata-test-auto-ui/{pratica_id}" '
                 'target="_blank" '
                 'onclick="return confirm(\'Eseguire il test automatico Raccomandata? Nessuna produzione, nessuna email, nessun cambio stato reale.\')">'
                 'Test automatico'
