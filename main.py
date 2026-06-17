@@ -15031,26 +15031,75 @@ def dashboard_pratiche(stato: str = None):
                     🔒 Poste bloccato
                 </span>
             """
-        elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
+        elif stato_pratica in [“RICEVUTO_PAGATO”, “IN_LAVORAZIONE”] and h2h_order_id:
+        poste_response_row = p.get(“poste_response”) or {}
+
+            if isinstance(poste_response_row, str):
+                try:
+                    poste_response_row = json.loads(poste_response_row)
+                except Exception:
+                    poste_response_row = {}
+            if not isinstance(poste_response_row, dict):
+                poste_response_row = {}
+            raccomandata_test_row = poste_response_row.get("raccomandata_test") or {}
+            if not isinstance(raccomandata_test_row, dict):
+                raccomandata_test_row = {}
+            test_pdf_ready = bool(
+                raccomandata_test_row.get("documento_finale_test_presente")
+            )
+            test_auto_done = bool(
+                raccomandata_test_row.get("auto_test_completata")
+            )
+            test_id_request = str(
+                raccomandata_test_row.get("id_richiesta_test") or ""
+            ).strip()
+            test_h2h_badge_html = ""
+            test_pdf_button_html = ""
+            if test_pdf_ready:
+                test_h2h_badge_html = (
+                    '<span class="btn-action" '
+                    'style="background:#dcfce7;color:#166534;font-weight:800;">'
+                    'Test H2H OK'
+                    '</span>'
+                )
+                test_pdf_button_html = (
+                    '<a class="btn-action" '
+                    f'href="/dashboard/pratiche/raccomandata-test-documento-finale-pdf/{pratica_id}" '
+                    'target="_blank">'
+                    'PDF TEST'
+                    '</a>'
+                )
+            elif test_auto_done:
+                test_h2h_badge_html = (
+                    '<span class="btn-action" '
+                    'style="background:#dcfce7;color:#166534;font-weight:800;">'
+                    'Test H2H OK'
+                    '</span>'
+                )
+            elif test_id_request:
+                test_h2h_badge_html = (
+                    '<span class="btn-action" '
+                    'style="background:#fef3c7;color:#92400e;font-weight:800;">'
+                    'Test H2H pending'
+                    '</span>'
+                )
             test_auto_button_html = (
                 '<a class="btn-action" '
                 f'href="/dashboard/pratiche/raccomandata-test-auto-ui/{pratica_id}" '
                 'target="_blank" '
                 'onclick="return confirm(\'Eseguire il test automatico Raccomandata? Nessuna produzione, nessuna email, nessun cambio stato reale.\')">'
-                'Test automatico'
+                'Test / Monitor automatico'
                 '</a>'
             )
-            
             direct_button_html = ""
-
             if POSTE_INVIO_MODE == "auto" and POSTE_INVIO_DIRETTO_ENABLED:
                 direct_button_html = (
                     '<a class="btn-action btn-send" '
                     f'href="/dashboard/pratiche/invia-diretto-poste/{pratica_id}" '
-                    'onclick="return confirm(\'ATTENZIONE: questa azione calcola e FINALIZZA realmente la raccomandata a Poste. Può generare costo H2H. Confermi?\')">'
+                    'onclick="return confirm(\'ATTENZIONE: questa azione calcola e FINALIZZA realmente la raccomandata a Poste. Puo generare costo H2H. Confermi?\')">'
                     'Invia diretto Poste'
                     '</a>'
-                )
+            )
             else:
                 direct_button_html = (
                     '<span class="btn-action btn-disabled" '
@@ -15058,17 +15107,17 @@ def dashboard_pratiche(stato: str = None):
                     'Diretto disattivato'
                     '</span>'
                 )
-
             invia_poste_html = (
                 '<a class="btn-action" '
                 f'href="/dashboard/pratiche/invia-poste/{pratica_id}" '
-                'onclick="return confirm(\'Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.\')">'
+                'onclick="return confirm(\'Confermi il calcolo prezzo Poste? Non verra finalizzata la raccomandata.\')">'
                 'Calcola prezzo Poste'
                 '</a>'
-                + test_auto_button_html    
+                + test_auto_button_html
+                + test_h2h_badge_html
+                + test_pdf_button_html
                 + direct_button_html
-            )
-        
+            )        
                 
         elif p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "PREZZATA_DA_CONFERMARE":
             invia_poste_html = f"""
