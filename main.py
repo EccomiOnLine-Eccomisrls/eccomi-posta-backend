@@ -7018,18 +7018,18 @@ def clean_poste_h2h_attr(value, max_len=None, uppercase=True):
         value = ""
 
     value = str(value)
-        value = value.replace('"', "")
-        value = value.replace("&quot;", "")
-        value = value.replace("&#34;", "")
-        value = value.replace("\u201c", "")
-        value = value.replace("\u201d", "")
-        value = value.replace("\u2018", "'")
-        value = value.replace("\u2019", "'")
-        value = " ".join(value.split())
+    value = value.replace('"', "")
+    value = value.replace("&quot;", "")
+    value = value.replace("&#34;", "")
+    value = value.replace("\u201c", "")
+    value = value.replace("\u201d", "")
+    value = value.replace("\u2018", "'")
+    value = value.replace("\u2019", "'")
+    value = " ".join(value.split())
     if uppercase:
-            value = value.upper()
+        value = value.upper()
     if max_len and len(value) > max_len:
-            value = value[:max_len].strip()
+        value = value[:max_len].strip()
     return value
 
 
