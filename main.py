@@ -12778,58 +12778,7 @@ def dashboard_raccomandata_test_auto(pratica_id: str):
                 "results": results,
                 "error": "Automazione TEST fermata su Stato/Documento TEST."
             }
-                stato_test_text = str(
-            (
-        stato_result.get("stato_result", {}) or {}
-            ).get("StatoIdRichiesta") or ""
-        ).strip()
-
-        documento_is_pdf = bool(
-            stato_result.get("documento_is_pdf")
-        )
-
-        documento_size_bytes = int(
-            stato_result.get("documento_size_bytes") or 0
-        )
-
-        if "errore" in stato_test_text.lower():
-            return ecx_clean_for_supabase({
-                "success": False,
-                "needs_attention": True,
-                "step": "RACCOMANDATA_TEST_AUTO_ERRORE_CONVERSIONE_POSTE",
-                "ambiente": "TEST",
-                "pratica_id": pratica_id,
-                "stato_test": stato_test_text,
-                "numero_raccomandata_test": finalizza_result.get("numero_raccomandata_test"),
-                "id_richiesta_test": finalizza_result.get("id_richiesta_test"),
-                "guid_utente_test": finalizza_result.get("guid_utente_test"),
-                "id_ordine_poste_test": finalizza_result.get("id_ordine_poste_test"),
-                "costo_test_finale": finalizza_result.get("costo_test_finale"),
-                "documento_is_pdf": documento_is_pdf,
-                "documento_size_bytes": documento_size_bytes,
-                "results": results,
-                "message": "Poste TEST ha preso in carico la raccomandata ma ha restituito errore conversione finale. Nessuna produzione toccata."
-            })
-
-        if not documento_is_pdf:
-            return ecx_clean_for_supabase({
-                "success": False,
-                "pending": True,
-                "step": "RACCOMANDATA_TEST_AUTO_DOCUMENTO_NON_PRONTO",
-                "ambiente": "TEST",
-                "pratica_id": pratica_id,
-                "stato_test": stato_test_text,
-                "numero_raccomandata_test": finalizza_result.get("numero_raccomandata_test"),
-                "id_richiesta_test": finalizza_result.get("id_richiesta_test"),
-                "guid_utente_test": finalizza_result.get("guid_utente_test"),
-                "id_ordine_poste_test": finalizza_result.get("id_ordine_poste_test"),
-                "costo_test_finale": finalizza_result.get("costo_test_finale"),
-                "documento_is_pdf": documento_is_pdf,
-                "documento_size_bytes": documento_size_bytes,
-                "results": results,
-                "retry_url": f"/dashboard/pratiche/raccomandata-test-auto/{pratica_id}",
-                "message": "Raccomandata TEST finalizzata, ma documento finale non ancora pronto. Rilanciare piu' tardi lo stesso endpoint auto."
-            })
+            
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         # =====================================================
         # 4. Marchio interno di test completato
