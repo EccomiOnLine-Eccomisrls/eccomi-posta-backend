@@ -14707,14 +14707,14 @@ def dashboard_pratiche(stato: str = None):
                     '<a class="btn-action btn-send" '
                     f'href="/dashboard/pratiche/invia-diretto-poste/{pratica_id}" '
                     'onclick="return confirm(\'ATTENZIONE: questa azione calcola e FINALIZZA realmente la raccomandata a Poste. Può generare costo H2H. Confermi?\')">'
-                    '🚀 Invia diretto Poste'
+                    'Invia diretto Poste'
                     '</a>'
                 )
             else:
                 direct_button_html = (
                     '<span class="btn-action btn-disabled" '
                     'title="Invio diretto disattivato: usare prima Calcola prezzo Poste, poi Finalizza Poste.">'
-                    '🚀 Diretto disattivato'
+                    'Diretto disattivato'
                     '</span>'
                 )
 
@@ -14722,8 +14722,9 @@ def dashboard_pratiche(stato: str = None):
                 '<a class="btn-action" '
                 f'href="/dashboard/pratiche/invia-poste/{pratica_id}" '
                 'onclick="return confirm(\'Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.\')">'
-                '💶 Calcola prezzo Poste'
+                'Calcola prezzo Poste'
                 '</a>'
+            + test_auto_button_html    
             + direct_button_html
         )
         
