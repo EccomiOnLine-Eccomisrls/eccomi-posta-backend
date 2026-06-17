@@ -14700,6 +14700,15 @@ def dashboard_pratiche(stato: str = None):
                 </span>
             """
         elif stato_pratica in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"] and h2h_order_id:
+            test_auto_button_html = (
+                '<a class="btn-action" '
+                f'href="/dashboard/pratiche/raccomandata-test-auto/{pratica_id}" '
+                'target="_blank" '
+                'onclick="return confirm(\'Eseguire il test automatico Raccomandata? Nessuna produzione, nessuna email, nessun cambio stato reale.\')">'
+                'Test automatico'
+                '</a>'
+            )
+            
             direct_button_html = ""
 
             if POSTE_INVIO_MODE == "auto" and POSTE_INVIO_DIRETTO_ENABLED:
