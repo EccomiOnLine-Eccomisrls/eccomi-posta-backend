@@ -7013,6 +7013,25 @@ def clean_h2h_text(value):
         .replace("—", "-") \
         .strip()
 
+def clean_poste_h2h_attr(value, max_len=None, uppercase=True):
+    if value is None:
+        value = “”
+
+        value = str(value)
+        value = value.replace('"', "")
+        value = value.replace("&quot;", "")
+        value = value.replace("&#34;", "")
+        value = value.replace("\u201c", "")
+        value = value.replace("\u201d", "")
+        value = value.replace("\u2018", "'")
+        value = value.replace("\u2019", "'")
+        value = " ".join(value.split())
+    if uppercase:
+            value = value.upper()
+    if max_len and len(value) > max_len:
+            value = value[:max_len].strip()
+    return value
+
 
 def format_indirizzo_blocco(testo):
     testo = testo or ""
@@ -7899,16 +7918,25 @@ def build_nominativo_h2h_from_data(data, NominativoType, IndirizzoType, label="i
 
     dug, toponimo = parse_indirizzo_h2h(via)
 
+    poste_nome = clean_poste_h2h_attr(nome, max_len=40)
+    poste_cognome = clean_poste_h2h_attr(cognome, max_len=40)
+    poste_cap = clean_poste_h2h_attr(cap, max_len=5)
+    poste_citta = clean_poste_h2h_attr(comune, max_len=40)
+    poste_provincia = clean_poste_h2h_attr(provincia, max_len=2)
+    poste_dug = clean_poste_h2h_attr(dug, max_len=10)
+    poste_toponimo = clean_poste_h2h_attr(toponimo, max_len=40)
+    poste_civico = clean_poste_h2h_attr(civico, max_len=10)
+
     return NominativoType(
-        Nome=clean_h2h_text(nome).upper(),
-        Cognome=clean_h2h_text(cognome).upper(),
-        CAP=cap,
-        Citta=comune,
-        Provincia=provincia,
-        Indirizzo=IndirizzoType(
-            DUG=clean_h2h_text(dug).upper(),
-            Toponimo=clean_h2h_text(toponimo).upper(),
-            NumeroCivico=civico
+        Nome=poste_nome,
+        Cognome=poste_cognome,
+        CAP=poste_cap,
+        Citta=poste_citta,
+        Provincia=poste_provincia,
+        Indirizzo=IndirizzoType(            
+            DUG=poste_dug,
+            Toponimo=poste_toponino,
+            NumeroCivico=poste_civico
         ),
         TipoIndirizzo="NORMALE",
         ForzaDestinazione=True,
