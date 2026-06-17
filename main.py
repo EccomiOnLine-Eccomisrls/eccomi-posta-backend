@@ -12672,6 +12672,26 @@ def dashboard_raccomandata_test_auto(pratica_id: str):
                 "results": results,
                 "error": "Automazione TEST fermata su PreConferma TEST."
             }
+            
+        numero_test = str(
+            finalizza_result.get("numero_raccomandata_test") or ""
+        ).strip()
+
+        id_ordine_poste_test = str(
+            finalizza_result.get("id_ordine_poste_test") or ""
+        ).strip()
+
+        if not numero_test or id_ordine_poste_test in ["", "None", "none", "null"]:
+            return {
+                "success": False,
+                "pending": True,
+                "step": "RACCOMANDATA_TEST_AUTO_PRECONFERMA_NON_PRONTA",
+                "ambiente": "TEST",
+                "pratica_id": pratica_id,
+                "results": results,
+                "message": "La pipeline TEST ha inviato la raccomandata, ma Poste non ha ancora restituito numero raccomandata/costo. Riprovare la finalizzazione TEST tra qualche minuto."
+            }
+
 
         # =====================================================
         # 3. Stato + Documento finale TEST
