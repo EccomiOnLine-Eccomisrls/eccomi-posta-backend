@@ -7015,9 +7015,9 @@ def clean_h2h_text(value):
 
 def clean_poste_h2h_attr(value, max_len=None, uppercase=True):
     if value is None:
-        value = “”
+        value = ""
 
-        value = str(value)
+    value = str(value)
         value = value.replace('"', "")
         value = value.replace("&quot;", "")
         value = value.replace("&#34;", "")
