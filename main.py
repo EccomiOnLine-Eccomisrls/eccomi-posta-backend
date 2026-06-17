@@ -13107,6 +13107,37 @@ def _ecx_bytes_from_h2h_contenuto(value):
 
     return b""
 
+def ecx_clean_for_supabase(value):
+    """
+    Rimuove caratteri non salvabili da Supabase/Postgres.
+    In particolare PostgreSQL non accetta il carattere NULL: \\x00 / \\u0000.
+    Lavora ricorsivamente su dict, list e stringhe.
+    """
+
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        return (
+            value
+            .replace("\x00", "")
+            .replace("\u0000", "")
+        )
+
+    if isinstance(value, dict):
+        return {
+            ecx_clean_for_supabase(k): ecx_clean_for_supabase(v)
+            for k, v in value.items()
+        }
+
+    if isinstance(value, list):
+        return [
+            ecx_clean_for_supabase(item)
+            for item in value
+        ]
+
+    return value
+
 
 def _ecx_find_first_value_by_keys(obj, keys):
     """
@@ -13989,6 +14020,8 @@ def dashboard_raccomandata_test_stato_documento(pratica_id: str):
         raccomandata_test["ultimo_step"] = "RACCOMANDATA_TEST_STATO_DOCUMENTO"
 
         poste_response["raccomandata_test"] = raccomandata_test
+        
+        safe_poste_response = ecx_clean_for_supabase(poste_response)
 
         supabase.table("pratiche").update({
             "poste_response": poste_response,
@@ -14015,16 +14048,16 @@ def dashboard_raccomandata_test_stato_documento(pratica_id: str):
                 if documento_is_pdf else None
             ),
             "message": "Stato e Documento Finale TEST verificati. Nessuna email, nessun cambio stato reale, nessuna produzione."
-        }
+        })
 
     except Exception as e:
-        return {
+        return ecx_clean_for_supabase({
             "success": False,
             "step": "ERRORE_RACCOMANDATA_TEST_STATO_DOCUMENTO",
             "ambiente": "TEST",
             "pratica_id": pratica_id,
             "error": str(e)
-        }
+        })
 
 
 @app.get("/dashboard/pratiche/raccomandata-test-documento-finale-pdf/{pratica_id}")
