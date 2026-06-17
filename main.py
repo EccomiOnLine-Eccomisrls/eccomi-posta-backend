@@ -12561,9 +12561,9 @@ def dashboard_raccomandata_test_calcola(pratica_id: str):
             "xml_received": xml_received
         }
 
-@app.get(”/dashboard/pratiche/raccomandata-test-auto/{pratica_id}”)
+@app.get("/dashboard/pratiche/raccomandata-test-auto/{pratica_id}")
 def dashboard_raccomandata_test_auto(pratica_id: str):
-“””
+"""
 Pipeline automatica TEST Raccomandata H2H.
 
 Idempotente:
