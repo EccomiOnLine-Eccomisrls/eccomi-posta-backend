@@ -15119,7 +15119,7 @@ def dashboard_pratiche(stato: str = None):
             )
             test_auto_step = str(
                 raccomandata_test_row.get("auto_test_step") or ""
-            ).stip()
+            ).strip()
             test_h2h_badge_html = ""
             test_pdf_button_html = ""
             if test_pdf_ready:
