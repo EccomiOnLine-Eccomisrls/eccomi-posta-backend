@@ -15111,6 +15111,15 @@ def dashboard_pratiche(stato: str = None):
             test_id_request = str(
                 raccomandata_test_row.get("id_richiesta_test") or ""
             ).strip()
+            test_auto_error = bool(
+                raccomandata_test_row.get("auto_test_errore")
+            )
+            test_auto_pending = bool(
+                raccomandata_test_row.get("auto_test_pending")
+            )
+            test_auto_step = str(
+                raccomandata_test_row.get("auto_test_step") or ""
+            ).stip()
             test_h2h_badge_html = ""
             test_pdf_button_html = ""
             if test_pdf_ready:
@@ -15134,7 +15143,14 @@ def dashboard_pratiche(stato: str = None):
                     'Test H2H OK'
                     '</span>'
                 )
-            elif test_id_request:
+            elif test_auto_error or "STOP" in test_auto_step or "ERRORE" in test_auto_step:
+                test_h2h_badge_html = (
+                    '<span class="btn-action" '
+                    'style="background:#fee2e2;color:#991b1b;font-weight:800;">'
+                    'Test H2H errore'
+                    '</span>'
+                )
+            elif test_id_request or test_auto_pending:
                 test_h2h_badge_html = (
                     '<span class="btn-action" '
                     'style="background:#fef3c7;color:#92400e;font-weight:800;">'
@@ -15149,7 +15165,9 @@ def dashboard_pratiche(stato: str = None):
                 'Test / Monitor automatico'
                 '</a>'
             )
+            
             direct_button_html = ""
+            
             if POSTE_INVIO_MODE == "auto" and POSTE_INVIO_DIRETTO_ENABLED:
                 direct_button_html = (
                     '<a class="btn-action btn-send" '
