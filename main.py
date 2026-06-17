@@ -14724,9 +14724,9 @@ def dashboard_pratiche(stato: str = None):
                 'onclick="return confirm(\'Confermi il calcolo prezzo Poste? Non verrà finalizzata la raccomandata.\')">'
                 'Calcola prezzo Poste'
                 '</a>'
-            + test_auto_button_html    
-            + direct_button_html
-        )
+                + test_auto_button_html    
+                + direct_button_html
+            )
         
                 
         elif p.get("tipo_servizio") == "TELEGRAMMA" and stato_pratica == "PREZZATA_DA_CONFERMARE":
