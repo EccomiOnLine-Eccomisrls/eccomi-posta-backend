@@ -12868,134 +12868,134 @@ def dashboard_raccomandata_test_auto(pratica_id: str):
 
 @app.get("/dashboard/pratiche/raccomandata-test-auto-pending")
 def dashboard_raccomandata_test_auto_pending(limit: int = 10, dry_run: bool = False):
-"""
-Batch automatico TEST Raccomandata H2H.
+    """
+    Batch automatico TEST Raccomandata H2H.
 
-Cerca pratiche RACCOMANDATA lavorabili e rilancia la pipeline TEST auto.
-La pipeline singola e' idempotente, quindi:
-- non crea doppie richieste se esiste gia' id_richiesta_test
-- riprova PreConferma se la richiesta e' pending
-- riprova Stato/Documento se la richiesta e' gia' finalizzata
-- salta le pratiche che hanno gia' documento finale TEST PDF
-NON usa produzione.
-NON invia email.
-NON cambia stato reale in INVIATO_POSTE.
-"""
-try:
-    test_auto_enabled = os.getenv(
-        "RACCOMANDATA_TEST_AUTO_ENABLED",
-        "false"
-    ).strip().lower() in ["true", "1", "yes", "si", "on"]
-    if not test_auto_enabled:
-        return {
-            "success": False,
-            "blocked": True,
-            "step": "RACCOMANDATA_TEST_BATCH_DISABLED",
-            "error": "Automazione TEST Raccomandata disattivata. Imposta RACCOMANDATA_TEST_AUTO_ENABLED=true."
-        }
-    if limit < 1:
-        limit = 1
-    if limit > 25:
-        limit = 25
-    allowed_states = [
-        "RICEVUTO_PAGATO",
-        "IN_LAVORAZIONE",
-        "PREZZATA_DA_CONFERMARE"
-    ]
-    pratiche_res = supabase.table("pratiche") \
-        .select("id,order_name,shopify_order_name,tipo_servizio,stato,poste_response,created_at") \
-        .eq("tipo_servizio", "RACCOMANDATA") \
-        .order("created_at", desc=True) \
-        .limit(limit) \
-        .execute()
-    pratiche = pratiche_res.data or []
-    processed = []
-    skipped = []
-    errors = []
-    for pratica in pratiche:
-        pratica_id = pratica.get("id")
-        stato = str(pratica.get("stato") or "").upper().strip()
-        if not pratica_id:
-            skipped.append({
-                "reason": "pratica_id_missing",
-                "pratica": pratica
-            })
-            continue
-        if stato not in allowed_states:
-            skipped.append({
-                "pratica_id": pratica_id,
-                "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
-                "stato": stato,
-                "reason": "stato_non_lavorabile"
-            })
-            continue
-        poste_response = pratica.get("poste_response") or {}
-        if isinstance(poste_response, str):
-            try:
-                poste_response = json.loads(poste_response)
-            except Exception:
+    Cerca pratiche RACCOMANDATA lavorabili e rilancia la pipeline TEST auto.
+    La pipeline singola e' idempotente, quindi:
+    - non crea doppie richieste se esiste gia' id_richiesta_test
+    - riprova PreConferma se la richiesta e' pending
+    - riprova Stato/Documento se la richiesta e' gia' finalizzata
+    - salta le pratiche che hanno gia' documento finale TEST PDF
+    NON usa produzione.
+    NON invia email.
+    NON cambia stato reale in INVIATO_POSTE.
+    """
+    try:
+        test_auto_enabled = os.getenv(
+            "RACCOMANDATA_TEST_AUTO_ENABLED",
+            "false"
+        ).strip().lower() in ["true", "1", "yes", "si", "on"]
+        if not test_auto_enabled:
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "RACCOMANDATA_TEST_BATCH_DISABLED",
+                "error": "Automazione TEST Raccomandata disattivata. Imposta RACCOMANDATA_TEST_AUTO_ENABLED=true."
+            }
+        if limit < 1:
+            limit = 1
+        if limit > 25:
+            limit = 25
+        allowed_states = [
+            "RICEVUTO_PAGATO",
+            "IN_LAVORAZIONE",
+            "PREZZATA_DA_CONFERMARE"
+        ]
+        pratiche_res = supabase.table("pratiche") \
+            .select("id,order_name,shopify_order_name,tipo_servizio,stato,poste_response,created_at") \
+            .eq("tipo_servizio", "RACCOMANDATA") \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        pratiche = pratiche_res.data or []
+        processed = []
+        skipped = []
+            errors = []
+        for pratica in pratiche:
+            pratica_id = pratica.get("id")
+            stato = str(pratica.get("stato") or "").upper().strip()
+            if not pratica_id:
+                skipped.append({
+                    "reason": "pratica_id_missing",
+                    "pratica": pratica
+                })
+                continue
+            if stato not in allowed_states:
+                skipped.append({
+                    "pratica_id": pratica_id,
+                    "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+                    "stato": stato,
+                    "reason": "stato_non_lavorabile"
+                })
+                continue
+                poste_response = pratica.get("poste_response") or {}
+            if isinstance(poste_response, str):
+                try:
+                    poste_response = json.loads(poste_response)
+                except Exception:
+                    poste_response = {}
+            if not isinstance(poste_response, dict):
                 poste_response = {}
-        if not isinstance(poste_response, dict):
-            poste_response = {}
-        raccomandata_test = poste_response.get("raccomandata_test") or {}
-        if not isinstance(raccomandata_test, dict):
-            raccomandata_test = {}
-        documento_gia_pdf = bool(
-            raccomandata_test.get("documento_finale_test_presente")
-        )
-        if documento_gia_pdf:
-            skipped.append({
-                "pratica_id": pratica_id,
-                "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
-                "stato": stato,
-                "reason": "documento_finale_test_gia_presente"
-            })
-            continue
-        if dry_run:
-            processed.append({
-                "dry_run": True,
-                "pratica_id": pratica_id,
-                "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
-                "stato": stato,
-                "action": "would_run_raccomandata_test_auto"
-            })
-            continue
-        try:
-            result = dashboard_raccomandata_test_auto(pratica_id)
-            processed.append({
-                "pratica_id": pratica_id,
-                "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
-                "stato": stato,
-                "result": result
-            })
-        except Exception as inner_error:
-            errors.append({
-                "pratica_id": pratica_id,
-                "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
-                "stato": stato,
-                "error": str(inner_error)
-            })
-    return ecx_clean_for_supabase({
-        "success": len(errors) == 0,
-        "step": "RACCOMANDATA_TEST_BATCH_AUTO_PENDING",
-        "ambiente": "TEST",
-        "dry_run": dry_run,
-        "limit": limit,
-        "processed_count": len(processed),
-        "skipped_count": len(skipped),
-        "errors_count": len(errors),
-        "processed": processed,
-        "skipped": skipped,
-        "errors": errors,
-        "message": "Batch Raccomandata TEST eseguito. Produzione non toccata."
-    })
-except Exception as e:
-    return ecx_clean_for_supabase({
-        "success": False,
-        "step": "ERRORE_RACCOMANDATA_TEST_BATCH_AUTO_PENDING",
-        "ambiente": "TEST",
-        "error": str(e)
-    })
+            raccomandata_test = poste_response.get("raccomandata_test") or {}
+            if not isinstance(raccomandata_test, dict):
+                raccomandata_test = {}
+            documento_gia_pdf = bool(
+                raccomandata_test.get("documento_finale_test_presente")
+            )
+            if documento_gia_pdf:
+                skipped.append({
+                    "pratica_id": pratica_id,
+                    "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+                    "stato": stato,
+                    "reason": "documento_finale_test_gia_presente"
+                })
+                continue
+            if dry_run:
+                processed.append({
+                    "dry_run": True,
+                    "pratica_id": pratica_id,
+                    "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+                    "stato": stato,
+                    "action": "would_run_raccomandata_test_auto"
+                })
+                continue
+            try:
+                result = dashboard_raccomandata_test_auto(pratica_id)
+                processed.append({
+                    "pratica_id": pratica_id,
+                    "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+                    "stato": stato,
+                    "result": result
+                })
+            except Exception as inner_error:
+                errors.append({
+                    "pratica_id": pratica_id,
+                    "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+                    "stato": stato,
+                    "error": str(inner_error)
+                })
+        return ecx_clean_for_supabase({
+            "success": len(errors) == 0,
+            "step": "RACCOMANDATA_TEST_BATCH_AUTO_PENDING",
+            "ambiente": "TEST",
+            "dry_run": dry_run,
+            "limit": limit,
+            "processed_count": len(processed),
+            "skipped_count": len(skipped),
+            "errors_count": len(errors),
+            "processed": processed,
+            "skipped": skipped,
+            "errors": errors,
+            "message": "Batch Raccomandata TEST eseguito. Produzione non toccata."
+        })
+    except Exception as e:
+        return ecx_clean_for_supabase({
+            "success": False,
+            "step": "ERRORE_RACCOMANDATA_TEST_BATCH_AUTO_PENDING",
+            "ambiente": "TEST",
+            "error": str(e)
+        })
 
 
 @app.get("/dashboard/pratiche/raccomandata-test-finalizza/{pratica_id}")
