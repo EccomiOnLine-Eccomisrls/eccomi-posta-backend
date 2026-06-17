@@ -12868,7 +12868,7 @@ def dashboard_raccomandata_test_auto(pratica_id: str):
 
 @app.get("/dashboard/pratiche/raccomandata-test-auto-pending")
 def dashboard_raccomandata_test_auto_pending(limit: int = 10, dry_run: bool = False):
-“””
+"""
 Batch automatico TEST Raccomandata H2H.
 
 Cerca pratiche RACCOMANDATA lavorabili e rilancia la pipeline TEST auto.
