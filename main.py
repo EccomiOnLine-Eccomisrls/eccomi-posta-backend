@@ -14024,11 +14024,11 @@ def dashboard_raccomandata_test_stato_documento(pratica_id: str):
         safe_poste_response = ecx_clean_for_supabase(poste_response)
 
         supabase.table("pratiche").update({
-            "poste_response": poste_response,
+            "poste_response": safe_poste_response,
             "updated_at": now_iso
         }).eq("id", pratica_id).execute()
 
-        return {
+        return ecx_clean_for_supabase({
             "success": True,
             "step": "RACCOMANDATA_TEST_STATO_DOCUMENTO",
             "ambiente": "TEST",
