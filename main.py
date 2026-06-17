@@ -12019,6 +12019,7 @@ async def shopify_raccomandata_order(request: Request):
             pratica.update(update_data)
 
             h2h_id = None
+            test_auto_result = None
 
             if nuovo_stato == "RICEVUTO_PAGATO":
                 h2h_id = crea_o_aggiorna_h2h_da_pratica(
@@ -12026,6 +12027,14 @@ async def shopify_raccomandata_order(request: Request):
                     stato="RICEVUTO_PAGATO",
                     note=f"Webhook Shopify ordine pagato {order_name}"
                 )
+                try:
+                    test_auto_result = dashboard_raccomandata_test_auto(str(pratica_id))
+                except Exception as test_error:
+                    test_auto_result = {
+                        "success": False,
+                        "step": "RACCOMANDATA_TEST_AUTO_WEBHOOK_ERRORE",
+                        "error": str(test_error)
+                    }
 
             risultati.append({
                 "success": True,
@@ -12034,7 +12043,8 @@ async def shopify_raccomandata_order(request: Request):
                 "order_name": order_name,
                 "stato": nuovo_stato,
                 "ricevuta_ritorno": has_rr,
-                "h2h_id": h2h_id
+                "h2h_id": h2h_id,
+                "test_auto_result": test_auto_result
             })
 
         return {
