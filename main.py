@@ -12561,249 +12561,310 @@ def dashboard_raccomandata_test_calcola(pratica_id: str):
             "xml_received": xml_received
         }
 
-@app.get("/dashboard/pratiche/raccomandata-test-auto/{pratica_id}")
+@app.get(”/dashboard/pratiche/raccomandata-test-auto/{pratica_id}”)
 def dashboard_raccomandata_test_auto(pratica_id: str):
-    """
-    Pipeline automatica TEST Raccomandata H2H.
+“””
+Pipeline automatica TEST Raccomandata H2H.
 
-    Esegue in sequenza:
-    1. Invio + Valorizza TEST
-    2. PreConferma TEST
-    3. Stato + Documento finale TEST
-
-    NON usa produzione.
-    NON invia email.
-    NON cambia stato reale in INVIATO_POSTE.
-    NON salva numero_raccomandata reale.
-    """
-
-    try:
-        test_auto_enabled = os.getenv(
-            "RACCOMANDATA_TEST_AUTO_ENABLED",
-            "false"
-        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
-
-        if not test_auto_enabled:
-            return {
-                "success": False,
-                "blocked": True,
-                "step": "RACCOMANDATA_TEST_AUTO_DISABLED",
-                "pratica_id": pratica_id,
-                "error": "Automazione TEST Raccomandata disattivata. Imposta RACCOMANDATA_TEST_AUTO_ENABLED=true."
-            }
-
-        pratica_res = supabase.table("pratiche") \
-            .select("*") \
-            .eq("id", pratica_id) \
-            .single() \
-            .execute()
-
-        if not pratica_res.data:
-            return {
-                "success": False,
-                "step": "RACCOMANDATA_TEST_AUTO_PRATICA_NON_TROVATA",
-                "pratica_id": pratica_id,
-                "error": "Pratica non trovata"
-            }
-
-        pratica = pratica_res.data
-
-        tipo_servizio = str(
-            pratica.get("tipo_servizio") or ""
-        ).upper().strip()
-
-        if tipo_servizio != "RACCOMANDATA":
-            return {
-                "success": False,
-                "step": "RACCOMANDATA_TEST_AUTO_SERVIZIO_NON_VALIDO",
-                "pratica_id": pratica_id,
-                "tipo_servizio": tipo_servizio,
-                "error": "Automazione TEST disponibile solo per Raccomandata"
-            }
-
-        stato_pratica = str(
-            pratica.get("stato") or ""
-        ).upper().strip()
-
-        if stato_pratica not in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE", "PREZZATA_DA_CONFERMARE"]:
-            return {
-                "success": False,
-                "blocked": True,
-                "step": "RACCOMANDATA_TEST_AUTO_STATO_NON_VALIDO",
-                "pratica_id": pratica_id,
-                "stato": stato_pratica,
-                "error": "Automazione TEST consentita solo per pratiche pagate/lavorabili."
-            }
-
-        results = {
-            "calcola": None,
-            "finalizza": None,
-            "stato_documento": None
+Idempotente:
+- se esiste già una richiesta TEST finalizzata, non crea nuove richieste
+- se esiste una richiesta TEST pendente, riprova solo PreConferma
+- se non esiste nulla, esegue Invio + Valorizza + PreConferma + Stato/Documento
+NON usa produzione.
+NON invia email.
+NON cambia stato reale in INVIATO_POSTE.
+NON salva numero_raccomandata reale.
+"""
+try:
+    test_auto_enabled = os.getenv(
+        "RACCOMANDATA_TEST_AUTO_ENABLED",
+        "false"
+    ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+    if not test_auto_enabled:
+        return {
+            "success": False,
+            "blocked": True,
+            "step": "RACCOMANDATA_TEST_AUTO_DISABLED",
+            "pratica_id": pratica_id,
+            "error": "Automazione TEST Raccomandata disattivata. Imposta RACCOMANDATA_TEST_AUTO_ENABLED=true."
         }
-
-        # =====================================================
-        # 1. Invio + Valorizza TEST
-        # =====================================================
-
+    pratica_res = supabase.table("pratiche") \
+        .select("*") \
+        .eq("id", pratica_id) \
+        .single() \
+        .execute()
+    if not pratica_res.data:
+        return {
+            "success": False,
+            "step": "RACCOMANDATA_TEST_AUTO_PRATICA_NON_TROVATA",
+            "pratica_id": pratica_id,
+            "error": "Pratica non trovata"
+        }
+    pratica = pratica_res.data
+    tipo_servizio = str(
+        pratica.get("tipo_servizio") or ""
+    ).upper().strip()
+    if tipo_servizio != "RACCOMANDATA":
+        return {
+            "success": False,
+            "step": "RACCOMANDATA_TEST_AUTO_SERVIZIO_NON_VALIDO",
+            "pratica_id": pratica_id,
+            "tipo_servizio": tipo_servizio,
+            "error": "Automazione TEST disponibile solo per Raccomandata"
+        }
+    stato_pratica = str(
+        pratica.get("stato") or ""
+    ).upper().strip()
+    if stato_pratica not in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE", "PREZZATA_DA_CONFERMARE"]:
+        return {
+            "success": False,
+            "blocked": True,
+            "step": "RACCOMANDATA_TEST_AUTO_STATO_NON_VALIDO",
+            "pratica_id": pratica_id,
+            "stato": stato_pratica,
+            "error": "Automazione TEST consentita solo per pratiche pagate/lavorabili."
+        }
+    results = {
+        "calcola": None,
+        "finalizza": None,
+        "stato_documento": None
+    }
+    # =====================================================
+    # 1. Leggo eventuale stato TEST già presente
+    # =====================================================
+    poste_response_existing = pratica.get("poste_response") or {}
+    if isinstance(poste_response_existing, str):
+        try:
+            poste_response_existing = json.loads(poste_response_existing)
+        except Exception:
+            poste_response_existing = {}
+    if not isinstance(poste_response_existing, dict):
+        poste_response_existing = {}
+    raccomandata_test_existing = poste_response_existing.get("raccomandata_test") or {}
+    if not isinstance(raccomandata_test_existing, dict):
+        raccomandata_test_existing = {}
+    preconferma_existing = raccomandata_test_existing.get("preconferma_test") or {}
+    if not isinstance(preconferma_existing, dict):
+        preconferma_existing = {}
+    existing_id_richiesta_test = str(
+        raccomandata_test_existing.get("id_richiesta_test")
+        or preconferma_existing.get("id_richiesta_test")
+        or ""
+    ).strip()
+    existing_guid_utente_test = str(
+        raccomandata_test_existing.get("guid_utente_test")
+        or preconferma_existing.get("guid_utente_test")
+        or ""
+    ).strip()
+    existing_id_ordine_poste_test = str(
+        raccomandata_test_existing.get("id_ordine_poste_test")
+        or preconferma_existing.get("id_ordine_poste_test")
+        or ""
+    ).strip()
+    existing_numero_test = str(
+        raccomandata_test_existing.get("numero_raccomandata_test")
+        or preconferma_existing.get("numero_raccomandata_test")
+        or ""
+    ).strip()
+    existing_id_ricevuta_test = str(
+        raccomandata_test_existing.get("id_ricevuta_test")
+        or preconferma_existing.get("id_ricevuta_test")
+        or ""
+    ).strip()
+    existing_costo_test = (
+        raccomandata_test_existing.get("costo_test_finale")
+        if raccomandata_test_existing.get("costo_test_finale") is not None
+        else preconferma_existing.get("costo_test_finale")
+    )
+    already_finalized_test = (
+        bool(existing_numero_test)
+        and existing_id_ordine_poste_test not in ["", "None", "none", "null"]
+        and existing_costo_test is not None
+    )
+    # =====================================================
+    # 2. Pipeline idempotente
+    # =====================================================
+    # Caso A: TEST già finalizzato.
+    # Non crea una nuova richiesta.
+    if already_finalized_test:
+        results["calcola"] = {
+            "skipped": True,
+            "reason": "Richiesta TEST già finalizzata. Nessun nuovo Invio/Valorizza."
+        }
+        finalizza_result = {
+            "success": True,
+            "step": "RACCOMANDATA_TEST_PRECONFERMA_GIA_PRESENTE",
+            "ambiente": "TEST",
+            "pratica_id": pratica_id,
+            "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+            "id_richiesta_test": existing_id_richiesta_test,
+            "guid_utente_test": existing_guid_utente_test,
+            "id_ordine_poste_test": existing_id_ordine_poste_test,
+            "numero_raccomandata_test": existing_numero_test,
+            "id_ricevuta_test": existing_id_ricevuta_test,
+            "costo_test_finale": existing_costo_test,
+            "message": "PreConferma TEST già presente. Nessuna nuova richiesta creata."
+        }
+        results["finalizza"] = finalizza_result
+    # Caso B: esiste già una richiesta TEST ma non è pronta.
+    # Non rifà calcola, riprova solo PreConferma.
+    elif existing_id_richiesta_test:
+        results["calcola"] = {
+            "skipped": True,
+            "reason": "Esiste già id_richiesta_test. Non creo una nuova richiesta TEST.",
+            "id_richiesta_test": existing_id_richiesta_test,
+            "guid_utente_test": existing_guid_utente_test
+        }
+        finalizza_result = dashboard_raccomandata_test_finalizza(pratica_id)
+        results["finalizza"] = finalizza_result
+    # Caso C: non esiste richiesta TEST.
+    # Parte da zero: Invio + Valorizza + PreConferma.
+    else:
         calcola_result = dashboard_raccomandata_test_calcola(pratica_id)
         results["calcola"] = calcola_result
-
         if not isinstance(calcola_result, dict) or not calcola_result.get("success"):
             return {
                 "success": False,
                 "step": "RACCOMANDATA_TEST_AUTO_STOP_CALCOLA",
+                "ambiente": "TEST",
                 "pratica_id": pratica_id,
                 "results": results,
                 "error": "Automazione TEST fermata su Invio/Valorizza TEST."
             }
-
-        # =====================================================
-        # 2. PreConferma TEST
-        # =====================================================
-
         finalizza_result = dashboard_raccomandata_test_finalizza(pratica_id)
         results["finalizza"] = finalizza_result
-
-        if not isinstance(finalizza_result, dict) or not finalizza_result.get("success"):
-            return {
-                "success": False,
-                "step": "RACCOMANDATA_TEST_AUTO_STOP_PRECONFERMA",
-                "pratica_id": pratica_id,
-                "results": results,
-                "error": "Automazione TEST fermata su PreConferma TEST."
-            }
-            
-        numero_test = str(
-            finalizza_result.get("numero_raccomandata_test") or ""
-        ).strip()
-
-        id_ordine_poste_test = str(
-            finalizza_result.get("id_ordine_poste_test") or ""
-        ).strip()
-
-        costo_test_finale = finalizza_result.get("costo_test_finale")
-
-        if (
-            not numero_test
-            or id_ordine_poste_test in ["", "None", "none", "null"]
-            or costo_test_finale is None
-        ):
-            return {
-                "success": False,
-                "pending": True,
-                "step": "RACCOMANDATA_TEST_AUTO_PRECONFERMA_NON_PRONTA",
-                "ambiente": "TEST",
-                "pratica_id": pratica_id,
-                "results": results,
-                "retry_url": f"/dashboard/pratiche/raccomandata-test-finalizza/{pratica_id}",
-                "message": "La pipeline TEST ha inviato la raccomandata, ma Poste non ha ancora restituito numero raccomandata/costo. Riprovare la finalizzazione TEST tra qualche minuto."
-            }
-
-        # =====================================================
-        # 3. Stato + Documento finale TEST
-        # =====================================================
-
-        stato_result = dashboard_raccomandata_test_stato_documento(pratica_id)
-        results["stato_documento"] = stato_result
-
-        if not isinstance(stato_result, dict) or not stato_result.get("success"):
-            return {
-                "success": False,
-                "step": "RACCOMANDATA_TEST_AUTO_STOP_STATO_DOCUMENTO",
-                "pratica_id": pratica_id,
-                "results": results,
-                "error": "Automazione TEST fermata su Stato/Documento TEST."
-            }
-
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-
-        # =====================================================
-        # 4. Marchio interno di test completato
-        #    Non cambio lo stato reale della pratica.
-        # =====================================================
-
-        pratica_refresh = supabase.table("pratiche") \
-            .select("poste_response") \
-            .eq("id", pratica_id) \
-            .single() \
-            .execute()
-
-        poste_response = {}
-
-        if pratica_refresh.data:
-            poste_response = pratica_refresh.data.get("poste_response") or {}
-
-        if isinstance(poste_response, str):
-            try:
-                poste_response = json.loads(poste_response)
-            except Exception:
-                poste_response = {}
-
-        if not isinstance(poste_response, dict):
-            poste_response = {}
-
-        raccomandata_test = poste_response.get("raccomandata_test") or {}
-
-        if not isinstance(raccomandata_test, dict):
-            raccomandata_test = {}
-
-        raccomandata_test["auto_pipeline"] = {
-            "step": "RACCOMANDATA_TEST_AUTO_COMPLETATA",
-            "ambiente": "TEST",
-            "pratica_id": pratica_id,
-            "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
-            "completed_at": now_iso,
-            "results_summary": {
-                "calcola_success": bool(calcola_result.get("success")),
-                "finalizza_success": bool(finalizza_result.get("success")),
-                "stato_documento_success": bool(stato_result.get("success")),
-                "numero_raccomandata_test": finalizza_result.get("numero_raccomandata_test"),
-                "stato_test": (
-                    stato_result.get("stato_result", {}) or {}
-                ).get("StatoIdRichiesta"),
-                "documento_is_pdf": stato_result.get("documento_is_pdf"),
-                "documento_size_bytes": stato_result.get("documento_size_bytes")
-            }
-        }
-
-        raccomandata_test["ultimo_step"] = "RACCOMANDATA_TEST_AUTO_COMPLETATA"
-        raccomandata_test["auto_test_completata"] = True
-        raccomandata_test["auto_test_completed_at"] = now_iso
-
-        poste_response["raccomandata_test"] = raccomandata_test
-
-        supabase.table("pratiche").update({
-            "poste_response": poste_response,
-            "updated_at": now_iso
-        }).eq("id", pratica_id).execute()
-
+    if not isinstance(finalizza_result, dict) or not finalizza_result.get("success"):
         return {
-            "success": True,
-            "step": "RACCOMANDATA_TEST_AUTO_COMPLETATA",
+            "success": False,
+            "step": "RACCOMANDATA_TEST_AUTO_STOP_PRECONFERMA",
             "ambiente": "TEST",
             "pratica_id": pratica_id,
-            "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+            "results": results,
+            "error": "Automazione TEST fermata su PreConferma TEST."
+        }
+    numero_test = str(
+        finalizza_result.get("numero_raccomandata_test") or ""
+    ).strip()
+    id_ordine_poste_test = str(
+        finalizza_result.get("id_ordine_poste_test") or ""
+    ).strip()
+    costo_test_finale = finalizza_result.get("costo_test_finale")
+    if (
+        not numero_test
+        or id_ordine_poste_test in ["", "None", "none", "null"]
+        or costo_test_finale is None
+    ):
+        return {
+            "success": False,
+            "pending": True,
+            "step": "RACCOMANDATA_TEST_AUTO_PRECONFERMA_NON_PRONTA",
+            "ambiente": "TEST",
+            "pratica_id": pratica_id,
+            "results": results,
+            "retry_url": f"/dashboard/pratiche/raccomandata-test-auto/{pratica_id}",
+            "message": "La pipeline TEST ha una richiesta già avviata, ma Poste non ha ancora restituito numero raccomandata/costo. Rilancia lo stesso endpoint auto tra qualche minuto: non verrà creata una nuova richiesta."
+        }
+    # =====================================================
+    # 3. Stato + Documento finale TEST
+    # =====================================================
+    stato_result = dashboard_raccomandata_test_stato_documento(pratica_id)
+    results["stato_documento"] = stato_result
+    if not isinstance(stato_result, dict) or not stato_result.get("success"):
+        return {
+            "success": False,
+            "step": "RACCOMANDATA_TEST_AUTO_STOP_STATO_DOCUMENTO",
+            "ambiente": "TEST",
+            "pratica_id": pratica_id,
+            "results": results,
+            "error": "Automazione TEST fermata su Stato/Documento TEST."
+        }
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    # =====================================================
+    # 4. Marchio interno di test completato
+    #    Non cambio lo stato reale della pratica.
+    # =====================================================
+    pratica_refresh = supabase.table("pratiche") \
+        .select("poste_response") \
+        .eq("id", pratica_id) \
+        .single() \
+        .execute()
+    poste_response = {}
+    if pratica_refresh.data:
+        poste_response = pratica_refresh.data.get("poste_response") or {}
+    if isinstance(poste_response, str):
+        try:
+            poste_response = json.loads(poste_response)
+        except Exception:
+            poste_response = {}
+    if not isinstance(poste_response, dict):
+        poste_response = {}
+    raccomandata_test = poste_response.get("raccomandata_test") or {}
+    if not isinstance(raccomandata_test, dict):
+        raccomandata_test = {}
+    calcola_entry = results.get("calcola") or {}
+    finalizza_entry = results.get("finalizza") or {}
+    stato_entry = results.get("stato_documento") or {}
+    raccomandata_test["auto_pipeline"] = {
+        "step": "RACCOMANDATA_TEST_AUTO_COMPLETATA",
+        "ambiente": "TEST",
+        "pratica_id": pratica_id,
+        "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+        "completed_at": now_iso,
+        "idempotent": True,
+        "results_summary": {
+            "calcola_success": bool(calcola_entry.get("success")) if isinstance(calcola_entry, dict) else False,
+            "calcola_skipped": bool(calcola_entry.get("skipped")) if isinstance(calcola_entry, dict) else False,
+            "finalizza_success": bool(finalizza_entry.get("success")) if isinstance(finalizza_entry, dict) else False,
+            "stato_documento_success": bool(stato_entry.get("success")) if isinstance(stato_entry, dict) else False,
             "numero_raccomandata_test": finalizza_result.get("numero_raccomandata_test"),
             "id_richiesta_test": finalizza_result.get("id_richiesta_test"),
             "guid_utente_test": finalizza_result.get("guid_utente_test"),
+            "id_ordine_poste_test": finalizza_result.get("id_ordine_poste_test"),
+            "costo_test_finale": finalizza_result.get("costo_test_finale"),
             "stato_test": (
                 stato_result.get("stato_result", {}) or {}
             ).get("StatoIdRichiesta"),
             "documento_is_pdf": stato_result.get("documento_is_pdf"),
-            "documento_size_bytes": stato_result.get("documento_size_bytes"),
-            "results": results,
-            "message": "Pipeline automatica Raccomandata TEST completata. Produzione non toccata."
+            "documento_size_bytes": stato_result.get("documento_size_bytes")
         }
-
-    except Exception as e:
-        return {
-            "success": False,
-            "step": "ERRORE_RACCOMANDATA_TEST_AUTO",
-            "ambiente": "TEST",
-            "pratica_id": pratica_id,
-            "error": str(e)
-        }
-
+    }
+    raccomandata_test["ultimo_step"] = "RACCOMANDATA_TEST_AUTO_COMPLETATA"
+    raccomandata_test["auto_test_completata"] = True
+    raccomandata_test["auto_test_completed_at"] = now_iso
+    poste_response["raccomandata_test"] = raccomandata_test
+    safe_poste_response = ecx_clean_for_supabase(poste_response)
+    supabase.table("pratiche").update({
+        "poste_response": safe_poste_response,
+        "updated_at": now_iso
+    }).eq("id", pratica_id).execute()
+    return ecx_clean_for_supabase({
+        "success": True,
+        "step": "RACCOMANDATA_TEST_AUTO_COMPLETATA",
+        "ambiente": "TEST",
+        "idempotent": True,
+        "pratica_id": pratica_id,
+        "order_name": pratica.get("shopify_order_name") or pratica.get("order_name"),
+        "numero_raccomandata_test": finalizza_result.get("numero_raccomandata_test"),
+        "id_richiesta_test": finalizza_result.get("id_richiesta_test"),
+        "guid_utente_test": finalizza_result.get("guid_utente_test"),
+        "id_ordine_poste_test": finalizza_result.get("id_ordine_poste_test"),
+        "costo_test_finale": finalizza_result.get("costo_test_finale"),
+        "stato_test": (
+            stato_result.get("stato_result", {}) or {}
+        ).get("StatoIdRichiesta"),
+        "documento_is_pdf": stato_result.get("documento_is_pdf"),
+        "documento_size_bytes": stato_result.get("documento_size_bytes"),
+        "results": results,
+        "message": "Pipeline automatica Raccomandata TEST completata in modo idempotente. Produzione non toccata."
+    })
+except Exception as e:
+    return ecx_clean_for_supabase({
+        "success": False,
+        "step": "ERRORE_RACCOMANDATA_TEST_AUTO",
+        "ambiente": "TEST",
+        "pratica_id": pratica_id,
+        "error": str(e)
+    })
 
 @app.get("/dashboard/pratiche/raccomandata-test-finalizza/{pratica_id}")
 def dashboard_raccomandata_test_finalizza(pratica_id: str):
