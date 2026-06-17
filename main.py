@@ -12062,9 +12062,9 @@ async def shopify_raccomandata_order(request: Request):
             "error": str(e)
         }
 
-@app.post(”/shopify/webhook/order-created”)
+@app.post("/shopify/webhook/order-created")
 async def shopify_webhook_order_created_alias(request: Request):
-return await shopify_raccomandata_order(request)
+    return await shopify_raccomandata_order(request)
 
 @app.get("/dashboard/pratiche/invia-diretto-poste/{pratica_id}")
 def dashboard_invia_diretto_poste(pratica_id: str):
