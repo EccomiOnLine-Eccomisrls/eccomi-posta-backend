@@ -7413,7 +7413,7 @@ def split_via_civico_from_text(indirizzo):
 
 
 def estrai_dati_rubrica_da_raw(raw):
-    raw = str(raw or "").str----------------------------
+    raw = str(raw or "").strip()
     nome = raw
     resto = ""
 
