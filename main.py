@@ -7413,8 +7413,7 @@ def split_via_civico_from_text(indirizzo):
 
 
 def estrai_dati_rubrica_da_raw(raw):
-    raw = str(raw or "").strip()
-
+    raw = str(raw or "").str----------------------------
     nome = raw
     resto = ""
 
@@ -7634,8 +7633,10 @@ async def crea_raccomandata(
 
         cliente_email_safe = cliente_email or ""
 
+        pratica_id = None
+
         try:
-            supabase.table("pratiche").insert({
+            pratica_payload = {
                 "order_id": str(order_id),
                 "order_name": str(order_id),
                 "shopify_order_name": str(order_id),
@@ -7652,7 +7653,39 @@ async def crea_raccomandata(
                 "pdf_url": pdf_url,
                 "stato": "BOZZA_CHECKOUT",
                 "ricevuta_ritorno": ricevuta_ritorno_bool
-            }).execute()
+            }
+
+            insert_res = (
+                supabase
+                .table("pratiche")
+                .insert(pratica_payload)
+                .execute()
+            )
+
+            if insert_res.data:
+                pratica_id = insert_res.data[0].get("id")
+
+                registra_evento_pratica(
+                    pratica_id=pratica_id,
+                    evento="BOZZA_CHECKOUT_CREATA",
+                    stato_nuovo="BOZZA_CHECKOUT",
+                    messaggio="Bozza Raccomandata creata prima del pagamento Shopify.",
+                    source="raccomandata_form",
+                    payload={
+                        "order_id": str(order_id),
+                        "cliente_email": cliente_email_safe,
+                        "pdf_url": pdf_url,
+                        "ricevuta_ritorno": ricevuta_ritorno_bool,
+                        "pagine": pagine,
+                        "metodo": metodo
+                    }
+                )
+
+            else:
+                print(
+                    "ERRORE SALVATAGGIO PRATICA RACCOMANDATA: insert_res.data vuoto",
+                    insert_res
+                )
 
         except Exception as db_error:
             print(
@@ -7680,6 +7713,7 @@ async def crea_raccomandata(
         return {
             "success": True,
             "token": token,
+            "pratica_id": pratica_id,
             "pdf_saved": pdf_saved,
             "folder": pratica_dir,
             "pdf_url": pdf_url,
