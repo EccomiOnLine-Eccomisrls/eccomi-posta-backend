@@ -24,6 +24,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from io import BytesIO
 from pypdf import PdfReader
 import datetime
+import traceback
 import os
 import hashlib
 import base64
@@ -228,6 +229,208 @@ POSTE_H2H_REPORTING_SERVICE_URL = os.getenv(
 )
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+# ============================================================
+
+# EVENTI PRATICA / TIMELINE DASHBOARD
+
+# ============================================================
+
+def now_iso():
+
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+def get_pratica_by_id(pratica_id: str):
+
+    try:
+
+        res = (
+
+            supabase
+
+            .table("pratiche")
+
+            .select("*")
+
+            .eq("id", pratica_id)
+
+            .limit(1)
+
+            .execute()
+
+        )
+
+        data = res.data or []
+
+        if not data:
+
+            return None
+
+        return data[0]
+
+    except Exception as e:
+
+        print("ERRORE get_pratica_by_id:", pratica_id, str(e))
+
+        return None
+
+def registra_evento_pratica(
+
+    pratica_id: str,
+
+    evento: str,
+
+    stato_precedente: str = None,
+
+    stato_nuovo: str = None,
+
+    messaggio: str = "",
+
+    source: str = "backend",
+
+    payload: dict = None,
+
+):
+
+    """
+
+    Registra ogni movimento della pratica:
+
+    - evento storico in pratica_eventi
+
+    - ultimo evento visibile nella tabella pratiche
+
+    - opzionale cambio stato
+
+    """
+
+    try:
+
+        pratica = get_pratica_by_id(pratica_id)
+
+        if not pratica:
+
+            print("EVENTO NON REGISTRATO - pratica non trovata:", pratica_id, evento)
+
+            return False
+
+        now = now_iso()
+
+        event_data = {
+
+            "pratica_id": str(pratica_id),
+
+            "order_id": pratica.get("order_id"),
+
+            "order_name": pratica.get("order_name") or pratica.get("shopify_order_name"),
+
+            "tipo_servizio": pratica.get("tipo_servizio"),
+
+            "evento": evento,
+
+            "stato_precedente": stato_precedente or pratica.get("stato"),
+
+            "stato_nuovo": stato_nuovo,
+
+            "messaggio": messaggio,
+
+            "source": source,
+
+            "payload": payload or {},
+
+            "created_at": now,
+
+        }
+
+        supabase.table("pratica_eventi").insert(event_data).execute()
+
+        update_data = {
+
+            "ultimo_evento": evento,
+
+            "ultimo_messaggio": messaggio,
+
+            "ultimo_aggiornamento": now,
+
+            "updated_at": now,
+
+        }
+
+        if stato_nuovo:
+
+            update_data["stato"] = stato_nuovo
+
+        supabase.table("pratiche").update(update_data).eq("id", pratica_id).execute()
+
+        print(
+
+            "EVENTO PRATICA:",
+
+            {
+
+                "pratica_id": pratica_id,
+
+                "evento": evento,
+
+                "stato_nuovo": stato_nuovo,
+
+                "messaggio": messaggio,
+
+            }
+
+        )
+
+        return True
+
+    except Exception as e:
+
+        print("ERRORE registra_evento_pratica:", pratica_id, evento, str(e))
+
+        traceback.print_exc()
+
+        return False
+
+def can_auto_send_raccomandata(pratica: dict):
+
+    if not pratica:
+
+        return False, "Pratica non trovata"
+
+    tipo_servizio = str(pratica.get("tipo_servizio") or "").upper().strip()
+
+    stato = str(pratica.get("stato") or "").upper().strip()
+
+    if tipo_servizio not in ["RACCOMANDATA", "RACCOMANDATA + RR"]:
+
+        return False, f"Servizio non automatico: {tipo_servizio}"
+
+    if stato in [
+
+        "INVIATO_POSTE",
+
+        "COMPLETATO",
+
+        "ERRORE_POSTE",
+
+        "ANNULLATO",
+
+        "RICEVUTO_MANUALE",
+
+        "LAVORAZIONE_MANUALE",
+
+    ]:
+
+        return False, f"Stato non inviabile: {stato}"
+
+    if pratica.get("id_richiesta"):
+
+        return False, "id_richiesta già presente"
+
+    if pratica.get("numero_raccomandata"):
+
+        return False, "numero_raccomandata già presente"
+
+    return True, "OK"
 
 # ============================================================
 # SICUREZZA H2H - BLOCCO ENDPOINT DI TEST IN PRODUZIONE
