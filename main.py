@@ -1429,7 +1429,7 @@ def esegui_auto_invio_raccomandata_produzione(
         }
 
 def riprendi_solo_valorizzazione_raccomandata(
-    pratica_id: str
+    pratica_id: str,
     allow_auto_worker: bool = False
 ):
     """
