@@ -13618,6 +13618,115 @@ def dashboard_marca_pratica_pagata(pratica_id: str, order_name: str = ""):
             "pratica_id": pratica_id
         }
 
+def salva_risultato_auto_webhook_raccomandata(
+    pratica_id: str,
+    sezione: str,
+    prefisso: str,
+    risultato
+):
+    """
+    Salva dentro poste_response il risultato della pipeline
+    TEST oppure PRODUZIONE avviata dal webhook Shopify.
+    """
+    try:
+        pratica_refresh = (
+            supabase
+            .table("pratiche")
+            .select("poste_response")
+            .eq("id", pratica_id)
+            .single()
+            .execute()
+        )
+        poste_response_refresh = {}
+        if pratica_refresh.data:
+            poste_response_refresh = (
+                pratica_refresh.data.get("poste_response")
+                or {}
+            )
+        if isinstance(poste_response_refresh, str):
+            try:
+                poste_response_refresh = json.loads(
+                    poste_response_refresh
+                )
+            except Exception:
+                poste_response_refresh = {}
+        if not isinstance(poste_response_refresh, dict):
+            poste_response_refresh = {}
+        sezione_refresh = (
+            poste_response_refresh.get(sezione)
+            or {}
+        )
+        if not isinstance(sezione_refresh, dict):
+            sezione_refresh = {}
+        sezione_refresh[
+            f"{prefisso}_webhook_result"
+        ] = ecx_clean_for_supabase(risultato)
+        sezione_refresh[
+            f"{prefisso}_webhook_at"
+        ] = now_iso()
+        if isinstance(risultato, dict):
+            sezione_refresh[
+                f"{prefisso}_step"
+            ] = risultato.get("step")
+            sezione_refresh[
+                f"{prefisso}_success"
+            ] = bool(risultato.get("success"))
+            sezione_refresh[
+                f"{prefisso}_pending"
+            ] = bool(risultato.get("pending"))
+            sezione_refresh[
+                f"{prefisso}_skipped"
+            ] = bool(risultato.get("skipped"))
+            sezione_refresh[
+                f"{prefisso}_blocked"
+            ] = bool(risultato.get("blocked"))
+            errore_reale = (
+                not risultato.get("success")
+                and not risultato.get("pending")
+                and not risultato.get("skipped")
+            )
+            if errore_reale:
+                sezione_refresh[
+                    f"{prefisso}_errore"
+                ] = True
+                sezione_refresh[
+                    f"{prefisso}_error"
+                ] = (
+                    risultato.get("error")
+                    or risultato.get("message")
+                    or "Pipeline automatica non completata"
+                )
+            else:
+                sezione_refresh.pop(
+                    f"{prefisso}_errore",
+                    None
+                )
+                sezione_refresh.pop(
+                    f"{prefisso}_error",
+                    None
+                )
+        poste_response_refresh[
+            sezione
+        ] = sezione_refresh
+        (
+            supabase
+            .table("pratiche")
+            .update({
+                "poste_response": poste_response_refresh,
+                "updated_at": now_iso()
+            })
+            .eq("id", pratica_id)
+            .execute()
+        )
+        return True
+    except Exception as save_error:
+        print(
+            "ERRORE SALVATAGGIO RISULTATO "
+            "AUTOMATISMO WEBHOOK:",
+            str(save_error)
+        )
+        return False
+
 
 @app.post("/shopify/raccomandata/order")
 async def shopify_raccomandata_order(request: Request):
@@ -13988,20 +14097,18 @@ async def shopify_raccomandata_order(request: Request):
                 .execute()
             )
             pratica.update(update_data)
-            h2h_id = None
+                        h2h_id = None
             test_auto_result = None
+            produzione_auto_result = None
+            modalita_auto = "nessuna"
+
             # =================================================
-            # 9. PREPARAZIONE H2H E TEST AUTOMATICO
+            # 9. PREPARAZIONE H2H E SCELTA TEST/PRODUZIONE
             # =================================================
-            # Si procede solo se:
-            # - Shopify ha comunicato financial_status=paid
-            # - la pratica è effettivamente RICEVUTO_PAGATO
-            #
-            # Gli stati avanzati non vengono mai riaperti.
+
             if (
                 is_paid
-                and stato_da_salvare
-                == "RICEVUTO_PAGATO"
+                and stato_da_salvare == "RICEVUTO_PAGATO"
             ):
                 h2h_id = crea_o_aggiorna_h2h_da_pratica(
                     pratica=pratica,
@@ -14011,163 +14118,79 @@ async def shopify_raccomandata_order(request: Request):
                         f"{order_name}"
                     )
                 )
-                try:
-                    test_auto_result = (
-                        dashboard_raccomandata_test_auto(
-                            str(pratica_id)
-                        )
-                    )
-                except Exception as test_error:
-                    test_auto_result = {
-                        "success": False,
-                        "step": (
-                            "RACCOMANDATA_TEST_AUTO_"
-                            "WEBHOOK_ERRORE"
-                        ),
-                        "error": str(test_error)
-                    }
-                # =============================================
-                # 10. SALVATAGGIO RISULTATO TEST H2H
-                # =============================================
-                try:
-                    pratica_refresh = (
-                        supabase
-                        .table("pratiche")
-                        .select("poste_response")
-                        .eq("id", pratica_id)
-                        .single()
-                        .execute()
-                    )
-                    poste_response_refresh = {}
-                    if pratica_refresh.data:
-                        poste_response_refresh = (
-                            pratica_refresh.data.get(
-                                "poste_response"
-                            )
-                            or {}
-                        )
-                    if isinstance(
-                        poste_response_refresh,
-                        str
-                    ):
-                        try:
-                            poste_response_refresh = (
-                                json.loads(
-                                    poste_response_refresh
-                                )
-                            )
-                        except Exception:
-                            poste_response_refresh = {}
-                    if not isinstance(
-                        poste_response_refresh,
-                        dict
-                    ):
-                        poste_response_refresh = {}
-                    raccomandata_test_refresh = (
-                        poste_response_refresh.get(
-                            "raccomandata_test"
-                        )
-                        or {}
-                    )
-                    if not isinstance(
-                        raccomandata_test_refresh,
-                        dict
-                    ):
-                        raccomandata_test_refresh = {}
-                    raccomandata_test_refresh[
-                        "auto_test_webhook_result"
-                    ] = ecx_clean_for_supabase(
-                        test_auto_result
-                    )
-                    raccomandata_test_refresh[
-                        "auto_test_webhook_at"
-                    ] = datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat()
-                    if isinstance(
-                        test_auto_result,
-                        dict
-                    ):
-                        raccomandata_test_refresh[
-                            "auto_test_step"
-                        ] = test_auto_result.get("step")
-                        raccomandata_test_refresh[
-                            "auto_test_success"
-                        ] = bool(
-                            test_auto_result.get(
-                                "success"
+
+                # Produzione e TEST non devono mai partire insieme.
+                if raccomandata_auto_produzione_enabled():
+                    modalita_auto = "produzione"
+
+                    try:
+                        produzione_auto_result = (
+                            esegui_auto_invio_raccomandata_produzione(
+                                str(pratica_id)
                             )
                         )
-                        raccomandata_test_refresh[
-                            "auto_test_pending"
-                        ] = bool(
-                            test_auto_result.get(
-                                "pending"
-                            )
-                        )
-                        if (
-                            not test_auto_result.get(
-                                "success"
-                            )
-                            and not test_auto_result.get(
-                                "pending"
-                            )
-                        ):
-                            raccomandata_test_refresh[
-                                "auto_test_errore"
-                            ] = True
-                            raccomandata_test_refresh[
-                                "auto_test_error"
-                            ] = (
-                                test_auto_result.get(
-                                    "error"
-                                )
-                                or test_auto_result.get(
-                                    "message"
-                                )
-                                or (
-                                    "Test automatico "
-                                    "non completato"
-                                )
-                            )
-                    poste_response_refresh[
-                        "raccomandata_test"
-                    ] = raccomandata_test_refresh
-                    (
-                        supabase
-                        .table("pratiche")
-                        .update({
-                            "poste_response": (
-                                poste_response_refresh
+
+                    except Exception as produzione_error:
+                        produzione_auto_result = {
+                            "success": False,
+                            "step": (
+                                "RACCOMANDATA_PRODUZIONE_"
+                                "WEBHOOK_ERRORE"
                             ),
-                            "updated_at": (
-                                datetime.datetime.now(
-                                    datetime.timezone.utc
-                                ).isoformat()
+                            "error": str(produzione_error)
+                        }
+
+                        traceback.print_exc()
+
+                    salva_risultato_auto_webhook_raccomandata(
+                        pratica_id=str(pratica_id),
+                        sezione="raccomandata_produzione",
+                        prefisso="auto_produzione",
+                        risultato=produzione_auto_result
+                    )
+
+                else:
+                    modalita_auto = "test"
+
+                    try:
+                        test_auto_result = (
+                            dashboard_raccomandata_test_auto(
+                                str(pratica_id)
                             )
-                        })
-                        .eq("id", pratica_id)
-                        .execute()
+                        )
+
+                    except Exception as test_error:
+                        test_auto_result = {
+                            "success": False,
+                            "step": (
+                                "RACCOMANDATA_TEST_AUTO_"
+                                "WEBHOOK_ERRORE"
+                            ),
+                            "error": str(test_error)
+                        }
+
+                        traceback.print_exc()
+
+                    salva_risultato_auto_webhook_raccomandata(
+                        pratica_id=str(pratica_id),
+                        sezione="raccomandata_test",
+                        prefisso="auto_test",
+                        risultato=test_auto_result
                     )
-                except Exception as save_test_error:
-                    print(
-                        "ERRORE SALVATAGGIO RISULTATO "
-                        "TEST H2H WEBHOOK:",
-                        str(save_test_error)
-                    )
+                
             risultati.append({
                 "success": True,
                 "pratica_id": pratica_id,
                 "order_id": order_key,
                 "order_name": order_name,
                 "financial_status": financial_status,
-                "stato_precedente": (
-                    stato_pratica_precedente
-                ),
+                "stato_precedente": stato_pratica_precedente,
                 "stato": stato_da_salvare,
                 "ricevuta_ritorno": has_rr,
                 "h2h_id": h2h_id,
-                "test_auto_result": test_auto_result
+                "modalita_auto": modalita_auto,
+                "test_auto_result": test_auto_result,
+                "produzione_auto_result": produzione_auto_result
             })
         return JSONResponse(
             status_code=200,
