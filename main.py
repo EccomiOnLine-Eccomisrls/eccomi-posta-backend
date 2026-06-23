@@ -1430,6 +1430,7 @@ def esegui_auto_invio_raccomandata_produzione(
 
 def riprendi_solo_valorizzazione_raccomandata(
     pratica_id: str
+    allow_auto_worker: bool = False
 ):
     """
     Recupera una Raccomandata già inviata tecnicamente a Poste.
@@ -1449,15 +1450,18 @@ def riprendi_solo_valorizzazione_raccomandata(
     try:
         # Durante il recupero la produzione automatica
         # deve restare disattivata.
-        if raccomandata_auto_produzione_enabled():
+        if (
+            raccomandata_auto_produzione_enabled()
+            and allow_auto_worker is not True
+        ):
             return {
                 "success": False,
                 "blocked": True,
                 "step": "AUTO_PRODUZIONE_ATTIVA",
                 "pratica_id": pratica_id,
                 "error": (
-                    "Disattivare prima "
-                    "RACCOMANDATA_AUTO_PRODUZIONE_ENABLED."
+                    "Recupero manuale bloccato mentre "
+                    "l'automazione produzione è attiva."
                 )
             }
 
@@ -1553,7 +1557,8 @@ def riprendi_solo_valorizzazione_raccomandata(
 
         stati_recuperabili = {
             "ERRORE_POSTE",
-            "VALORIZZAZIONE_IN_CORSO"
+            "VALORIZZAZIONE_IN_CORSO",
+            "VALORIZZAZIONE_CHECK_IN_CORSO"
         }
 
         if stato_h2h not in stati_recuperabili:
