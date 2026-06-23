@@ -26,6 +26,7 @@ from pypdf import PdfReader
 import datetime
 import traceback
 import os
+import hmac
 import hashlib
 import base64
 import requests
@@ -524,6 +525,51 @@ def clean_tipo_rubrica(value):
         )
 
     return tipo
+
+def verify_shopify_webhook_hmac(
+    raw_body: bytes,
+    received_hmac: str
+):
+    """
+    Verifica che il webhook provenga realmente da Shopify.
+
+    Non modifica ordini, pratiche o stati.
+    """
+
+    webhook_secret = os.getenv(
+        "SHOPIFY_WEBHOOK_SECRET",
+        ""
+    ).strip()
+
+    if not webhook_secret:
+        return False, "SHOPIFY_WEBHOOK_SECRET non configurato"
+
+    received_hmac = str(
+        received_hmac or ""
+    ).strip()
+
+    if not received_hmac:
+        return False, "Header X-Shopify-Hmac-Sha256 mancante"
+
+    calculated_digest = hmac.new(
+        webhook_secret.encode("utf-8"),
+        raw_body,
+        hashlib.sha256
+    ).digest()
+
+    calculated_hmac = base64.b64encode(
+        calculated_digest
+    ).decode("utf-8")
+
+    valid = hmac.compare_digest(
+        calculated_hmac,
+        received_hmac
+    )
+
+    if not valid:
+        return False, "Firma HMAC Shopify non valida"
+
+    return True, "OK"
 
 
 @app.get("/rubrica-posta")
