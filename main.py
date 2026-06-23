@@ -12375,24 +12375,137 @@ async def shopify_raccomandata_order(request: Request):
 async def shopify_webhook_order_created_alias(request: Request):
     return await shopify_raccomandata_order(request)
 
+def can_auto_send_raccomandata(pratica: dict):
+    """
+    Controlli di sicurezza prima dell'invio a Poste.
+    Non effettua nessuna chiamata H2H.
+    """
+
+    if not pratica:
+        return False, "Pratica non trovata"
+
+    tipo_servizio = str(
+        pratica.get("tipo_servizio") or ""
+    ).strip().upper()
+
+    if tipo_servizio != "RACCOMANDATA":
+        return False, (
+            f"Tipo servizio non autorizzato: {tipo_servizio}"
+        )
+
+    stato = str(
+        pratica.get("stato") or ""
+    ).strip().upper()
+
+    stati_bloccati = {
+        "AUTO_INVIO_IN_CORSO",
+        "INVIATO_POSTE",
+        "COMPLETATO",
+        "ANNULLATO",
+        "RICEVUTO_MANUALE",
+        "LAVORATO_MANUALMENTE",
+    }
+
+    if stato in stati_bloccati:
+        return False, (
+            f"Pratica non inviabile nello stato {stato}"
+        )
+
+    numero_raccomandata = pratica.get(
+        "numero_raccomandata"
+    )
+
+    if numero_raccomandata:
+        return False, (
+            "Pratica già associata al numero "
+            f"{numero_raccomandata}"
+        )
+
+    id_richiesta = pratica.get("id_richiesta")
+
+    if id_richiesta:
+        return False, (
+            "Pratica già associata a una richiesta Poste: "
+            f"{id_richiesta}. Verificare prima di ripetere l'invio."
+        )
+
+    return True, "OK"
+
 @app.get("/dashboard/pratiche/invia-diretto-poste/{pratica_id}")
 def dashboard_invia_diretto_poste(pratica_id: str):
     """
-    Invio diretto a Poste:
-    - calcola/prezza
-    - finalizza subito
-    - può generare costo H2H
+    Invio diretto e controllato a Poste.
+
+    Sicurezze:
+    - disponibile solo se autorizzato dalle variabili Render
+    - solo per RACCOMANDATA
+    - blocca pratiche già inviate
+    - blocca pratiche con id_richiesta o numero raccomandata
+    - utilizza un lock sul record poste_h2h_orders
+    - registra ogni passaggio nella timeline
+    - incrementa il numero dei tentativi
     """
 
+    h2h_order_id = None
+    pratica = None
+
     try:
-        poste_invio_mode = os.getenv("POSTE_INVIO_MODE", "manual").strip().lower()
+        # ==========================================
+        # 1. RECUPERO PRATICA
+        # ==========================================
+
+        pratica_res = (
+            supabase
+            .table("pratiche")
+            .select("*")
+            .eq("id", pratica_id)
+            .single()
+            .execute()
+        )
+
+        pratica = pratica_res.data
+
+        if not pratica:
+            print(
+                "INVIO POSTE BLOCCATO: pratica non trovata",
+                pratica_id
+            )
+
+            return RedirectResponse(
+                url="/dashboard/pratiche?errore=pratica_non_trovata",
+                status_code=302
+            )
+
+        stato_pratica_iniziale = pratica.get("stato")
+
+        # ==========================================
+        # 2. CONTROLLO CONFIGURAZIONE RENDER
+        # ==========================================
+
+        poste_invio_mode = os.getenv(
+            "POSTE_INVIO_MODE",
+            "manual"
+        ).strip().lower()
 
         direct_enabled = os.getenv(
             "POSTE_INVIO_DIRETTO_ENABLED",
             "false"
-        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+        ).strip().lower() in [
+            "true",
+            "1",
+            "yes",
+            "si",
+            "sì",
+            "on"
+        ]
 
         if poste_invio_mode != "auto" or not direct_enabled:
+            messaggio_blocco = (
+                "Invio diretto Poste bloccato dalla configurazione. "
+                f"POSTE_INVIO_MODE={poste_invio_mode}, "
+                f"POSTE_INVIO_DIRETTO_ENABLED={direct_enabled}"
+            )
+
             print(
                 "INVIO DIRETTO POSTE BLOCCATO:",
                 {
@@ -12402,108 +12515,424 @@ def dashboard_invia_diretto_poste(pratica_id: str):
                 }
             )
 
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento="INVIO_DIRETTO_BLOCCATO_CONFIG",
+                stato_precedente=stato_pratica_iniziale,
+                stato_nuovo=stato_pratica_iniziale,
+                messaggio=messaggio_blocco,
+                source="dashboard_invia_diretto_poste",
+                payload={
+                    "POSTE_INVIO_MODE": poste_invio_mode,
+                    "POSTE_INVIO_DIRETTO_ENABLED": direct_enabled
+                }
+            )
+
             return RedirectResponse(
-                url="/dashboard/pratiche",
+                url="/dashboard/pratiche?errore=invio_disabilitato",
                 status_code=302
             )
+
+        # ==========================================
+        # 3. CONTROLLO SICUREZZA PRATICA
+        # ==========================================
+
+        invio_consentito, motivo = can_auto_send_raccomandata(
+            pratica
+        )
+
+        if not invio_consentito:
+            print(
+                "INVIO RACCOMANDATA BLOCCATO:",
+                pratica_id,
+                motivo
+            )
+
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento="INVIO_POSTE_BLOCCATO",
+                stato_precedente=stato_pratica_iniziale,
+                stato_nuovo=stato_pratica_iniziale,
+                messaggio=motivo,
+                source="dashboard_invia_diretto_poste",
+                payload={
+                    "motivo": motivo,
+                    "id_richiesta": pratica.get("id_richiesta"),
+                    "numero_raccomandata": pratica.get(
+                        "numero_raccomandata"
+                    )
+                }
+            )
+
+            return RedirectResponse(
+                url="/dashboard/pratiche?errore=invio_bloccato",
+                status_code=302
+            )
+
+        # ==========================================
+        # 4. RISOLUZIONE ORDINE H2H
+        # ==========================================
+
         h2h_order_id = resolve_h2h_order_id(pratica_id)
 
         if not h2h_order_id:
-            try:
-                supabase.table("pratiche").update({
-                    "stato": "ERRORE_POSTE",
-                    "poste_response": {
-                        "raw": "Impossibile trovare ordine H2H collegato alla pratica per invio diretto"
-                    },
-                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                }).eq("id", pratica_id).execute()
-            except Exception:
-                pass
+            errore = (
+                "Impossibile trovare l'ordine H2H collegato "
+                "alla pratica."
+            )
+
+            supabase.table("pratiche").update({
+                "stato": "ERRORE_POSTE",
+                "poste_response": {
+                    "raw": errore
+                },
+                "auto_invio_last_error": errore,
+                "updated_at": datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat()
+            }).eq("id", pratica_id).execute()
+
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento="ORDINE_H2H_NON_TROVATO",
+                stato_precedente=stato_pratica_iniziale,
+                stato_nuovo="ERRORE_POSTE",
+                messaggio=errore,
+                source="dashboard_invia_diretto_poste",
+                payload={
+                    "pratica_id": pratica_id
+                }
+            )
 
             return RedirectResponse(
                 url="/dashboard/pratiche?stato=ERRORE_POSTE",
                 status_code=302
             )
 
-        ordine_res = supabase.table("poste_h2h_orders") \
-            .select("*") \
-            .eq("id", h2h_order_id) \
-            .single() \
+        ordine_res = (
+            supabase
+            .table("poste_h2h_orders")
+            .select("*")
+            .eq("id", h2h_order_id)
+            .single()
             .execute()
+        )
 
-        if not ordine_res.data:
+        ordine_h2h = ordine_res.data
+
+        if not ordine_h2h:
+            errore = (
+                "Record poste_h2h_orders non trovato: "
+                f"{h2h_order_id}"
+            )
+
+            supabase.table("pratiche").update({
+                "stato": "ERRORE_POSTE",
+                "auto_invio_last_error": errore,
+                "updated_at": datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat()
+            }).eq("id", pratica_id).execute()
+
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento="ORDINE_H2H_RECORD_NON_TROVATO",
+                stato_precedente=stato_pratica_iniziale,
+                stato_nuovo="ERRORE_POSTE",
+                messaggio=errore,
+                source="dashboard_invia_diretto_poste",
+                payload={
+                    "h2h_order_id": h2h_order_id
+                }
+            )
+
             return RedirectResponse(
                 url="/dashboard/pratiche?stato=ERRORE_POSTE",
                 status_code=302
             )
 
-        stato_attuale = ordine_res.data.get("stato")
+        stato_h2h = str(
+            ordine_h2h.get("stato") or ""
+        ).strip().upper()
 
-        if stato_attuale not in ["RICEVUTO_PAGATO", "IN_LAVORAZIONE"]:
+        stati_h2h_consentiti = {
+            "RICEVUTO_PAGATO",
+            "IN_LAVORAZIONE"
+        }
+
+        if stato_h2h not in stati_h2h_consentiti:
+            motivo = (
+                "Ordine H2H non inviabile nello stato "
+                f"{stato_h2h}"
+            )
+
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento="INVIO_POSTE_BLOCCATO_STATO_H2H",
+                stato_precedente=stato_pratica_iniziale,
+                stato_nuovo=stato_pratica_iniziale,
+                messaggio=motivo,
+                source="dashboard_invia_diretto_poste",
+                payload={
+                    "h2h_order_id": h2h_order_id,
+                    "stato_h2h": stato_h2h
+                }
+            )
+
             return RedirectResponse(
-                url="/dashboard/pratiche",
+                url="/dashboard/pratiche?errore=stato_h2h_non_valido",
                 status_code=302
             )
 
-        # 1. Prima invia tecnicamente a Poste e recupera/prepara la prezzatura
+        # ==========================================
+        # 5. LOCK ATOMICO ANTI-DOPPIO INVIO
+        # ==========================================
+
+        lock_res = (
+            supabase
+            .table("poste_h2h_orders")
+            .update({
+                "stato": "AUTO_INVIO_IN_CORSO"
+            })
+            .eq("id", h2h_order_id)
+            .in_(
+                "stato",
+                [
+                    "RICEVUTO_PAGATO",
+                    "IN_LAVORAZIONE"
+                ]
+            )
+            .execute()
+        )
+
+        if not lock_res.data:
+            motivo = (
+                "Lock non acquisito. L'ordine potrebbe essere "
+                "già in elaborazione da un altro processo."
+            )
+
+            print(
+                "LOCK AUTO INVIO NON ACQUISITO:",
+                {
+                    "pratica_id": pratica_id,
+                    "h2h_order_id": h2h_order_id
+                }
+            )
+
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento="AUTO_INVIO_BLOCCATO_LOCK",
+                stato_precedente=stato_pratica_iniziale,
+                stato_nuovo=stato_pratica_iniziale,
+                messaggio=motivo,
+                source="dashboard_invia_diretto_poste",
+                payload={
+                    "h2h_order_id": h2h_order_id
+                }
+            )
+
+            return RedirectResponse(
+                url="/dashboard/pratiche?errore=ordine_in_elaborazione",
+                status_code=302
+            )
+
+        # ==========================================
+        # 6. INCREMENTO TENTATIVO E STATO PRATICA
+        # ==========================================
+
+        try:
+            tentativi_precedenti = int(
+                pratica.get("auto_invio_tentativi") or 0
+            )
+        except Exception:
+            tentativi_precedenti = 0
+
+        nuovo_tentativo = tentativi_precedenti + 1
+
+        supabase.table("pratiche").update({
+            "stato": "AUTO_INVIO_IN_CORSO",
+            "auto_invio_tentativi": nuovo_tentativo,
+            "auto_invio_last_error": None,
+            "updated_at": datetime.datetime.now(
+                datetime.timezone.utc
+            ).isoformat()
+        }).eq("id", pratica_id).execute()
+
+        registra_evento_pratica(
+            pratica_id=pratica_id,
+            evento="AUTO_INVIO_POSTE_AVVIATO",
+            stato_precedente=stato_pratica_iniziale,
+            stato_nuovo="AUTO_INVIO_IN_CORSO",
+            messaggio=(
+                "Avviato invio automatico Raccomandata a Poste. "
+                f"Tentativo numero {nuovo_tentativo}."
+            ),
+            source="dashboard_invia_diretto_poste",
+            payload={
+                "h2h_order_id": h2h_order_id,
+                "tentativo": nuovo_tentativo,
+                "stato_h2h_precedente": stato_h2h
+            }
+        )
+
+        # ==========================================
+        # 7. PREPARAZIONE / PREZZATURA POSTE
+        # ==========================================
+
         process_result = process_poste_order(h2h_order_id)
 
-        if not process_result.get("success"):
-            errore = process_result.get("error") or str(process_result)
+        if (
+            not isinstance(process_result, dict)
+            or not process_result.get("success")
+        ):
+            errore = (
+                process_result.get("error")
+                if isinstance(process_result, dict)
+                else None
+            ) or str(process_result)
 
-            try:
-                supabase.table("poste_h2h_orders").update({
-                    "stato": "ERRORE_POSTE",
-                    "poste_response": errore
-                }).eq("id", h2h_order_id).execute()
-            except Exception:
-                pass
+            errore = str(errore)
 
-            try:
-                supabase.table("pratiche").update({
-                    "stato": "ERRORE_POSTE",
-                    "poste_response": {
-                        "raw": errore
-                    },
-                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                }).eq("id", pratica_id).execute()
-            except Exception:
-                pass
+            supabase.table("poste_h2h_orders").update({
+                "stato": "ERRORE_POSTE",
+                "poste_response": errore
+            }).eq("id", h2h_order_id).execute()
+
+            supabase.table("pratiche").update({
+                "stato": "ERRORE_POSTE",
+                "poste_response": {
+                    "raw": errore
+                },
+                "auto_invio_last_error": errore[:5000],
+                "updated_at": datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat()
+            }).eq("id", pratica_id).execute()
+
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento="PREPARAZIONE_POSTE_ERRORE",
+                stato_precedente="AUTO_INVIO_IN_CORSO",
+                stato_nuovo="ERRORE_POSTE",
+                messaggio=errore,
+                source="dashboard_invia_diretto_poste",
+                payload={
+                    "h2h_order_id": h2h_order_id,
+                    "process_result": str(process_result)[:4000],
+                    "tentativo": nuovo_tentativo
+                }
+            )
 
             return RedirectResponse(
                 url="/dashboard/pratiche?stato=ERRORE_POSTE",
                 status_code=302
             )
 
-        # 2. Poi finalizza realmente a Poste
+        registra_evento_pratica(
+            pratica_id=pratica_id,
+            evento="PREPARAZIONE_POSTE_COMPLETATA",
+            stato_precedente="AUTO_INVIO_IN_CORSO",
+            stato_nuovo="AUTO_INVIO_IN_CORSO",
+            messaggio=(
+                "Preparazione e prezzatura Poste completate. "
+                "Avvio conferma definitiva."
+            ),
+            source="dashboard_invia_diretto_poste",
+            payload={
+                "h2h_order_id": h2h_order_id,
+                "process_result": str(process_result)[:4000],
+                "tentativo": nuovo_tentativo
+            }
+        )
+
+        # ==========================================
+        # 8. CONFERMA DEFINITIVA POSTE
+        # ==========================================
+
         confirm_result = confirm_poste_order(h2h_order_id)
 
-        if isinstance(confirm_result, dict) and not confirm_result.get("success"):
-            errore = confirm_result.get("error") or str(confirm_result)
+        if (
+            isinstance(confirm_result, dict)
+            and not confirm_result.get("success")
+        ):
+            errore = (
+                confirm_result.get("error")
+                or str(confirm_result)
+            )
 
-            try:
-                supabase.table("poste_h2h_orders").update({
-                    "stato": "ERRORE_POSTE",
-                    "poste_response": errore
-                }).eq("id", h2h_order_id).execute()
-            except Exception:
-                pass
+            errore = str(errore)
 
-            try:
-                supabase.table("pratiche").update({
-                    "stato": "ERRORE_POSTE",
-                    "poste_response": {
-                        "raw": errore
-                    },
-                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                }).eq("id", pratica_id).execute()
-            except Exception:
-                pass
+            supabase.table("poste_h2h_orders").update({
+                "stato": "ERRORE_POSTE",
+                "poste_response": errore
+            }).eq("id", h2h_order_id).execute()
+
+            supabase.table("pratiche").update({
+                "stato": "ERRORE_POSTE",
+                "poste_response": {
+                    "raw": errore
+                },
+                "auto_invio_last_error": errore[:5000],
+                "updated_at": datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat()
+            }).eq("id", pratica_id).execute()
+
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento="CONFERMA_POSTE_ERRORE",
+                stato_precedente="AUTO_INVIO_IN_CORSO",
+                stato_nuovo="ERRORE_POSTE",
+                messaggio=(
+                    "Errore durante la conferma definitiva Poste. "
+                    "Non ripetere automaticamente senza verifica. "
+                    f"Dettaglio: {errore}"
+                ),
+                source="dashboard_invia_diretto_poste",
+                payload={
+                    "h2h_order_id": h2h_order_id,
+                    "confirm_result": str(confirm_result)[:4000],
+                    "tentativo": nuovo_tentativo
+                }
+            )
 
             return RedirectResponse(
                 url="/dashboard/pratiche?stato=ERRORE_POSTE",
                 status_code=302
             )
+
+        # ==========================================
+        # 9. INVIO COMPLETATO
+        # ==========================================
+
+        supabase.table("poste_h2h_orders").update({
+            "stato": "INVIATO_POSTE"
+        }).eq("id", h2h_order_id).execute()
+
+        supabase.table("pratiche").update({
+            "stato": "INVIATO_POSTE",
+            "auto_invio_last_error": None,
+            "updated_at": datetime.datetime.now(
+                datetime.timezone.utc
+            ).isoformat()
+        }).eq("id", pratica_id).execute()
+
+        registra_evento_pratica(
+            pratica_id=pratica_id,
+            evento="RACCOMANDATA_INVIATA_POSTE",
+            stato_precedente="AUTO_INVIO_IN_CORSO",
+            stato_nuovo="INVIATO_POSTE",
+            messaggio=(
+                "Raccomandata inviata e confermata definitivamente "
+                "presso Poste Italiane."
+            ),
+            source="dashboard_invia_diretto_poste",
+            payload={
+                "h2h_order_id": h2h_order_id,
+                "confirm_result": str(confirm_result)[:4000],
+                "tentativo": nuovo_tentativo
+            }
+        )
 
         return RedirectResponse(
             url="/dashboard/pratiche?stato=INVIATO_POSTE",
@@ -12511,18 +12940,64 @@ def dashboard_invia_diretto_poste(pratica_id: str):
         )
 
     except Exception as e:
-        print("ERRORE dashboard_invia_diretto_poste:", str(e))
+        errore = str(e)
+
+        print(
+            "ERRORE dashboard_invia_diretto_poste:",
+            errore
+        )
+
+        if h2h_order_id:
+            try:
+                supabase.table("poste_h2h_orders").update({
+                    "stato": "ERRORE_POSTE",
+                    "poste_response": errore
+                }).eq("id", h2h_order_id).execute()
+            except Exception as h2h_update_error:
+                print(
+                    "ERRORE UPDATE poste_h2h_orders:",
+                    str(h2h_update_error)
+                )
 
         try:
             supabase.table("pratiche").update({
                 "stato": "ERRORE_POSTE",
                 "poste_response": {
-                    "raw": str(e)
+                    "raw": errore
                 },
-                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                "auto_invio_last_error": errore[:5000],
+                "updated_at": datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat()
             }).eq("id", pratica_id).execute()
-        except Exception:
-            pass
+        except Exception as pratica_update_error:
+            print(
+                "ERRORE UPDATE pratica:",
+                str(pratica_update_error)
+            )
+
+        try:
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento="AUTO_INVIO_POSTE_ECCEZIONE",
+                stato_precedente=(
+                    pratica.get("stato")
+                    if pratica
+                    else None
+                ),
+                stato_nuovo="ERRORE_POSTE",
+                messaggio=errore,
+                source="dashboard_invia_diretto_poste",
+                payload={
+                    "h2h_order_id": h2h_order_id,
+                    "traceback": traceback.format_exc()[-6000:]
+                }
+            )
+        except Exception as evento_error:
+            print(
+                "ERRORE REGISTRAZIONE EVENTO:",
+                str(evento_error)
+            )
 
         return RedirectResponse(
             url="/dashboard/pratiche?stato=ERRORE_POSTE",
