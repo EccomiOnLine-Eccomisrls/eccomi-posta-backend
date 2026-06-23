@@ -593,6 +593,662 @@ def raccomandata_auto_produzione_enabled():
     ]
 
 
+def segna_errore_auto_raccomandata(
+    pratica_id: str,
+    h2h_order_id: str = None,
+    evento: str = "AUTO_INVIO_POSTE_ERRORE",
+    errore: str = "",
+    stato_precedente: str = None,
+    payload: dict = None
+):
+    """
+    Registra un errore dell'automatismo Raccomandata.
+
+    Non effettua tentativi automatici successivi.
+    """
+
+    errore = str(
+        errore or "Errore automatico non specificato"
+    )
+
+    now = now_iso()
+
+    if h2h_order_id:
+        try:
+            h2h_res = (
+                supabase
+                .table("poste_h2h_orders")
+                .select("stato,numero_raccomandata")
+                .eq("id", h2h_order_id)
+                .limit(1)
+                .execute()
+            )
+
+            h2h_attuale = (
+                h2h_res.data[0]
+                if h2h_res.data
+                else {}
+            )
+
+            stato_h2h = str(
+                h2h_attuale.get("stato") or ""
+            ).strip().upper()
+
+            numero_h2h = str(
+                h2h_attuale.get(
+                    "numero_raccomandata"
+                ) or ""
+            ).strip()
+
+            # Mai trasformare in errore una Raccomandata
+            # che risulta già confermata presso Poste.
+            if (
+                stato_h2h not in {
+                    "INVIATO_POSTE",
+                    "RICEVUTA_SALVATA",
+                    "COMPLETATO"
+                }
+                and not numero_h2h
+            ):
+                (
+                    supabase
+                    .table("poste_h2h_orders")
+                    .update({
+                        "stato": "ERRORE_POSTE",
+                        "poste_response": errore
+                    })
+                    .eq("id", h2h_order_id)
+                    .execute()
+                )
+
+        except Exception as h2h_error:
+            print(
+                "ERRORE SALVATAGGIO ERRORE H2H:",
+                str(h2h_error)
+            )
+
+    pratica = get_pratica_by_id(pratica_id)
+
+    if pratica:
+        stato_pratica = str(
+            pratica.get("stato") or ""
+        ).strip().upper()
+
+        numero_pratica = str(
+            pratica.get(
+                "numero_raccomandata"
+            ) or ""
+        ).strip()
+
+        # Stessa protezione sul record pratica.
+        if (
+            stato_pratica not in {
+                "INVIATO_POSTE",
+                "RICEVUTA_SALVATA",
+                "COMPLETATO"
+            }
+            and not numero_pratica
+        ):
+            try:
+                (
+                    supabase
+                    .table("pratiche")
+                    .update({
+                        "stato": "ERRORE_POSTE",
+
+                        "poste_response": {
+                            "raw": errore,
+                            "fase": evento
+                        },
+
+                        "auto_invio_last_error": (
+                            errore[:5000]
+                        ),
+
+                        "updated_at": now
+                    })
+                    .eq("id", pratica_id)
+                    .execute()
+                )
+
+            except Exception as pratica_error:
+                print(
+                    "ERRORE SALVATAGGIO ERRORE PRATICA:",
+                    str(pratica_error)
+                )
+
+    registra_evento_pratica(
+        pratica_id=pratica_id,
+        evento=evento,
+        stato_precedente=stato_precedente,
+        stato_nuovo="ERRORE_POSTE",
+        messaggio=errore,
+        source=(
+            "esegui_auto_invio_"
+            "raccomandata_produzione"
+        ),
+        payload={
+            "h2h_order_id": h2h_order_id,
+            **(payload or {})
+        }
+    )
+
+
+def esegui_auto_invio_raccomandata_produzione(
+    pratica_id: str
+):
+    """
+    Pipeline automatica reale Raccomandata:
+
+    RICEVUTO_PAGATO
+        -> AUTO_INVIO_IN_CORSO
+        -> PREZZATA_DA_CONFERMARE
+        -> FINALIZZAZIONE_IN_CORSO
+        -> INVIATO_POSTE
+
+    Viene eseguita soltanto quando:
+    - RACCOMANDATA_AUTO_PRODUZIONE_ENABLED=true
+    - POSTE_INVIO_MODE=auto
+    """
+
+    h2h_order_id = None
+
+    # =========================================================
+    # 1. INTERRUTTORE GENERALE
+    # =========================================================
+
+    if not raccomandata_auto_produzione_enabled():
+        return {
+            "success": True,
+            "skipped": True,
+            "step": "AUTO_PRODUZIONE_DISATTIVATA",
+            "pratica_id": pratica_id,
+            "message": (
+                "Automatismo reale Raccomandata "
+                "disattivato."
+            )
+        }
+
+    poste_invio_mode = os.getenv(
+        "POSTE_INVIO_MODE",
+        "manual"
+    ).strip().lower()
+
+    if poste_invio_mode != "auto":
+        return {
+            "success": False,
+            "blocked": True,
+            "step": "POSTE_INVIO_MODE_NON_AUTO",
+            "pratica_id": pratica_id,
+            "mode": poste_invio_mode,
+            "error": (
+                "Automatismo Raccomandata bloccato: "
+                "POSTE_INVIO_MODE non è auto."
+            )
+        }
+
+    try:
+        # =====================================================
+        # 2. RECUPERO E VALIDAZIONE PRATICA
+        # =====================================================
+
+        pratica = get_pratica_by_id(pratica_id)
+
+        if not pratica:
+            return {
+                "success": False,
+                "step": "PRATICA_NON_TROVATA",
+                "pratica_id": pratica_id,
+                "error": "Pratica non trovata"
+            }
+
+        invio_consentito, motivo = (
+            can_auto_send_raccomandata(pratica)
+        )
+
+        if not invio_consentito:
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "PRATICA_NON_AUTORIZZATA",
+                "pratica_id": pratica_id,
+                "stato": pratica.get("stato"),
+                "error": motivo
+            }
+
+        # =====================================================
+        # 3. RECUPERO O CREAZIONE ORDINE H2H
+        # =====================================================
+
+        h2h_order_id = resolve_h2h_order_id(
+            pratica_id
+        )
+
+        if not h2h_order_id:
+            h2h_order_id = (
+                crea_o_aggiorna_h2h_da_pratica(
+                    pratica=pratica,
+                    stato="RICEVUTO_PAGATO",
+                    note=(
+                        "Preparazione automatica "
+                        "Raccomandata produzione"
+                    )
+                )
+            )
+
+        if not h2h_order_id:
+            errore = (
+                "Impossibile creare o recuperare "
+                "l'ordine H2H."
+            )
+
+            segna_errore_auto_raccomandata(
+                pratica_id=pratica_id,
+                evento="ORDINE_H2H_NON_DISPONIBILE",
+                errore=errore,
+                stato_precedente=pratica.get("stato")
+            )
+
+            return {
+                "success": False,
+                "step": "ORDINE_H2H_NON_DISPONIBILE",
+                "pratica_id": pratica_id,
+                "error": errore
+            }
+
+        ordine_res = (
+            supabase
+            .table("poste_h2h_orders")
+            .select("*")
+            .eq("id", h2h_order_id)
+            .limit(1)
+            .execute()
+        )
+
+        if not ordine_res.data:
+            errore = (
+                "Record poste_h2h_orders "
+                "non trovato."
+            )
+
+            segna_errore_auto_raccomandata(
+                pratica_id=pratica_id,
+                h2h_order_id=h2h_order_id,
+                evento="RECORD_H2H_NON_TROVATO",
+                errore=errore,
+                stato_precedente=pratica.get("stato")
+            )
+
+            return {
+                "success": False,
+                "step": "RECORD_H2H_NON_TROVATO",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "error": errore
+            }
+
+        ordine_h2h = ordine_res.data[0]
+
+        stato_h2h = str(
+            ordine_h2h.get("stato") or ""
+        ).strip().upper()
+
+        numero_esistente = str(
+            ordine_h2h.get(
+                "numero_raccomandata"
+            ) or ""
+        ).strip()
+
+        if (
+            stato_h2h in {
+                "INVIATO_POSTE",
+                "RICEVUTA_SALVATA",
+                "COMPLETATO"
+            }
+            or numero_esistente
+        ):
+            return {
+                "success": True,
+                "skipped": True,
+                "already_sent": True,
+                "step": "GIA_INVIATO_POSTE",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "numero_raccomandata": numero_esistente
+            }
+
+        if stato_h2h not in {
+            "RICEVUTO_PAGATO",
+            "IN_LAVORAZIONE"
+        }:
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "STATO_H2H_NON_LAVORABILE",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "stato": stato_h2h,
+                "error": (
+                    "Ordine H2H non lavorabile "
+                    f"nello stato {stato_h2h}."
+                )
+            }
+
+        # =====================================================
+        # 4. LOCK ATOMICO ANTI-DOPPIO INVIO
+        # =====================================================
+
+        lock_res = (
+            supabase
+            .table("poste_h2h_orders")
+            .update({
+                "stato": "AUTO_INVIO_IN_CORSO"
+            })
+            .eq("id", h2h_order_id)
+            .in_(
+                "stato",
+                [
+                    "RICEVUTO_PAGATO",
+                    "IN_LAVORAZIONE"
+                ]
+            )
+            .execute()
+        )
+
+        if not lock_res.data:
+            verifica_res = (
+                supabase
+                .table("poste_h2h_orders")
+                .select(
+                    "stato,numero_raccomandata"
+                )
+                .eq("id", h2h_order_id)
+                .limit(1)
+                .execute()
+            )
+
+            verifica = (
+                verifica_res.data[0]
+                if verifica_res.data
+                else {}
+            )
+
+            stato_verifica = str(
+                verifica.get("stato") or ""
+            ).strip().upper()
+
+            numero_verifica = str(
+                verifica.get(
+                    "numero_raccomandata"
+                ) or ""
+            ).strip()
+
+            if (
+                stato_verifica in {
+                    "INVIATO_POSTE",
+                    "RICEVUTA_SALVATA",
+                    "COMPLETATO"
+                }
+                or numero_verifica
+            ):
+                return {
+                    "success": True,
+                    "skipped": True,
+                    "already_sent": True,
+                    "step": "GIA_INVIATO_POSTE",
+                    "pratica_id": pratica_id,
+                    "h2h_order_id": h2h_order_id,
+                    "numero_raccomandata": (
+                        numero_verifica
+                    )
+                }
+
+            return {
+                "success": False,
+                "blocked": True,
+                "in_progress": True,
+                "step": "LOCK_AUTO_INVIO_NON_ACQUISITO",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "stato": stato_verifica,
+                "error": (
+                    "Ordine già in elaborazione "
+                    "da un altro processo."
+                )
+            }
+
+        # =====================================================
+        # 5. AGGIORNAMENTO PRATICA E TENTATIVI
+        # =====================================================
+
+        try:
+            tentativi_precedenti = int(
+                pratica.get(
+                    "auto_invio_tentativi"
+                ) or 0
+            )
+        except Exception:
+            tentativi_precedenti = 0
+
+        nuovo_tentativo = (
+            tentativi_precedenti + 1
+        )
+
+        (
+            supabase
+            .table("pratiche")
+            .update({
+                "stato": "AUTO_INVIO_IN_CORSO",
+                "auto_invio_tentativi": nuovo_tentativo,
+                "auto_invio_last_error": None,
+                "updated_at": now_iso()
+            })
+            .eq("id", pratica_id)
+            .execute()
+        )
+
+        registra_evento_pratica(
+            pratica_id=pratica_id,
+            evento="AUTO_INVIO_POSTE_AVVIATO",
+            stato_precedente="RICEVUTO_PAGATO",
+            stato_nuovo="AUTO_INVIO_IN_CORSO",
+            messaggio=(
+                "Avviata pipeline automatica reale "
+                f"Raccomandata. Tentativo "
+                f"{nuovo_tentativo}."
+            ),
+            source=(
+                "shopify_webhook_"
+                "raccomandata_produzione"
+            ),
+            payload={
+                "h2h_order_id": h2h_order_id,
+                "tentativo": nuovo_tentativo
+            }
+        )
+
+        # =====================================================
+        # 6. INVIO TECNICO E PREZZATURA
+        # =====================================================
+
+        process_result = _process_poste_order_core(
+            order_id=h2h_order_id,
+            allow_auto_lock=True
+        )
+
+        if (
+            not isinstance(process_result, dict)
+            or not process_result.get("success")
+        ):
+            errore = (
+                process_result.get("error")
+                if isinstance(process_result, dict)
+                else str(process_result)
+            ) or "Errore preparazione Poste"
+
+            segna_errore_auto_raccomandata(
+                pratica_id=pratica_id,
+                h2h_order_id=h2h_order_id,
+                evento="PREPARAZIONE_POSTE_ERRORE",
+                errore=str(errore),
+                stato_precedente=(
+                    "AUTO_INVIO_IN_CORSO"
+                ),
+                payload={
+                    "process_result": str(
+                        process_result
+                    )[:4000],
+                    "tentativo": nuovo_tentativo
+                }
+            )
+
+            return {
+                "success": False,
+                "step": "PREPARAZIONE_POSTE_ERRORE",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "error": str(errore)
+            }
+
+        registra_evento_pratica(
+            pratica_id=pratica_id,
+            evento="PREPARAZIONE_POSTE_COMPLETATA",
+            stato_precedente="AUTO_INVIO_IN_CORSO",
+            stato_nuovo="PREZZATA_DA_CONFERMARE",
+            messaggio=(
+                "Preparazione e prezzatura "
+                "Poste completate."
+            ),
+            source=(
+                "shopify_webhook_"
+                "raccomandata_produzione"
+            ),
+            payload={
+                "h2h_order_id": h2h_order_id,
+                "tentativo": nuovo_tentativo,
+                "process_result": str(
+                    process_result
+                )[:4000]
+            }
+        )
+
+        # =====================================================
+        # 7. CONFERMA DEFINITIVA
+        # =====================================================
+
+        confirm_result = confirm_poste_order(
+            h2h_order_id
+        )
+
+        if (
+            isinstance(confirm_result, dict)
+            and confirm_result.get("in_progress")
+        ):
+            return {
+                "success": False,
+                "pending": True,
+                "in_progress": True,
+                "step": "FINALIZZAZIONE_IN_CORSO",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id
+            }
+
+        if (
+            not isinstance(confirm_result, dict)
+            or not confirm_result.get("success")
+        ):
+            errore = (
+                confirm_result.get("error")
+                if isinstance(confirm_result, dict)
+                else str(confirm_result)
+            ) or "Errore finalizzazione Poste"
+
+            segna_errore_auto_raccomandata(
+                pratica_id=pratica_id,
+                h2h_order_id=h2h_order_id,
+                evento="CONFERMA_POSTE_ERRORE",
+                errore=str(errore),
+                stato_precedente=(
+                    "PREZZATA_DA_CONFERMARE"
+                ),
+                payload={
+                    "confirm_result": str(
+                        confirm_result
+                    )[:4000],
+                    "tentativo": nuovo_tentativo
+                }
+            )
+
+            return {
+                "success": False,
+                "step": "CONFERMA_POSTE_ERRORE",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "error": str(errore),
+                "manual_check_required": True
+            }
+
+        pratica_finale = get_pratica_by_id(
+            pratica_id
+        ) or {}
+
+        return {
+            "success": True,
+            "step": (
+                confirm_result.get("step")
+                if isinstance(confirm_result, dict)
+                else "INVIATO_POSTE"
+            ),
+            "pratica_id": pratica_id,
+            "h2h_order_id": h2h_order_id,
+            "numero_raccomandata": (
+                pratica_finale.get(
+                    "numero_raccomandata"
+                )
+                or (
+                    confirm_result.get(
+                        "numero_raccomandata"
+                    )
+                    if isinstance(
+                        confirm_result,
+                        dict
+                    )
+                    else None
+                )
+            ),
+            "confirm_result": (
+                ecx_clean_for_supabase(
+                    confirm_result
+                )
+            )
+        }
+
+    except Exception as e:
+        errore = str(e)
+
+        traceback.print_exc()
+
+        segna_errore_auto_raccomandata(
+            pratica_id=pratica_id,
+            h2h_order_id=h2h_order_id,
+            evento="AUTO_INVIO_POSTE_ECCEZIONE",
+            errore=errore,
+            payload={
+                "traceback": (
+                    traceback.format_exc()[-6000:]
+                )
+            }
+        )
+
+        return {
+            "success": False,
+            "step": "AUTO_INVIO_POSTE_ECCEZIONE",
+            "pratica_id": pratica_id,
+            "h2h_order_id": h2h_order_id,
+            "error": errore
+        }
+        
+
 @app.get("/rubrica-posta")
 async def rubrica_posta(email: str = "", customer_id: str = ""):
     try:
