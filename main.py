@@ -1427,6 +1427,388 @@ def esegui_auto_invio_raccomandata_produzione(
             "h2h_order_id": h2h_order_id,
             "error": errore
         }
+
+def riprendi_solo_valorizzazione_raccomandata(
+    pratica_id: str
+):
+    """
+    Recupera una Raccomandata già inviata tecnicamente a Poste.
+
+    Esegue esclusivamente Valorizza utilizzando:
+    - IDRichiesta esistente
+    - GuidUtente esistente
+
+    NON richiama:
+    - RecuperaIdRichiesta
+    - Invio
+    - PreConferma
+    """
+
+    history = HistoryPlugin()
+
+    try:
+        # Durante il recupero la produzione automatica
+        # deve restare disattivata.
+        if raccomandata_auto_produzione_enabled():
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "AUTO_PRODUZIONE_ATTIVA",
+                "pratica_id": pratica_id,
+                "error": (
+                    "Disattivare prima "
+                    "RACCOMANDATA_AUTO_PRODUZIONE_ENABLED."
+                )
+            }
+
+        pratica = get_pratica_by_id(
+            pratica_id
+        )
+
+        if not pratica:
+            return {
+                "success": False,
+                "step": "PRATICA_NON_TROVATA",
+                "pratica_id": pratica_id,
+                "error": "Pratica non trovata"
+            }
+
+        h2h_order_id = resolve_h2h_order_id(
+            pratica_id
+        )
+
+        if not h2h_order_id:
+            return {
+                "success": False,
+                "step": "ORDINE_H2H_NON_TROVATO",
+                "pratica_id": pratica_id,
+                "error": (
+                    "Nessun ordine H2H collegato "
+                    "alla pratica."
+                )
+            }
+
+        ordine_res = (
+            supabase
+            .table("poste_h2h_orders")
+            .select("*")
+            .eq("id", h2h_order_id)
+            .limit(1)
+            .execute()
+        )
+
+        if not ordine_res.data:
+            return {
+                "success": False,
+                "step": "RECORD_H2H_NON_TROVATO",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "error": (
+                    "Record poste_h2h_orders "
+                    "non trovato."
+                )
+            }
+
+        ordine = ordine_res.data[0]
+
+        stato_h2h = str(
+            ordine.get("stato") or ""
+        ).strip().upper()
+
+        numero_raccomandata = str(
+            ordine.get(
+                "numero_raccomandata"
+            ) or ""
+        ).strip()
+
+        if numero_raccomandata:
+            return {
+                "success": True,
+                "skipped": True,
+                "already_sent": True,
+                "step": "GIA_INVIATO_POSTE",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "numero_raccomandata": (
+                    numero_raccomandata
+                )
+            }
+
+        if stato_h2h == "PREZZATA_DA_CONFERMARE":
+            return {
+                "success": True,
+                "skipped": True,
+                "ready_for_confirm": True,
+                "step": "GIA_PREZZATA_DA_CONFERMARE",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "id_richiesta": ordine.get(
+                    "id_richiesta"
+                ),
+                "guid_utente": ordine.get(
+                    "guid_utente"
+                ),
+                "costo": ordine.get("costo")
+            }
+
+        stati_recuperabili = {
+            "ERRORE_POSTE",
+            "VALORIZZAZIONE_IN_CORSO"
+        }
+
+        if stato_h2h not in stati_recuperabili:
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "STATO_H2H_NON_RECUPERABILE",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "stato": stato_h2h,
+                "error": (
+                    "Valorizzazione non consentita "
+                    f"nello stato {stato_h2h}."
+                )
+            }
+
+        id_richiesta = str(
+            ordine.get("id_richiesta") or ""
+        ).strip()
+
+        guid_utente = str(
+            ordine.get("guid_utente") or ""
+        ).strip()
+
+        if not id_richiesta or not guid_utente:
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "IDENTIFICATIVI_POSTE_MANCANTI",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "id_richiesta": id_richiesta,
+                "guid_utente": guid_utente,
+                "error": (
+                    "IDRichiesta o GuidUtente mancanti. "
+                    "Nessuna chiamata a Poste effettuata."
+                )
+            }
+
+        client, service = poste_client(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        RichiestaType = client.get_type(
+            "ns1:Richiesta"
+        )
+
+        richiesta = RichiestaType(
+            IDRichiesta=id_richiesta,
+            GuidUtente=guid_utente
+        )
+
+        # =====================================================
+        # UNICA CHIAMATA POSTE: VALORIZZA
+        # =====================================================
+
+        valorizza_result = service.Valorizza(
+            Richieste=[
+                richiesta
+            ]
+        )
+
+        costo_valorizzato = estrai_costo_valorizza(
+            valorizza_result
+        )
+
+        analisi = analizza_valorizzazione_poste(
+            valorizza_result,
+            costo_valorizzato
+        )
+
+        pending = bool(
+            analisi.get("pending")
+        )
+
+        nuovo_stato = (
+            "VALORIZZAZIONE_IN_CORSO"
+            if pending
+            else "PREZZATA_DA_CONFERMARE"
+        )
+
+        poste_response_text = str(
+            valorizza_result
+        )
+
+        xml_sent = None
+        xml_received = None
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        (
+            supabase
+            .table("poste_h2h_orders")
+            .update({
+                "stato": nuovo_stato,
+                "costo": costo_valorizzato,
+                "poste_response": poste_response_text,
+                "xml_sent": xml_sent,
+                "xml_received": xml_received
+            })
+            .eq("id", h2h_order_id)
+            .execute()
+        )
+
+        (
+            supabase
+            .table("pratiche")
+            .update({
+                "stato": nuovo_stato,
+                "id_richiesta": id_richiesta,
+                "poste_response": {
+                    "raw": poste_response_text,
+                    "costo_valorizzato": (
+                        costo_valorizzato
+                    ),
+                    "analisi_valorizzazione": (
+                        ecx_clean_for_supabase(
+                            analisi
+                        )
+                    ),
+                    "recupero_solo_valorizza": True
+                },
+                "xml_sent": xml_sent,
+                "xml_received": xml_received,
+                "auto_invio_last_error": None,
+                "updated_at": now_iso()
+            })
+            .eq("id", pratica_id)
+            .execute()
+        )
+
+        registra_evento_pratica(
+            pratica_id=pratica_id,
+            evento=(
+                "VALORIZZAZIONE_POSTE_IN_CORSO"
+                if pending
+                else "VALORIZZAZIONE_POSTE_PRONTA"
+            ),
+            stato_precedente=(
+                pratica.get("stato")
+            ),
+            stato_nuovo=nuovo_stato,
+            messaggio=(
+                "Richiamata esclusivamente Valorizza. "
+                "Poste sta ancora elaborando la richiesta."
+                if pending
+                else
+                "Richiamata esclusivamente Valorizza. "
+                "La richiesta risulta pronta "
+                "per la conferma."
+            ),
+            source=(
+                "recupero_solo_valorizzazione"
+            ),
+            payload={
+                "h2h_order_id": h2h_order_id,
+                "id_richiesta": id_richiesta,
+                "guid_utente": guid_utente,
+                "costo": costo_valorizzato,
+                "analisi": (
+                    ecx_clean_for_supabase(
+                        analisi
+                    )
+                )
+            }
+        )
+
+        return {
+            "success": True,
+            "pending": pending,
+            "ready_for_confirm": not pending,
+            "step": nuovo_stato,
+            "pratica_id": pratica_id,
+            "h2h_order_id": h2h_order_id,
+            "id_richiesta": id_richiesta,
+            "guid_utente": guid_utente,
+            "costo": costo_valorizzato,
+            "analisi": analisi,
+            "message": (
+                "Valorizzazione ancora in corso."
+                if pending
+                else
+                "Valorizzazione pronta. "
+                "PreConferma non ancora eseguita."
+            )
+        }
+
+    except Exception as e:
+        errore = str(e)
+
+        traceback.print_exc()
+
+        try:
+            (
+                supabase
+                .table("pratiche")
+                .update({
+                    "auto_invio_last_error": errore,
+                    "updated_at": now_iso()
+                })
+                .eq("id", pratica_id)
+                .execute()
+            )
+        except Exception:
+            pass
+
+        registra_evento_pratica(
+            pratica_id=pratica_id,
+            evento="RECUPERO_VALORIZZAZIONE_ERRORE",
+            stato_precedente=None,
+            stato_nuovo=None,
+            messaggio=errore,
+            source="recupero_solo_valorizzazione",
+            payload={
+                "traceback": (
+                    traceback.format_exc()[-6000:]
+                )
+            }
+        )
+
+        return {
+            "success": False,
+            "step": "RECUPERO_VALORIZZAZIONE_ERRORE",
+            "pratica_id": pratica_id,
+            "error": errore
+        }
+
+
+@app.get(
+    "/dashboard/pratiche/"
+    "riprendi-valorizzazione/{pratica_id}"
+)
+def dashboard_riprendi_valorizzazione(
+    pratica_id: str
+):
+    return riprendi_solo_valorizzazione_raccomandata(
+        pratica_id
+    )
         
 
 @app.get("/rubrica-posta")
