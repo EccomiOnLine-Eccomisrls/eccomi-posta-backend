@@ -7214,70 +7214,132 @@ def analizza_valorizzazione_poste(
     costo_valorizzato=None
 ):
     """
-    Determina se la risposta Valorizza di Poste è:
-    - ancora in lavorazione;
-    - realmente pronta per PreConferma.
+    Analizza la risposta Valorizza di Poste.
 
-    Per sicurezza considera pronta una richiesta soltanto quando:
-    - non è InCorso;
-    - non restituisce i codici temporanei 0051 / 1181;
-    - contiene DestinatariRaccomandata;
-    - contiene un importo maggiore di zero.
+    La valorizzazione viene considerata pronta soltanto quando:
+    - StatoLavorazione è R / Prezzato;
+    - i codici CEResult sono 0000;
+    - NumeroPagine è maggiore di zero;
+    - il costo è maggiore di zero.
+
+    TipoVisualizzazione=InCorso e l'assenza di
+    DestinatariRaccomandata restano informazioni diagnostiche,
+    ma non bloccano una richiesta già correttamente prezzata.
     """
 
     try:
         from zeep.helpers import serialize_object
-        data = serialize_object(valorizza_result)
+
+        data = serialize_object(
+            valorizza_result
+        )
     except Exception:
         data = valorizza_result
 
-    def ci_get(obj, key, default=None):
+    def ci_get(
+        obj,
+        key,
+        default=None
+    ):
         if not isinstance(obj, dict):
             return default
 
-        target = str(key).strip().lower()
+        target = str(
+            key
+        ).strip().lower()
 
         for current_key, current_value in obj.items():
-            if str(current_key).strip().lower() == target:
+            if (
+                str(current_key)
+                .strip()
+                .lower()
+                == target
+            ):
                 return current_value
 
         return default
 
-    def contains_nonempty_key(obj, key):
-        target = str(key).strip().lower()
+    def contains_nonempty_key(
+        obj,
+        key
+    ):
+        target = str(
+            key
+        ).strip().lower()
 
         if isinstance(obj, dict):
             for current_key, current_value in obj.items():
                 if (
-                    str(current_key).strip().lower() == target
-                    and current_value not in [None, "", [], {}]
+                    str(current_key)
+                    .strip()
+                    .lower()
+                    == target
+                    and current_value
+                    not in [
+                        None,
+                        "",
+                        [],
+                        {}
+                    ]
                 ):
                     return True
 
-                if contains_nonempty_key(current_value, key):
+                if contains_nonempty_key(
+                    current_value,
+                    key
+                ):
                     return True
 
-        elif isinstance(obj, (list, tuple)):
+        elif isinstance(
+            obj,
+            (list, tuple)
+        ):
             for item in obj:
-                if contains_nonempty_key(item, key):
+                if contains_nonempty_key(
+                    item,
+                    key
+                ):
                     return True
 
         return False
 
     def to_float(value):
-        if value in [None, ""]:
+        if value in [
+            None,
+            ""
+        ]:
             return 0.0
 
         try:
             return float(value)
+
         except Exception:
             try:
-                return float(
+                normalized = (
                     str(value)
                     .strip()
-                    .replace(".", "")
-                    .replace(",", ".")
+                    .replace("€", "")
+                    .replace(" ", "")
                 )
+
+                if (
+                    "," in normalized
+                    and "." in normalized
+                ):
+                    normalized = (
+                        normalized
+                        .replace(".", "")
+                        .replace(",", ".")
+                    )
+
+                elif "," in normalized:
+                    normalized = (
+                        normalized
+                        .replace(",", ".")
+                    )
+
+                return float(normalized)
+
             except Exception:
                 return 0.0
 
@@ -7290,8 +7352,13 @@ def analizza_valorizzazione_poste(
     if responses is None:
         responses = []
 
-    if not isinstance(responses, (list, tuple)):
-        responses = [responses]
+    if not isinstance(
+        responses,
+        (list, tuple)
+    ):
+        responses = [
+            responses
+        ]
 
     prima_risposta = (
         responses[0]
@@ -7299,18 +7366,22 @@ def analizza_valorizzazione_poste(
         else {}
     )
 
-    stato_lavorazione = ci_get(
-        prima_risposta,
-        "StatoLavorazione",
-        {}
-    ) or {}
+    stato_lavorazione = (
+        ci_get(
+            prima_risposta,
+            "StatoLavorazione",
+            {}
+        )
+        or {}
+    )
 
     tipo_visualizzazione = str(
         ci_get(
             prima_risposta,
             "TipoVisualizzazione",
             ""
-        ) or ""
+        )
+        or ""
     ).strip()
 
     stato_id = str(
@@ -7318,35 +7389,44 @@ def analizza_valorizzazione_poste(
             stato_lavorazione,
             "Id",
             ""
-        ) or ""
-    ).strip()
+        )
+        or ""
+    ).strip().upper()
 
     stato_descrizione = str(
         ci_get(
             stato_lavorazione,
             "Descrizione",
             ""
-        ) or ""
+        )
+        or ""
     ).strip()
 
-    cer_risposta = ci_get(
-        prima_risposta,
-        "CEResult",
-        {}
-    ) or {}
+    cer_risposta = (
+        ci_get(
+            prima_risposta,
+            "CEResult",
+            {}
+        )
+        or {}
+    )
 
-    cer_generale = ci_get(
-        data,
-        "CEResult",
-        {}
-    ) or {}
+    cer_generale = (
+        ci_get(
+            data,
+            "CEResult",
+            {}
+        )
+        or {}
+    )
 
     codice_risposta = str(
         ci_get(
             cer_risposta,
             "Code",
             ""
-        ) or ""
+        )
+        or ""
     ).strip()
 
     codice_generale = str(
@@ -7354,7 +7434,8 @@ def analizza_valorizzazione_poste(
             cer_generale,
             "Code",
             ""
-        ) or ""
+        )
+        or ""
     ).strip()
 
     numero_pagine_raw = ci_get(
@@ -7370,7 +7451,9 @@ def analizza_valorizzazione_poste(
     except Exception:
         numero_pagine = 0
 
-    costo = to_float(costo_valorizzato)
+    costo = to_float(
+        costo_valorizzato
+    )
 
     ha_destinatari_raccomandata = (
         contains_nonempty_key(
@@ -7379,59 +7462,103 @@ def analizza_valorizzazione_poste(
         )
     )
 
+    stato_prezzato = (
+        stato_id == "R"
+        or "PREZZAT" in (
+            stato_descrizione.upper()
+        )
+    )
+
+    codici_ok = (
+        codice_generale == "0000"
+        and codice_risposta == "0000"
+    )
+
+    pagine_ok = (
+        numero_pagine > 0
+    )
+
+    costo_ok = (
+        costo > 0
+    )
+
+    ready = bool(
+        responses
+        and stato_prezzato
+        and codici_ok
+        and pagine_ok
+        and costo_ok
+    )
+
     motivi_attesa = []
 
-    if not responses:
-        motivi_attesa.append(
-            "ServizioEnquiryResponse assente"
-        )
+    if not ready:
+        if not responses:
+            motivi_attesa.append(
+                "ServizioEnquiryResponse assente"
+            )
 
-    if tipo_visualizzazione.upper() == "INCORSO":
-        motivi_attesa.append(
-            "TipoVisualizzazione InCorso"
-        )
+        if not stato_prezzato:
+            motivi_attesa.append(
+                "Richiesta non ancora nello stato Prezzato"
+            )
 
-    if stato_id.upper() == "D":
-        motivi_attesa.append(
-            "Presa in Carico DCS"
-        )
+        if codice_generale != "0000":
+            motivi_attesa.append(
+                "Codice generale non definitivo: "
+                f"{codice_generale or 'assente'}"
+            )
 
-    if codice_generale in {"0051"}:
-        motivi_attesa.append(
-            f"Codice generale temporaneo {codice_generale}"
-        )
+        if codice_risposta != "0000":
+            motivi_attesa.append(
+                "Codice richiesta non definitivo: "
+                f"{codice_risposta or 'assente'}"
+            )
 
-    if codice_risposta in {"1181"}:
-        motivi_attesa.append(
-            f"Codice richiesta temporaneo {codice_risposta}"
-        )
+        if numero_pagine <= 0:
+            motivi_attesa.append(
+                "Numero pagine non disponibile"
+            )
 
-    if not ha_destinatari_raccomandata:
-        motivi_attesa.append(
-            "DestinatariRaccomandata non ancora disponibili"
-        )
+        if costo <= 0:
+            motivi_attesa.append(
+                "Importo valorizzato non disponibile"
+            )
 
-    if costo <= 0:
-        motivi_attesa.append(
-            "Importo valorizzato non ancora disponibile"
-        )
-
-    pending = len(motivi_attesa) > 0
+        if (
+            tipo_visualizzazione.upper()
+            == "INCORSO"
+        ):
+            motivi_attesa.append(
+                "TipoVisualizzazione InCorso"
+            )
 
     return {
-        "pending": pending,
-        "ready": not pending,
-        "tipo_visualizzazione": tipo_visualizzazione,
+        "pending": not ready,
+        "ready": ready,
+        "tipo_visualizzazione": (
+            tipo_visualizzazione
+        ),
         "stato_id": stato_id,
-        "stato_descrizione": stato_descrizione,
-        "codice_generale": codice_generale,
-        "codice_risposta": codice_risposta,
-        "numero_pagine": numero_pagine,
+        "stato_descrizione": (
+            stato_descrizione
+        ),
+        "codice_generale": (
+            codice_generale
+        ),
+        "codice_risposta": (
+            codice_risposta
+        ),
+        "numero_pagine": (
+            numero_pagine
+        ),
         "costo": costo,
         "ha_destinatari_raccomandata": (
             ha_destinatari_raccomandata
         ),
-        "motivi_attesa": motivi_attesa
+        "motivi_attesa": (
+            motivi_attesa
+        )
     }
 
 
