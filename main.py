@@ -391,44 +391,77 @@ def registra_evento_pratica(
         return False
 
 def can_auto_send_raccomandata(pratica: dict):
+    """
+    Controlli obbligatori prima dell'automatismo reale.
+
+    Questa funzione non chiama Poste e non genera costi.
+    """
 
     if not pratica:
-
         return False, "Pratica non trovata"
 
-    tipo_servizio = str(pratica.get("tipo_servizio") or "").upper().strip()
+    tipo_servizio = str(
+        pratica.get("tipo_servizio") or ""
+    ).upper().strip()
 
-    stato = str(pratica.get("stato") or "").upper().strip()
+    if tipo_servizio != "RACCOMANDATA":
+        return False, (
+            "Automazione produzione consentita solo "
+            f"per RACCOMANDATA. Servizio ricevuto: {tipo_servizio}"
+        )
 
-    if tipo_servizio not in ["RACCOMANDATA", "RACCOMANDATA + RR"]:
+    stato = str(
+        pratica.get("stato") or ""
+    ).upper().strip()
 
-        return False, f"Servizio non automatico: {tipo_servizio}"
-
-    if stato in [
-
-        "INVIATO_POSTE",
-
-        "COMPLETATO",
-
-        "ERRORE_POSTE",
-
-        "ANNULLATO",
-
-        "RICEVUTO_MANUALE",
-
-        "LAVORAZIONE_MANUALE",
-
-    ]:
-
-        return False, f"Stato non inviabile: {stato}"
-
-    if pratica.get("id_richiesta"):
-
-        return False, "id_richiesta già presente"
+    # Regola fondamentale:
+    # l'automatismo può partire soltanto dopo pagamento Shopify.
+    if stato != "RICEVUTO_PAGATO":
+        return False, (
+            "Pratica non autorizzata all'invio automatico. "
+            f"Stato attuale: {stato}"
+        )
 
     if pratica.get("numero_raccomandata"):
+        return False, (
+            "Pratica già associata al numero raccomandata "
+            f"{pratica.get('numero_raccomandata')}"
+        )
 
-        return False, "numero_raccomandata già presente"
+    if pratica.get("id_richiesta"):
+        return False, (
+            "Pratica già associata alla richiesta Poste "
+            f"{pratica.get('id_richiesta')}"
+        )
+
+    if not pratica.get("pdf_url"):
+        return False, "Documento PDF mancante"
+
+    mittente = pratica.get("mittente") or {}
+    destinatario = pratica.get("destinatario") or {}
+
+    if not mittente:
+        return False, "Mittente mancante"
+
+    if not destinatario:
+        return False, "Destinatario mancante"
+
+    mittente_raw = str(
+        mittente.get("raw") if isinstance(mittente, dict)
+        else mittente
+    ).strip()
+
+    destinatario_raw = str(
+        destinatario.get("raw")
+        if isinstance(destinatario, dict)
+        else destinatario
+    ).strip()
+
+    if not mittente_raw:
+        return False, "Dati mittente vuoti"
+
+    if not destinatario_raw:
+        return False, "Dati destinatario vuoti"
 
     return True, "OK"
 
@@ -11967,18 +12000,38 @@ def extract_racc_token_from_props(props: dict):
     return ""
 
 
-def crea_o_aggiorna_h2h_da_pratica(pratica: dict, stato="RICEVUTO_PAGATO", note=""):
+def crea_o_aggiorna_h2h_da_pratica(
+    pratica: dict,
+    stato="RICEVUTO_PAGATO",
+    note=""
+):
     """
     Crea o aggiorna la riga tecnica poste_h2h_orders collegata alla pratica.
-    NON invia nulla a Poste.
-    NON genera costi.
+
+    Sicurezze:
+    - non invia nulla a Poste
+    - non genera costi
+    - non riporta indietro ordini già lavorati
+    - non sovrascrive richieste Poste già esistenti
+    - gestisce webhook Shopify duplicati
     """
+
+    if not pratica:
+        print("H2H NON CREATO: pratica mancante")
+        return None
+
     pdf_url = pratica.get("pdf_url")
 
     if not pdf_url:
+        print(
+            "H2H NON CREATO: PDF mancante",
+            pratica.get("id")
+        )
         return None
 
-    has_rr = bool_from_any(pratica.get("ricevuta_ritorno"))
+    has_rr = bool_from_any(
+        pratica.get("ricevuta_ritorno")
+    )
 
     order_name = (
         pratica.get("shopify_order_name")
@@ -11994,53 +12047,140 @@ def crea_o_aggiorna_h2h_da_pratica(pratica: dict, stato="RICEVUTO_PAGATO", note=
         "ricevuta_ritorno": has_rr,
         "mittente": pratica.get("mittente") or {},
         "destinatario": pratica.get("destinatario") or {},
-        "poste_response": note or "Preparazione H2H da pagamento Shopify"
+        "poste_response": (
+            note
+            or "Preparazione H2H da pagamento Shopify"
+        )
     }
 
     payload_light = {
         "pdf_url": pdf_url,
         "shopify_order_name": order_name,
         "stato": stato,
-        "poste_response": note or "Preparazione H2H da pagamento Shopify"
+        "poste_response": (
+            note
+            or "Preparazione H2H da pagamento Shopify"
+        )
     }
 
-    existing = supabase.table("poste_h2h_orders") \
-        .select("id") \
-        .eq("pdf_url", pdf_url) \
-        .limit(1) \
+    existing = (
+        supabase
+        .table("poste_h2h_orders")
+        .select("*")
+        .eq("pdf_url", pdf_url)
+        .order("created_at", desc=True)
+        .limit(1)
         .execute()
+    )
 
     if existing.data:
-        h2h_id = existing.data[0].get("id")
+        ordine_esistente = existing.data[0]
+        h2h_id = ordine_esistente.get("id")
+
+        stato_esistente = str(
+            ordine_esistente.get("stato") or ""
+        ).upper().strip()
+
+        id_richiesta_esistente = ordine_esistente.get(
+            "id_richiesta"
+        )
+
+        guid_esistente = ordine_esistente.get(
+            "guid_utente"
+        )
+
+        numero_esistente = ordine_esistente.get(
+            "numero_raccomandata"
+        )
+
+        stati_protetti = {
+            "IN_LAVORAZIONE",
+            "AUTO_INVIO_IN_CORSO",
+            "PREZZATA_DA_CONFERMARE",
+            "FINALIZZAZIONE_IN_CORSO",
+            "INVIATO_POSTE",
+            "RICEVUTA_SALVATA",
+            "COMPLETATO",
+            "ERRORE_POSTE",
+            "ANNULLATO"
+        }
+
+        richiesta_gia_avviata = bool(
+            id_richiesta_esistente
+            or guid_esistente
+            or numero_esistente
+        )
+
+        if (
+            stato_esistente in stati_protetti
+            or richiesta_gia_avviata
+        ):
+            print(
+                "H2H GIÀ ESISTENTE - NESSUN RESET:",
+                {
+                    "h2h_id": h2h_id,
+                    "stato": stato_esistente,
+                    "id_richiesta": id_richiesta_esistente,
+                    "guid_utente": guid_esistente,
+                    "numero_raccomandata": numero_esistente
+                }
+            )
+
+            return h2h_id
 
         try:
-            supabase.table("poste_h2h_orders") \
-                .update(payload_full) \
-                .eq("id", h2h_id) \
+            (
+                supabase
+                .table("poste_h2h_orders")
+                .update(payload_full)
+                .eq("id", h2h_id)
                 .execute()
-        except Exception as e:
-            print("H2H update full fallito, provo light:", str(e))
+            )
 
-            supabase.table("poste_h2h_orders") \
-                .update(payload_light) \
-                .eq("id", h2h_id) \
+        except Exception as e:
+            print(
+                "H2H update full fallito, provo light:",
+                str(e)
+            )
+
+            (
+                supabase
+                .table("poste_h2h_orders")
+                .update(payload_light)
+                .eq("id", h2h_id)
                 .execute()
+            )
 
         return h2h_id
 
     try:
-        inserted = supabase.table("poste_h2h_orders") \
-            .insert(payload_full) \
+        inserted = (
+            supabase
+            .table("poste_h2h_orders")
+            .insert(payload_full)
             .execute()
-    except Exception as e:
-        print("H2H insert full fallito, provo light:", str(e))
+        )
 
-        inserted = supabase.table("poste_h2h_orders") \
-            .insert(payload_light) \
+    except Exception as e:
+        print(
+            "H2H insert full fallito, provo light:",
+            str(e)
+        )
+
+        inserted = (
+            supabase
+            .table("poste_h2h_orders")
+            .insert(payload_light)
             .execute()
+        )
 
     if inserted.data:
         return inserted.data[0].get("id")
+
+    print(
+        "H2H NON CREATO: risposta insert vuota",
+        pratica.get("id")
+    )
 
     return None
 
@@ -12369,67 +12509,12 @@ async def shopify_raccomandata_order(request: Request):
         return {
             "success": False,
             "error": str(e)
-        }
+        } 
 
 @app.post("/shopify/webhook/order-created")
 async def shopify_webhook_order_created_alias(request: Request):
     return await shopify_raccomandata_order(request)
 
-def can_auto_send_raccomandata(pratica: dict):
-    """
-    Controlli di sicurezza prima dell'invio a Poste.
-    Non effettua nessuna chiamata H2H.
-    """
-
-    if not pratica:
-        return False, "Pratica non trovata"
-
-    tipo_servizio = str(
-        pratica.get("tipo_servizio") or ""
-    ).strip().upper()
-
-    if tipo_servizio != "RACCOMANDATA":
-        return False, (
-            f"Tipo servizio non autorizzato: {tipo_servizio}"
-        )
-
-    stato = str(
-        pratica.get("stato") or ""
-    ).strip().upper()
-
-    stati_bloccati = {
-        "AUTO_INVIO_IN_CORSO",
-        "INVIATO_POSTE",
-        "COMPLETATO",
-        "ANNULLATO",
-        "RICEVUTO_MANUALE",
-        "LAVORATO_MANUALMENTE",
-    }
-
-    if stato in stati_bloccati:
-        return False, (
-            f"Pratica non inviabile nello stato {stato}"
-        )
-
-    numero_raccomandata = pratica.get(
-        "numero_raccomandata"
-    )
-
-    if numero_raccomandata:
-        return False, (
-            "Pratica già associata al numero "
-            f"{numero_raccomandata}"
-        )
-
-    id_richiesta = pratica.get("id_richiesta")
-
-    if id_richiesta:
-        return False, (
-            "Pratica già associata a una richiesta Poste: "
-            f"{id_richiesta}. Verificare prima di ripetere l'invio."
-        )
-
-    return True, "OK"
 
 @app.get("/dashboard/pratiche/invia-diretto-poste/{pratica_id}")
 def dashboard_invia_diretto_poste(pratica_id: str):
