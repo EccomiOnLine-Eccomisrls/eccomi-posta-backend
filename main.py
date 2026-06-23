@@ -570,6 +570,27 @@ def verify_shopify_webhook_hmac(
         return False, "Firma HMAC Shopify non valida"
 
     return True, "OK"
+    
+
+def raccomandata_auto_produzione_enabled():
+    """
+    Interruttore generale dell'invio automatico reale
+    delle Raccomandate.
+
+    False = nessun invio automatico reale a Poste.
+    """
+
+    return os.getenv(
+        "RACCOMANDATA_AUTO_PRODUZIONE_ENABLED",
+        "false"
+    ).strip().lower() in [
+        "true",
+        "1",
+        "yes",
+        "si",
+        "sì",
+        "on"
+    ]
 
 
 @app.get("/rubrica-posta")
