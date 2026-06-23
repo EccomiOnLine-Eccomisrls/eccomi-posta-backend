@@ -12946,154 +12946,347 @@ def dashboard_marca_pratica_pagata(pratica_id: str, order_name: str = ""):
 async def shopify_raccomandata_order(request: Request):
     """
     Webhook Shopify per ordini Raccomandata.
-    Da collegare a Shopify su ORDINE PAGATO.
-    Aggiorna BOZZA_CHECKOUT -> RICEVUTO_PAGATO e prepara H2H.
-    NON invia a Poste.
-    NON genera costi.
+    Sicurezze:
+    - verifica firma HMAC Shopify sul corpo originale
+    - accetta come pagato solo financial_status == paid
+    - impedisce la regressione degli stati avanzati
+    - prepara il record H2H
+    - esegue solamente la pipeline automatica TEST
+    NON invia realmente a Poste.
+    NON genera costi reali.
     """
     try:
-        order = await request.json()
-
-        order_id_raw = str(order.get("id") or "").strip()
-        order_key = f"SHOPIFY-{order_id_raw}" if order_id_raw else ""
-        order_name = str(order.get("name") or order_key).strip()
-        email = order.get("email") or order.get("contact_email") or ""
-
-        financial_status = str(order.get("financial_status") or "").lower().strip()
-
-        # Sicurezza Eccomi Posta:
-        # la raccomandata diventa lavorabile solo se Shopify conferma pagamento incassato.
-        # Stati come "authorized" o "partially_paid" NON devono abilitare l'invio Poste.
+        # =====================================================
+        # 1. LETTURA CORPO ORIGINALE E VERIFICA HMAC
+        # =====================================================
+        raw_body = await request.body()
+        received_hmac = request.headers.get(
+            "X-Shopify-Hmac-Sha256",
+            ""
+        )
+        hmac_ok, hmac_error = verify_shopify_webhook_hmac(
+            raw_body=raw_body,
+            received_hmac=received_hmac
+        )
+        if not hmac_ok:
+            print(
+                "WEBHOOK SHOPIFY RACCOMANDATA BLOCCATO:",
+                hmac_error
+            )
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "success": False,
+                    "blocked": True,
+                    "step": "SHOPIFY_HMAC_NON_VALIDO",
+                    "error": hmac_error
+                }
+            )
+        # =====================================================
+        # 2. CONVERSIONE JSON DOPO LA VERIFICA HMAC
+        # =====================================================
+        try:
+            order = json.loads(
+                raw_body.decode("utf-8")
+            )
+        except Exception as json_error:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "step": "SHOPIFY_JSON_NON_VALIDO",
+                    "error": str(json_error)
+                }
+            )
+        if not isinstance(order, dict):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "step": "SHOPIFY_PAYLOAD_NON_VALIDO",
+                    "error": (
+                        "Il payload Shopify non è "
+                        "un oggetto JSON valido."
+                    )
+                }
+            )
+        # =====================================================
+        # 3. DATI ORDINE SHOPIFY
+        # =====================================================
+        order_id_raw = str(
+            order.get("id") or ""
+        ).strip()
+        order_key = (
+            f"SHOPIFY-{order_id_raw}"
+            if order_id_raw
+            else ""
+        )
+        order_name = str(
+            order.get("name")
+            or order_key
+        ).strip()
+        email = (
+            order.get("email")
+            or order.get("contact_email")
+            or ""
+        )
+        financial_status = str(
+            order.get("financial_status") or ""
+        ).lower().strip()
+        # Solo "paid" autorizza la pratica alla lavorazione.
+        # authorized, pending, partially_paid e altri stati
+        # non devono abilitare l'invio Poste.
         is_paid = financial_status == "paid"
-
-        nuovo_stato = "RICEVUTO_PAGATO" if is_paid else "NON_PAGATO"
-
+        nuovo_stato = (
+            "RICEVUTO_PAGATO"
+            if is_paid
+            else "NON_PAGATO"
+        )
         risultati = []
-
+        # =====================================================
+        # 4. ANALISI PRODOTTI ORDINE
+        # =====================================================
         for item in order.get("line_items", []) or []:
-            title = str(item.get("title") or "")
+            title = str(
+                item.get("title") or ""
+            )
             props_preview = {}
-
             for p in item.get("properties", []) or []:
-                name = str(p.get("name") or "").strip()
+                name = str(
+                    p.get("name") or ""
+                ).strip()
                 value = p.get("value")
-
                 if name:
                     props_preview[name] = value
-
             is_extra_rr = (
-                str(props_preview.get("Tipo extra") or "").lower().strip() == "ricevuta di ritorno"
-                or "RICEVUTA DI RITORNO" in title.upper()
+                str(
+                    props_preview.get("Tipo extra") or ""
+                ).lower().strip()
+                == "ricevuta di ritorno"
+                or "RICEVUTA DI RITORNO"
+                in title.upper()
             )
-
+            # La variante RR non deve generare una seconda pratica.
             if is_extra_rr:
                 continue
-
             if "RACCOMANDATA" not in title.upper():
                 continue
-
             props = {}
-
             for p in item.get("properties", []) or []:
-                name = str(p.get("name") or "").strip()
+                name = str(
+                    p.get("name") or ""
+                ).strip()
                 value = p.get("value")
-
                 if name:
                     props[name] = value
-
-            token = extract_racc_token_from_props(props)
-
+            token = extract_racc_token_from_props(
+                props
+            )
             pratica = None
-
-            # 1. Cerca per order_id SHOPIFY
+            # =================================================
+            # 5. RICERCA PRATICA
+            # =================================================
+            # 5.1 Ricerca per ordine Shopify
             if order_key:
-                res = supabase.table("pratiche") \
-                    .select("*") \
+                res = (
+                    supabase
+                    .table("pratiche")
+                    .select("*")
                     .or_(
-                        f"order_id.eq.{order_key},order_name.eq.{order_key},shopify_order_name.eq.{order_key}"
-                    ) \
-                    .order("created_at", desc=True) \
-                    .limit(1) \
+                        f"order_id.eq.{order_key},"
+                        f"order_name.eq.{order_key},"
+                        f"shopify_order_name.eq.{order_key}"
+                    )
+                    .order(
+                        "created_at",
+                        desc=True
+                    )
+                    .limit(1)
                     .execute()
-
+                )
                 if res.data:
                     pratica = res.data[0]
-
-            # 2. Cerca per token nel pdf_url
+            # 5.2 Ricerca per token presente nel PDF
             if not pratica and token:
-                res = supabase.table("pratiche") \
-                    .select("*") \
-                    .ilike("pdf_url", f"%{token}%") \
-                    .order("created_at", desc=True) \
-                    .limit(1) \
+                res = (
+                    supabase
+                    .table("pratiche")
+                    .select("*")
+                    .ilike(
+                        "pdf_url",
+                        f"%{token}%"
+                    )
+                    .order(
+                        "created_at",
+                        desc=True
+                    )
+                    .limit(1)
                     .execute()
-
+                )
                 if res.data:
                     pratica = res.data[0]
-
-            # 3. Cerca fallback per numero ordine raw
+            # 5.3 Fallback per ID ordine Shopify grezzo
             if not pratica and order_id_raw:
-                res = supabase.table("pratiche") \
-                    .select("*") \
-                    .ilike("order_id", f"%{order_id_raw}%") \
-                    .order("created_at", desc=True) \
-                    .limit(1) \
+                res = (
+                    supabase
+                    .table("pratiche")
+                    .select("*")
+                    .ilike(
+                        "order_id",
+                        f"%{order_id_raw}%"
+                    )
+                    .order(
+                        "created_at",
+                        desc=True
+                    )
+                    .limit(1)
                     .execute()
-
+                )
                 if res.data:
                     pratica = res.data[0]
-
             if not pratica:
                 risultati.append({
                     "success": False,
-                    "error": "Pratica raccomandata non trovata",
+                    "step": "PRATICA_NON_TROVATA",
+                    "error": (
+                        "Pratica Raccomandata non trovata"
+                    ),
                     "order_id": order_key,
                     "order_name": order_name,
                     "token": token
                 })
                 continue
-
             pratica_id = pratica.get("id")
-
-            mittente_raw = prop_value(props, ["Mittente", "mittente"], "")
-            destinatario_raw = prop_value(props, ["Destinatario", "destinatario"], "")
-            testo_racc = prop_value(props, ["Testo raccomandata", "testo"], "")
-            oggetto_racc = prop_value(props, ["Oggetto", "oggetto"], "")
-            firma_racc = prop_value(props, ["Firma", "firma"], "")
-            metodo_invio = prop_value(props, ["Metodo invio", "metodo_invio"], "")
-            nome_file_pdf = prop_value(props, ["Nome file PDF", "nome_file_pdf"], "")
-            pagine_racc = prop_value(props, ["Pagine", "pagine"], "")
-            token_pratica = prop_value(props, ["Token pratica", "token"], token or "")
-
+            stato_pratica_precedente = str(
+                pratica.get("stato") or ""
+            ).strip().upper()
+            # =================================================
+            # 6. PROTEZIONE CONTRO REGRESSIONE DI STATO
+            # =================================================
+            stati_non_regredibili = {
+                "RICEVUTO_PAGATO",
+                "IN_LAVORAZIONE",
+                "AUTO_INVIO_IN_CORSO",
+                "PREZZATA_DA_CONFERMARE",
+                "FINALIZZAZIONE_IN_CORSO",
+                "INVIATO_POSTE",
+                "RICEVUTA_SALVATA",
+                "COMPLETATO",
+                "ERRORE_POSTE",
+                "ANNULLATO"
+            }
+            if (
+                stato_pratica_precedente
+                in stati_non_regredibili
+            ):
+                stato_da_salvare = (
+                    stato_pratica_precedente
+                )
+            else:
+                stato_da_salvare = nuovo_stato
+            # =================================================
+            # 7. ESTRAZIONE PROPRIETÀ SHOPIFY
+            # =================================================
+            mittente_raw = prop_value(
+                props,
+                ["Mittente", "mittente"],
+                ""
+            )
+            destinatario_raw = prop_value(
+                props,
+                ["Destinatario", "destinatario"],
+                ""
+            )
+            testo_racc = prop_value(
+                props,
+                ["Testo raccomandata", "testo"],
+                ""
+            )
+            oggetto_racc = prop_value(
+                props,
+                ["Oggetto", "oggetto"],
+                ""
+            )
+            firma_racc = prop_value(
+                props,
+                ["Firma", "firma"],
+                ""
+            )
+            metodo_invio = prop_value(
+                props,
+                ["Metodo invio", "metodo_invio"],
+                ""
+            )
+            nome_file_pdf = prop_value(
+                props,
+                ["Nome file PDF", "nome_file_pdf"],
+                ""
+            )
+            pagine_racc = prop_value(
+                props,
+                ["Pagine", "pagine"],
+                ""
+            )
+            token_pratica = prop_value(
+                props,
+                ["Token pratica", "token"],
+                token or ""
+            )
             has_rr = (
                 detect_ricevuta_ritorno(props)
-                or bool_from_any(pratica.get("ricevuta_ritorno"))
+                or bool_from_any(
+                    pratica.get("ricevuta_ritorno")
+                )
             )
-
+            # =================================================
+            # 8. AGGIORNAMENTO PRATICA
+            # =================================================
             update_data = {
-                "stato": nuovo_stato,
-                "order_id": order_key or pratica.get("order_id"),
+                "stato": stato_da_salvare,
+                "order_id": (
+                    order_key
+                    or pratica.get("order_id")
+                ),
                 "order_name": order_name,
                 "shopify_order_name": order_name,
-                "cliente_email": email or pratica.get("cliente_email") or "",
+                "cliente_email": (
+                    email
+                    or pratica.get("cliente_email")
+                    or ""
+                ),
                 "ricevuta_ritorno": has_rr,
-                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                "updated_at": datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat()
             }
-
             if mittente_raw:
-                update_data["mittente"] = {"raw": mittente_raw}
-
+                update_data["mittente"] = {
+                    "raw": mittente_raw
+                }
             if destinatario_raw:
-                update_data["destinatario"] = {"raw": destinatario_raw}
-
+                update_data["destinatario"] = {
+                    "raw": destinatario_raw
+                }
             if testo_racc:
                 update_data["testo"] = testo_racc
-
-            poste_response_attuale = pratica.get("poste_response") or {}
-
-            if not isinstance(poste_response_attuale, dict):
+            poste_response_attuale = (
+                pratica.get("poste_response") or {}
+            )
+            if isinstance(
+                poste_response_attuale,
+                str
+            ):
+                try:
+                    poste_response_attuale = json.loads(
+                        poste_response_attuale
+                    )
+                except Exception:
+                    poste_response_attuale = {}
+            if not isinstance(
+                poste_response_attuale,
+                dict
+            ):
                 poste_response_attuale = {}
-
             poste_response_attuale.update({
                 "shopify_order_payload": {
                     "oggetto": oggetto_racc,
@@ -13102,107 +13295,234 @@ async def shopify_raccomandata_order(request: Request):
                     "nome_file_pdf": nome_file_pdf,
                     "pagine": pagine_racc,
                     "token_pratica": token_pratica,
-                    "ricevuta_ritorno": has_rr
+                    "ricevuta_ritorno": has_rr,
+                    "financial_status": financial_status,
+                    "hmac_verified": True
                 }
             })
-
-            update_data["poste_response"] = poste_response_attuale
-
-
-            supabase.table("pratiche") \
-                .update(update_data) \
-                .eq("id", pratica_id) \
+            update_data[
+                "poste_response"
+            ] = poste_response_attuale
+            (
+                supabase
+                .table("pratiche")
+                .update(update_data)
+                .eq("id", pratica_id)
                 .execute()
-
+            )
             pratica.update(update_data)
-
             h2h_id = None
             test_auto_result = None
-
-            if nuovo_stato == "RICEVUTO_PAGATO":
+            # =================================================
+            # 9. PREPARAZIONE H2H E TEST AUTOMATICO
+            # =================================================
+            # Si procede solo se:
+            # - Shopify ha comunicato financial_status=paid
+            # - la pratica è effettivamente RICEVUTO_PAGATO
+            #
+            # Gli stati avanzati non vengono mai riaperti.
+            if (
+                is_paid
+                and stato_da_salvare
+                == "RICEVUTO_PAGATO"
+            ):
                 h2h_id = crea_o_aggiorna_h2h_da_pratica(
                     pratica=pratica,
                     stato="RICEVUTO_PAGATO",
-                    note=f"Webhook Shopify ordine pagato {order_name}"
+                    note=(
+                        "Webhook Shopify ordine pagato "
+                        f"{order_name}"
+                    )
                 )
                 try:
-                    test_auto_result = dashboard_raccomandata_test_auto(str(pratica_id))
+                    test_auto_result = (
+                        dashboard_raccomandata_test_auto(
+                            str(pratica_id)
+                        )
+                    )
                 except Exception as test_error:
                     test_auto_result = {
                         "success": False,
-                        "step": "RACCOMANDATA_TEST_AUTO_WEBHOOK_ERRORE",
+                        "step": (
+                            "RACCOMANDATA_TEST_AUTO_"
+                            "WEBHOOK_ERRORE"
+                        ),
                         "error": str(test_error)
                     }
+                # =============================================
+                # 10. SALVATAGGIO RISULTATO TEST H2H
+                # =============================================
                 try:
-                    pratica_refresh = supabase.table("pratiche").select("poste_response").eq("id",
-                    pratica_id).single().execute()
-
+                    pratica_refresh = (
+                        supabase
+                        .table("pratiche")
+                        .select("poste_response")
+                        .eq("id", pratica_id)
+                        .single()
+                        .execute()
+                    )
                     poste_response_refresh = {}
-                
                     if pratica_refresh.data:
-                        poste_response_refresh = pratica_refresh.data.get("poste_response") or {}
-                  
-                    if isinstance(poste_response_refresh, str):
+                        poste_response_refresh = (
+                            pratica_refresh.data.get(
+                                "poste_response"
+                            )
+                            or {}
+                        )
+                    if isinstance(
+                        poste_response_refresh,
+                        str
+                    ):
                         try:
-                            poste_response_refresh = json.loads(poste_response_refresh)
+                            poste_response_refresh = (
+                                json.loads(
+                                    poste_response_refresh
+                                )
+                            )
                         except Exception:
                             poste_response_refresh = {}
-                            
-                    if not isinstance(poste_response_refresh, dict):
+                    if not isinstance(
+                        poste_response_refresh,
+                        dict
+                    ):
                         poste_response_refresh = {}
-                    
-                    raccomandata_test_refresh = poste_response_refresh.get("raccomandata_test") or {}
-               
-                    if not isinstance(raccomandata_test_refresh, dict):
+                    raccomandata_test_refresh = (
+                        poste_response_refresh.get(
+                            "raccomandata_test"
+                        )
+                        or {}
+                    )
+                    if not isinstance(
+                        raccomandata_test_refresh,
+                        dict
+                    ):
                         raccomandata_test_refresh = {}
-                   
-                    raccomandata_test_refresh["auto_test_webhook_result"] = ecx_clean_for_supabase(test_auto_result)
-                    raccomandata_test_refresh["auto_test_webhook_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                   
-                    if isinstance(test_auto_result, dict):
-                        raccomandata_test_refresh["auto_test_step"] = test_auto_result.get("step")
-                        raccomandata_test_refresh["auto_test_success"] = bool(test_auto_result.get("success"))
-                        raccomandata_test_refresh["auto_test_pending"] = bool(test_auto_result.get("pending"))
-                        
-                        if not test_auto_result.get("success") and not test_auto_result.get("pending"):
-                            raccomandata_test_refresh["auto_test_errore"] = True
-                            raccomandata_test_refresh["auto_test_error"] = test_auto_result.get("error") or test_auto_result.get("message") or "Test automatico non completato"
-                    
-                    poste_response_refresh["raccomandata_test"] = raccomandata_test_refresh
-                    
-                    supabase.table("pratiche").update({
-                        "poste_response": poste_response_refresh,
-                        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    }).eq("id", pratica_id).execute()
-                    
+                    raccomandata_test_refresh[
+                        "auto_test_webhook_result"
+                    ] = ecx_clean_for_supabase(
+                        test_auto_result
+                    )
+                    raccomandata_test_refresh[
+                        "auto_test_webhook_at"
+                    ] = datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat()
+                    if isinstance(
+                        test_auto_result,
+                        dict
+                    ):
+                        raccomandata_test_refresh[
+                            "auto_test_step"
+                        ] = test_auto_result.get("step")
+                        raccomandata_test_refresh[
+                            "auto_test_success"
+                        ] = bool(
+                            test_auto_result.get(
+                                "success"
+                            )
+                        )
+                        raccomandata_test_refresh[
+                            "auto_test_pending"
+                        ] = bool(
+                            test_auto_result.get(
+                                "pending"
+                            )
+                        )
+                        if (
+                            not test_auto_result.get(
+                                "success"
+                            )
+                            and not test_auto_result.get(
+                                "pending"
+                            )
+                        ):
+                            raccomandata_test_refresh[
+                                "auto_test_errore"
+                            ] = True
+                            raccomandata_test_refresh[
+                                "auto_test_error"
+                            ] = (
+                                test_auto_result.get(
+                                    "error"
+                                )
+                                or test_auto_result.get(
+                                    "message"
+                                )
+                                or (
+                                    "Test automatico "
+                                    "non completato"
+                                )
+                            )
+                    poste_response_refresh[
+                        "raccomandata_test"
+                    ] = raccomandata_test_refresh
+                    (
+                        supabase
+                        .table("pratiche")
+                        .update({
+                            "poste_response": (
+                                poste_response_refresh
+                            ),
+                            "updated_at": (
+                                datetime.datetime.now(
+                                    datetime.timezone.utc
+                                ).isoformat()
+                            )
+                        })
+                        .eq("id", pratica_id)
+                        .execute()
+                    )
                 except Exception as save_test_error:
-                    print("ERRORE SALVATAGGIO RISULTATO TEST H2H WEBHOOK:", str(save_test_error))
-
+                    print(
+                        "ERRORE SALVATAGGIO RISULTATO "
+                        "TEST H2H WEBHOOK:",
+                        str(save_test_error)
+                    )
             risultati.append({
                 "success": True,
                 "pratica_id": pratica_id,
                 "order_id": order_key,
                 "order_name": order_name,
-                "stato": nuovo_stato,
+                "financial_status": financial_status,
+                "stato_precedente": (
+                    stato_pratica_precedente
+                ),
+                "stato": stato_da_salvare,
                 "ricevuta_ritorno": has_rr,
                 "h2h_id": h2h_id,
                 "test_auto_result": test_auto_result
             })
-
-        return {
-            "success": True,
-            "order_id": order_key,
-            "order_name": order_name,
-            "financial_status": financial_status,
-            "raccomandate_processate": len(risultati),
-            "risultati": risultati
-        }
-
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "hmac_verified": True,
+                "order_id": order_key,
+                "order_name": order_name,
+                "financial_status": financial_status,
+                "raccomandate_processate": len(
+                    risultati
+                ),
+                "risultati": ecx_clean_for_supabase(
+                    risultati
+                )
+            }
+        )
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        } 
+        errore = str(e)
+        print(
+            "ERRORE WEBHOOK SHOPIFY RACCOMANDATA:",
+            errore
+        )
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "step": "WEBHOOK_RACCOMANDATA_ERRORE",
+                "error": errore
+            }
+        ) 
 
 @app.post("/shopify/webhook/order-created")
 async def shopify_webhook_order_created_alias(request: Request):
