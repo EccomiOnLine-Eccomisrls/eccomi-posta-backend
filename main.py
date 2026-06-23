@@ -6647,24 +6647,260 @@ def ricalcola_prezzo_poste(order_id: str):
             "error": str(e)
         }
 
+def analizza_valorizzazione_poste(
+    valorizza_result,
+    costo_valorizzato=None
+):
+    """
+    Determina se la risposta Valorizza di Poste è:
+    - ancora in lavorazione;
+    - realmente pronta per PreConferma.
+
+    Per sicurezza considera pronta una richiesta soltanto quando:
+    - non è InCorso;
+    - non restituisce i codici temporanei 0051 / 1181;
+    - contiene DestinatariRaccomandata;
+    - contiene un importo maggiore di zero.
+    """
+
+    try:
+        from zeep.helpers import serialize_object
+        data = serialize_object(valorizza_result)
+    except Exception:
+        data = valorizza_result
+
+    def ci_get(obj, key, default=None):
+        if not isinstance(obj, dict):
+            return default
+
+        target = str(key).strip().lower()
+
+        for current_key, current_value in obj.items():
+            if str(current_key).strip().lower() == target:
+                return current_value
+
+        return default
+
+    def contains_nonempty_key(obj, key):
+        target = str(key).strip().lower()
+
+        if isinstance(obj, dict):
+            for current_key, current_value in obj.items():
+                if (
+                    str(current_key).strip().lower() == target
+                    and current_value not in [None, "", [], {}]
+                ):
+                    return True
+
+                if contains_nonempty_key(current_value, key):
+                    return True
+
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                if contains_nonempty_key(item, key):
+                    return True
+
+        return False
+
+    def to_float(value):
+        if value in [None, ""]:
+            return 0.0
+
+        try:
+            return float(value)
+        except Exception:
+            try:
+                return float(
+                    str(value)
+                    .strip()
+                    .replace(".", "")
+                    .replace(",", ".")
+                )
+            except Exception:
+                return 0.0
+
+    responses = ci_get(
+        data,
+        "ServizioEnquiryResponse",
+        []
+    )
+
+    if responses is None:
+        responses = []
+
+    if not isinstance(responses, (list, tuple)):
+        responses = [responses]
+
+    prima_risposta = (
+        responses[0]
+        if responses
+        else {}
+    )
+
+    stato_lavorazione = ci_get(
+        prima_risposta,
+        "StatoLavorazione",
+        {}
+    ) or {}
+
+    tipo_visualizzazione = str(
+        ci_get(
+            prima_risposta,
+            "TipoVisualizzazione",
+            ""
+        ) or ""
+    ).strip()
+
+    stato_id = str(
+        ci_get(
+            stato_lavorazione,
+            "Id",
+            ""
+        ) or ""
+    ).strip()
+
+    stato_descrizione = str(
+        ci_get(
+            stato_lavorazione,
+            "Descrizione",
+            ""
+        ) or ""
+    ).strip()
+
+    cer_risposta = ci_get(
+        prima_risposta,
+        "CEResult",
+        {}
+    ) or {}
+
+    cer_generale = ci_get(
+        data,
+        "CEResult",
+        {}
+    ) or {}
+
+    codice_risposta = str(
+        ci_get(
+            cer_risposta,
+            "Code",
+            ""
+        ) or ""
+    ).strip()
+
+    codice_generale = str(
+        ci_get(
+            cer_generale,
+            "Code",
+            ""
+        ) or ""
+    ).strip()
+
+    numero_pagine_raw = ci_get(
+        prima_risposta,
+        "NumeroPagine",
+        0
+    )
+
+    try:
+        numero_pagine = int(
+            numero_pagine_raw or 0
+        )
+    except Exception:
+        numero_pagine = 0
+
+    costo = to_float(costo_valorizzato)
+
+    ha_destinatari_raccomandata = (
+        contains_nonempty_key(
+            prima_risposta,
+            "DestinatariRaccomandata"
+        )
+    )
+
+    motivi_attesa = []
+
+    if not responses:
+        motivi_attesa.append(
+            "ServizioEnquiryResponse assente"
+        )
+
+    if tipo_visualizzazione.upper() == "INCORSO":
+        motivi_attesa.append(
+            "TipoVisualizzazione InCorso"
+        )
+
+    if stato_id.upper() == "D":
+        motivi_attesa.append(
+            "Presa in Carico DCS"
+        )
+
+    if codice_generale in {"0051"}:
+        motivi_attesa.append(
+            f"Codice generale temporaneo {codice_generale}"
+        )
+
+    if codice_risposta in {"1181"}:
+        motivi_attesa.append(
+            f"Codice richiesta temporaneo {codice_risposta}"
+        )
+
+    if not ha_destinatari_raccomandata:
+        motivi_attesa.append(
+            "DestinatariRaccomandata non ancora disponibili"
+        )
+
+    if costo <= 0:
+        motivi_attesa.append(
+            "Importo valorizzato non ancora disponibile"
+        )
+
+    pending = len(motivi_attesa) > 0
+
+    return {
+        "pending": pending,
+        "ready": not pending,
+        "tipo_visualizzazione": tipo_visualizzazione,
+        "stato_id": stato_id,
+        "stato_descrizione": stato_descrizione,
+        "codice_generale": codice_generale,
+        "codice_risposta": codice_risposta,
+        "numero_pagine": numero_pagine,
+        "costo": costo,
+        "ha_destinatari_raccomandata": (
+            ha_destinatari_raccomandata
+        ),
+        "motivi_attesa": motivi_attesa
+    }
+
+
 def _process_poste_order_core(
     order_id: str,
     allow_auto_lock: bool = False
 ):
     """
     Funzione interna per Invio + Valorizza Raccomandata.
+
+    Se Poste restituisce InCorso:
+    - salva IDRichiesta e GuidUtente;
+    - imposta VALORIZZAZIONE_IN_CORSO;
+    - non autorizza la PreConferma.
+
     allow_auto_lock=False:
         AUTO_INVIO_IN_CORSO viene bloccato.
+
     allow_auto_lock=True:
         AUTO_INVIO_IN_CORSO è consentito esclusivamente al processo
         che ha già acquisito il lock atomico.
     """
+
     history = HistoryPlugin()
+
     try:
         poste_invio_mode = os.getenv(
             "POSTE_INVIO_MODE",
             "manual"
         ).strip().lower()
+
         if poste_invio_mode == "disabled":
             return {
                 "success": False,
@@ -6676,7 +6912,11 @@ def _process_poste_order_core(
                     "da POSTE_INVIO_MODE."
                 )
             }
-        if poste_invio_mode not in ["manual", "auto"]:
+
+        if poste_invio_mode not in [
+            "manual",
+            "auto"
+        ]:
             return {
                 "success": False,
                 "blocked": True,
@@ -6688,10 +6928,12 @@ def _process_poste_order_core(
                     "Valori ammessi: manual, auto, disabled."
                 )
             }
+
         client, service = poste_client(
             timeout=120,
             extra_plugins=[history]
         )
+
         ordine_res = (
             supabase
             .table("poste_h2h_orders")
@@ -6700,6 +6942,7 @@ def _process_poste_order_core(
             .single()
             .execute()
         )
+
         if not ordine_res.data:
             return {
                 "success": False,
@@ -6707,22 +6950,31 @@ def _process_poste_order_core(
                 "order_id": order_id,
                 "error": "Ordine H2H non trovato"
             }
+
         ordine = ordine_res.data
-        has_rr = get_ricevuta_ritorno_from_order(ordine)
+
+        has_rr = get_ricevuta_ritorno_from_order(
+            ordine
+        )
+
         # =====================================================
         # CONTROLLO STATO E PROTEZIONE LOCK
         # =====================================================
+
         stato_ordine = str(
             ordine.get("stato") or ""
         ).strip().upper()
+
         stati_lavorabili = {
             "RICEVUTO_PAGATO",
             "IN_LAVORAZIONE"
         }
-        # Questo stato viene autorizzato soltanto dalla chiamata
-        # interna successiva all'acquisizione del lock atomico.
+
         if allow_auto_lock is True:
-            stati_lavorabili.add("AUTO_INVIO_IN_CORSO")
+            stati_lavorabili.add(
+                "AUTO_INVIO_IN_CORSO"
+            )
+
         if stato_ordine not in stati_lavorabili:
             return {
                 "success": False,
@@ -6736,7 +6988,9 @@ def _process_poste_order_core(
                 "order_id": order_id,
                 "allow_auto_lock": allow_auto_lock
             }
+
         pdf_url = ordine.get("pdf_url")
+
         if not pdf_url:
             return {
                 "success": False,
@@ -6744,10 +6998,12 @@ def _process_poste_order_core(
                 "order_id": order_id,
                 "error": "PDF non presente"
             }
+
         response_pdf = requests.get(
             pdf_url,
             timeout=60
         )
+
         if response_pdf.status_code != 200:
             return {
                 "success": False,
@@ -6756,35 +7012,69 @@ def _process_poste_order_core(
                 "error": "Impossibile scaricare PDF",
                 "status_code": response_pdf.status_code
             }
+
         pdf_bytes = response_pdf.content
+
         pdf_base64 = base64.b64encode(
             pdf_bytes
         ).decode("utf-8")
+
         md5_pdf = hashlib.md5(
             pdf_bytes
         ).hexdigest().upper()
-        NominativoType = client.get_type("ns1:Nominativo")
-        IndirizzoType = client.get_type("ns1:Indirizzo")
-        MittenteType = client.get_type("ns1:Mittente")
-        DestinatarioType = client.get_type("ns1:Destinatario")
-        DocumentoType = client.get_type("ns1:Documento")
-        RichiestaType = client.get_type("ns1:Richiesta")
-        DatiRicevutaType = client.get_type("ns0:DatiRicevuta")
+
+        NominativoType = client.get_type(
+            "ns1:Nominativo"
+        )
+
+        IndirizzoType = client.get_type(
+            "ns1:Indirizzo"
+        )
+
+        MittenteType = client.get_type(
+            "ns1:Mittente"
+        )
+
+        DestinatarioType = client.get_type(
+            "ns1:Destinatario"
+        )
+
+        DocumentoType = client.get_type(
+            "ns1:Documento"
+        )
+
+        RichiestaType = client.get_type(
+            "ns1:Richiesta"
+        )
+
+        DatiRicevutaType = client.get_type(
+            "ns0:DatiRicevuta"
+        )
+
         # =====================================================
         # MITTENTE E DESTINATARIO
         # =====================================================
-        mittente_data = ordine.get("mittente") or {}
-        destinatario_data = ordine.get("destinatario") or {}
+
+        mittente_data = (
+            ordine.get("mittente") or {}
+        )
+
+        destinatario_data = (
+            ordine.get("destinatario") or {}
+        )
+
         nom_mitt = build_nominativo_h2h_from_data(
             mittente_data,
             NominativoType,
             IndirizzoType,
             label="mittente"
         )
+
         mittente = MittenteType(
             Nominativo=nom_mitt,
             InviaStampa=False
         )
+
         dati_ricevuta = (
             DatiRicevutaType(
                 Nominativo=nom_mitt
@@ -6792,29 +7082,37 @@ def _process_poste_order_core(
             if has_rr
             else None
         )
+
         nom_dest = build_nominativo_h2h_from_data(
             destinatario_data,
             NominativoType,
             IndirizzoType,
             label="destinatario"
         )
+
         destinatario = DestinatarioType(
             Nominativo=nom_dest
         )
+
         documento = DocumentoType(
             Immagine=pdf_base64,
             TipoDocumento="pdf",
             MD5=md5_pdf
         )
+
         # =====================================================
         # 1. RECUPERO ID RICHIESTA
         # =====================================================
+
         id_result = service.RecuperaIdRichiesta()
+
         id_richiesta = id_result.IDRichiesta
+
         # =====================================================
         # 2. INVIO TECNICO
-        # Non finalizza ancora la raccomandata.
+        # Non finalizza ancora la Raccomandata.
         # =====================================================
+
         invio_result = service.Invio(
             IDRichiesta=id_richiesta,
             Cliente=POSTE_H2H_USERID,
@@ -6822,7 +7120,9 @@ def _process_poste_order_core(
             ROLSubmit={
                 "Mittente": mittente,
                 **(
-                    {"DatiRicevuta": dati_ricevuta}
+                    {
+                        "DatiRicevuta": dati_ricevuta
+                    }
                     if has_rr
                     else {}
                 ),
@@ -6861,8 +7161,10 @@ def _process_poste_order_core(
                 "ForzaInvioDestinazioniValide": True
             }
         )
+
         xml_invio_sent = None
         xml_invio_received = None
+
         try:
             xml_invio_sent = etree.tostring(
                 history.last_sent["envelope"],
@@ -6871,6 +7173,7 @@ def _process_poste_order_core(
             )
         except Exception:
             pass
+
         try:
             xml_invio_received = etree.tostring(
                 history.last_received["envelope"],
@@ -6879,28 +7182,57 @@ def _process_poste_order_core(
             )
         except Exception:
             pass
+
         guid_utente = invio_result.GuidUtente
+
         richiesta = RichiestaType(
             IDRichiesta=id_richiesta,
             GuidUtente=guid_utente
         )
+
         # =====================================================
         # 3. VALORIZZAZIONE
         # =====================================================
+
         valorizza_result = service.Valorizza(
-            Richieste=[richiesta]
+            Richieste=[
+                richiesta
+            ]
         )
+
         costo_valorizzato = estrai_costo_valorizza(
             valorizza_result
         )
+
         poste_response_text = str(
             valorizza_result
         )
+
+        analisi_valorizzazione = (
+            analizza_valorizzazione_poste(
+                valorizza_result,
+                costo_valorizzato
+            )
+        )
+
+        valorizzazione_pending = bool(
+            analisi_valorizzazione.get(
+                "pending"
+            )
+        )
+
+        stato_dopo_valorizzazione = (
+            "VALORIZZAZIONE_IN_CORSO"
+            if valorizzazione_pending
+            else "PREZZATA_DA_CONFERMARE"
+        )
+
         # =====================================================
         # 4. AGGIORNAMENTO ORDINE H2H
         # =====================================================
+
         update_h2h = {
-            "stato": "PREZZATA_DA_CONFERMARE",
+            "stato": stato_dopo_valorizzazione,
             "id_richiesta": id_richiesta,
             "guid_utente": guid_utente,
             "costo": costo_valorizzato,
@@ -6909,6 +7241,7 @@ def _process_poste_order_core(
             "xml_received": xml_invio_received,
             "ricevuta_ritorno": has_rr
         }
+
         (
             supabase
             .table("poste_h2h_orders")
@@ -6916,15 +7249,22 @@ def _process_poste_order_core(
             .eq("id", order_id)
             .execute()
         )
+
         # =====================================================
         # 5. AGGIORNAMENTO PRATICA COLLEGATA
         # =====================================================
+
         update_pratica = {
-            "stato": "PREZZATA_DA_CONFERMARE",
+            "stato": stato_dopo_valorizzazione,
             "id_richiesta": id_richiesta,
             "poste_response": {
                 "raw": poste_response_text,
-                "costo_valorizzato": costo_valorizzato
+                "costo_valorizzato": (
+                    costo_valorizzato
+                ),
+                "analisi_valorizzazione": (
+                    analisi_valorizzazione
+                )
             },
             "xml_sent": xml_invio_sent,
             "xml_received": xml_invio_received,
@@ -6933,16 +7273,53 @@ def _process_poste_order_core(
                 datetime.timezone.utc
             ).isoformat()
         }
+
         if ordine.get("pdf_url"):
             (
                 supabase
                 .table("pratiche")
                 .update(update_pratica)
-                .eq("pdf_url", ordine.get("pdf_url"))
+                .eq(
+                    "pdf_url",
+                    ordine.get("pdf_url")
+                )
                 .execute()
             )
+
+        # =====================================================
+        # 6. POSTE NON È ANCORA PRONTA
+        # =====================================================
+
+        if valorizzazione_pending:
+            return {
+                "success": True,
+                "pending": True,
+                "ready_for_confirm": False,
+                "step": "VALORIZZAZIONE_IN_CORSO",
+                "order_id": order_id,
+                "shopify_order_name": ordine.get(
+                    "shopify_order_name"
+                ),
+                "id_richiesta": id_richiesta,
+                "guid_utente": guid_utente,
+                "ricevuta_ritorno": has_rr,
+                "costo": costo_valorizzato,
+                "analisi": analisi_valorizzazione,
+                "message": (
+                    "Poste ha preso in carico la richiesta. "
+                    "La valorizzazione non è ancora pronta. "
+                    "Non eseguire PreConferma."
+                )
+            }
+
+        # =====================================================
+        # 7. VALORIZZAZIONE REALMENTE PRONTA
+        # =====================================================
+
         return {
             "success": True,
+            "pending": False,
+            "ready_for_confirm": True,
             "step": "PREZZATA_DA_CONFERMARE",
             "order_id": order_id,
             "shopify_order_name": ordine.get(
@@ -6952,15 +7329,19 @@ def _process_poste_order_core(
             "guid_utente": guid_utente,
             "ricevuta_ritorno": has_rr,
             "costo": costo_valorizzato,
+            "analisi": analisi_valorizzazione,
             "message": (
-                "Ordine valorizzato e pronto "
+                "Ordine valorizzato e realmente pronto "
                 "per la conferma definitiva."
             )
         }
+
     except Exception as e:
         errore = str(e)
+
         xml_sent = None
         xml_received = None
+
         try:
             xml_sent = etree.tostring(
                 history.last_sent["envelope"],
@@ -6969,6 +7350,7 @@ def _process_poste_order_core(
             )
         except Exception:
             pass
+
         try:
             xml_received = etree.tostring(
                 history.last_received["envelope"],
@@ -6977,6 +7359,7 @@ def _process_poste_order_core(
             )
         except Exception:
             pass
+
         try:
             (
                 supabase
@@ -6995,6 +7378,7 @@ def _process_poste_order_core(
                 "ERRORE UPDATE H2H DOPO PROCESS:",
                 str(update_error)
             )
+
         return {
             "success": False,
             "step": "ERRORE_PROCESS_ORDER",
