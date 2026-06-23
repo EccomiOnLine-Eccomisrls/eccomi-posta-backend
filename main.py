@@ -14097,7 +14097,7 @@ async def shopify_raccomandata_order(request: Request):
                 .execute()
             )
             pratica.update(update_data)
-                        h2h_id = None
+            h2h_id = None
             test_auto_result = None
             produzione_auto_result = None
             modalita_auto = "nessuna"
