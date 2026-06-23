@@ -739,24 +739,23 @@ def esegui_auto_invio_raccomandata_produzione(
 ):
     """
     Pipeline automatica reale Raccomandata:
-
     RICEVUTO_PAGATO
         -> AUTO_INVIO_IN_CORSO
+        -> VALORIZZAZIONE_IN_CORSO
+            oppure
         -> PREZZATA_DA_CONFERMARE
         -> FINALIZZAZIONE_IN_CORSO
         -> INVIATO_POSTE
-
     Viene eseguita soltanto quando:
     - RACCOMANDATA_AUTO_PRODUZIONE_ENABLED=true
     - POSTE_INVIO_MODE=auto
+    Se Poste restituisce una valorizzazione ancora InCorso,
+    la funzione si ferma e non esegue PreConferma.
     """
-
     h2h_order_id = None
-
     # =========================================================
     # 1. INTERRUTTORE GENERALE
     # =========================================================
-
     if not raccomandata_auto_produzione_enabled():
         return {
             "success": True,
@@ -768,12 +767,10 @@ def esegui_auto_invio_raccomandata_produzione(
                 "disattivato."
             )
         }
-
     poste_invio_mode = os.getenv(
         "POSTE_INVIO_MODE",
         "manual"
     ).strip().lower()
-
     if poste_invio_mode != "auto":
         return {
             "success": False,
@@ -786,14 +783,13 @@ def esegui_auto_invio_raccomandata_produzione(
                 "POSTE_INVIO_MODE non è auto."
             )
         }
-
     try:
         # =====================================================
         # 2. RECUPERO E VALIDAZIONE PRATICA
         # =====================================================
-
-        pratica = get_pratica_by_id(pratica_id)
-
+        pratica = get_pratica_by_id(
+            pratica_id
+        )
         if not pratica:
             return {
                 "success": False,
@@ -801,11 +797,11 @@ def esegui_auto_invio_raccomandata_produzione(
                 "pratica_id": pratica_id,
                 "error": "Pratica non trovata"
             }
-
         invio_consentito, motivo = (
-            can_auto_send_raccomandata(pratica)
+            can_auto_send_raccomandata(
+                pratica
+            )
         )
-
         if not invio_consentito:
             return {
                 "success": False,
@@ -815,15 +811,12 @@ def esegui_auto_invio_raccomandata_produzione(
                 "stato": pratica.get("stato"),
                 "error": motivo
             }
-
         # =====================================================
         # 3. RECUPERO O CREAZIONE ORDINE H2H
         # =====================================================
-
         h2h_order_id = resolve_h2h_order_id(
             pratica_id
         )
-
         if not h2h_order_id:
             h2h_order_id = (
                 crea_o_aggiorna_h2h_da_pratica(
@@ -835,27 +828,29 @@ def esegui_auto_invio_raccomandata_produzione(
                     )
                 )
             )
-
         if not h2h_order_id:
             errore = (
                 "Impossibile creare o recuperare "
                 "l'ordine H2H."
             )
-
             segna_errore_auto_raccomandata(
                 pratica_id=pratica_id,
-                evento="ORDINE_H2H_NON_DISPONIBILE",
+                evento=(
+                    "ORDINE_H2H_NON_DISPONIBILE"
+                ),
                 errore=errore,
-                stato_precedente=pratica.get("stato")
+                stato_precedente=(
+                    pratica.get("stato")
+                )
             )
-
             return {
                 "success": False,
-                "step": "ORDINE_H2H_NON_DISPONIBILE",
+                "step": (
+                    "ORDINE_H2H_NON_DISPONIBILE"
+                ),
                 "pratica_id": pratica_id,
                 "error": errore
             }
-
         ordine_res = (
             supabase
             .table("poste_h2h_orders")
@@ -864,21 +859,20 @@ def esegui_auto_invio_raccomandata_produzione(
             .limit(1)
             .execute()
         )
-
         if not ordine_res.data:
             errore = (
                 "Record poste_h2h_orders "
                 "non trovato."
             )
-
             segna_errore_auto_raccomandata(
                 pratica_id=pratica_id,
                 h2h_order_id=h2h_order_id,
                 evento="RECORD_H2H_NON_TROVATO",
                 errore=errore,
-                stato_precedente=pratica.get("stato")
+                stato_precedente=(
+                    pratica.get("stato")
+                )
             )
-
             return {
                 "success": False,
                 "step": "RECORD_H2H_NON_TROVATO",
@@ -886,19 +880,15 @@ def esegui_auto_invio_raccomandata_produzione(
                 "h2h_order_id": h2h_order_id,
                 "error": errore
             }
-
         ordine_h2h = ordine_res.data[0]
-
         stato_h2h = str(
             ordine_h2h.get("stato") or ""
         ).strip().upper()
-
         numero_esistente = str(
             ordine_h2h.get(
                 "numero_raccomandata"
             ) or ""
         ).strip()
-
         if (
             stato_h2h in {
                 "INVIATO_POSTE",
@@ -914,9 +904,10 @@ def esegui_auto_invio_raccomandata_produzione(
                 "step": "GIA_INVIATO_POSTE",
                 "pratica_id": pratica_id,
                 "h2h_order_id": h2h_order_id,
-                "numero_raccomandata": numero_esistente
+                "numero_raccomandata": (
+                    numero_esistente
+                )
             }
-
         if stato_h2h not in {
             "RICEVUTO_PAGATO",
             "IN_LAVORAZIONE"
@@ -933,11 +924,9 @@ def esegui_auto_invio_raccomandata_produzione(
                     f"nello stato {stato_h2h}."
                 )
             }
-
         # =====================================================
         # 4. LOCK ATOMICO ANTI-DOPPIO INVIO
         # =====================================================
-
         lock_res = (
             supabase
             .table("poste_h2h_orders")
@@ -954,7 +943,6 @@ def esegui_auto_invio_raccomandata_produzione(
             )
             .execute()
         )
-
         if not lock_res.data:
             verifica_res = (
                 supabase
@@ -966,23 +954,19 @@ def esegui_auto_invio_raccomandata_produzione(
                 .limit(1)
                 .execute()
             )
-
             verifica = (
                 verifica_res.data[0]
                 if verifica_res.data
                 else {}
             )
-
             stato_verifica = str(
                 verifica.get("stato") or ""
             ).strip().upper()
-
             numero_verifica = str(
                 verifica.get(
                     "numero_raccomandata"
                 ) or ""
             ).strip()
-
             if (
                 stato_verifica in {
                     "INVIATO_POSTE",
@@ -1002,12 +986,13 @@ def esegui_auto_invio_raccomandata_produzione(
                         numero_verifica
                     )
                 }
-
             return {
                 "success": False,
                 "blocked": True,
                 "in_progress": True,
-                "step": "LOCK_AUTO_INVIO_NON_ACQUISITO",
+                "step": (
+                    "LOCK_AUTO_INVIO_NON_ACQUISITO"
+                ),
                 "pratica_id": pratica_id,
                 "h2h_order_id": h2h_order_id,
                 "stato": stato_verifica,
@@ -1016,11 +1001,9 @@ def esegui_auto_invio_raccomandata_produzione(
                     "da un altro processo."
                 )
             }
-
         # =====================================================
         # 5. AGGIORNAMENTO PRATICA E TENTATIVI
         # =====================================================
-
         try:
             tentativi_precedenti = int(
                 pratica.get(
@@ -1029,29 +1012,32 @@ def esegui_auto_invio_raccomandata_produzione(
             )
         except Exception:
             tentativi_precedenti = 0
-
         nuovo_tentativo = (
             tentativi_precedenti + 1
         )
-
         (
             supabase
             .table("pratiche")
             .update({
                 "stato": "AUTO_INVIO_IN_CORSO",
-                "auto_invio_tentativi": nuovo_tentativo,
+                "auto_invio_tentativi": (
+                    nuovo_tentativo
+                ),
                 "auto_invio_last_error": None,
                 "updated_at": now_iso()
             })
             .eq("id", pratica_id)
             .execute()
         )
-
         registra_evento_pratica(
             pratica_id=pratica_id,
             evento="AUTO_INVIO_POSTE_AVVIATO",
-            stato_precedente="RICEVUTO_PAGATO",
-            stato_nuovo="AUTO_INVIO_IN_CORSO",
+            stato_precedente=(
+                "RICEVUTO_PAGATO"
+            ),
+            stato_nuovo=(
+                "AUTO_INVIO_IN_CORSO"
+            ),
             messaggio=(
                 "Avviata pipeline automatica reale "
                 f"Raccomandata. Tentativo "
@@ -1066,30 +1052,41 @@ def esegui_auto_invio_raccomandata_produzione(
                 "tentativo": nuovo_tentativo
             }
         )
-
         # =====================================================
-        # 6. INVIO TECNICO E PREZZATURA
+        # 6. INVIO TECNICO E PRIMA VALORIZZAZIONE
         # =====================================================
-
-        process_result = _process_poste_order_core(
-            order_id=h2h_order_id,
-            allow_auto_lock=True
+        process_result = (
+            _process_poste_order_core(
+                order_id=h2h_order_id,
+                allow_auto_lock=True
+            )
         )
-
+        # =====================================================
+        # 6A. ERRORE PREPARAZIONE POSTE
+        # =====================================================
         if (
-            not isinstance(process_result, dict)
-            or not process_result.get("success")
+            not isinstance(
+                process_result,
+                dict
+            )
+            or not process_result.get(
+                "success"
+            )
         ):
             errore = (
                 process_result.get("error")
-                if isinstance(process_result, dict)
+                if isinstance(
+                    process_result,
+                    dict
+                )
                 else str(process_result)
             ) or "Errore preparazione Poste"
-
             segna_errore_auto_raccomandata(
                 pratica_id=pratica_id,
                 h2h_order_id=h2h_order_id,
-                evento="PREPARAZIONE_POSTE_ERRORE",
+                evento=(
+                    "PREPARAZIONE_POSTE_ERRORE"
+                ),
                 errore=str(errore),
                 stato_precedente=(
                     "AUTO_INVIO_IN_CORSO"
@@ -1101,20 +1098,187 @@ def esegui_auto_invio_raccomandata_produzione(
                     "tentativo": nuovo_tentativo
                 }
             )
-
             return {
                 "success": False,
-                "step": "PREPARAZIONE_POSTE_ERRORE",
+                "step": (
+                    "PREPARAZIONE_POSTE_ERRORE"
+                ),
                 "pratica_id": pratica_id,
                 "h2h_order_id": h2h_order_id,
                 "error": str(errore)
             }
-
+        # =====================================================
+        # 6B. VALORIZZAZIONE POSTE ANCORA IN CORSO
+        # =====================================================
+        if (
+            process_result.get(
+                "pending"
+            ) is True
+            or process_result.get(
+                "step"
+            ) == "VALORIZZAZIONE_IN_CORSO"
+        ):
+            (
+                supabase
+                .table("pratiche")
+                .update({
+                    "stato": (
+                        "VALORIZZAZIONE_IN_CORSO"
+                    ),
+                    "auto_invio_last_error": None,
+                    "updated_at": now_iso()
+                })
+                .eq("id", pratica_id)
+                .execute()
+            )
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento=(
+                    "VALORIZZAZIONE_POSTE_IN_CORSO"
+                ),
+                stato_precedente=(
+                    "AUTO_INVIO_IN_CORSO"
+                ),
+                stato_nuovo=(
+                    "VALORIZZAZIONE_IN_CORSO"
+                ),
+                messaggio=(
+                    "Poste ha preso in carico "
+                    "la richiesta. Valorizzazione "
+                    "ancora in corso. La PreConferma "
+                    "non è stata eseguita."
+                ),
+                source=(
+                    "shopify_webhook_"
+                    "raccomandata_produzione"
+                ),
+                payload={
+                    "h2h_order_id": h2h_order_id,
+                    "tentativo": nuovo_tentativo,
+                    "id_richiesta": (
+                        process_result.get(
+                            "id_richiesta"
+                        )
+                    ),
+                    "guid_utente": (
+                        process_result.get(
+                            "guid_utente"
+                        )
+                    ),
+                    "analisi": (
+                        process_result.get(
+                            "analisi"
+                        )
+                    )
+                }
+            )
+            return {
+                "success": True,
+                "pending": True,
+                "ready_for_confirm": False,
+                "step": (
+                    "VALORIZZAZIONE_IN_CORSO"
+                ),
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "id_richiesta": (
+                    process_result.get(
+                        "id_richiesta"
+                    )
+                ),
+                "guid_utente": (
+                    process_result.get(
+                        "guid_utente"
+                    )
+                ),
+                "costo": (
+                    process_result.get("costo")
+                ),
+                "analisi": (
+                    process_result.get(
+                        "analisi"
+                    )
+                ),
+                "message": (
+                    "Richiesta presa in carico "
+                    "da Poste. In attesa della "
+                    "valorizzazione."
+                )
+            }
+        # =====================================================
+        # 6C. BLOCCO DI SICUREZZA PRECONFERMA
+        # =====================================================
+        if (
+            process_result.get(
+                "ready_for_confirm"
+            ) is not True
+            or process_result.get(
+                "step"
+            ) != "PREZZATA_DA_CONFERMARE"
+        ):
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento=(
+                    "PRECONFERMA_BLOCCATA_NON_PRONTA"
+                ),
+                stato_precedente=(
+                    process_result.get("step")
+                    or "AUTO_INVIO_IN_CORSO"
+                ),
+                stato_nuovo=(
+                    process_result.get("step")
+                    or "AUTO_INVIO_IN_CORSO"
+                ),
+                messaggio=(
+                    "PreConferma bloccata per "
+                    "sicurezza: la valorizzazione "
+                    "non risulta esplicitamente pronta."
+                ),
+                source=(
+                    "shopify_webhook_"
+                    "raccomandata_produzione"
+                ),
+                payload={
+                    "h2h_order_id": h2h_order_id,
+                    "process_result": str(
+                        process_result
+                    )[:4000]
+                }
+            )
+            return {
+                "success": False,
+                "blocked": True,
+                "manual_check_required": True,
+                "step": (
+                    "PRECONFERMA_BLOCCATA_NON_PRONTA"
+                ),
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "process_result": (
+                    ecx_clean_for_supabase(
+                        process_result
+                    )
+                ),
+                "error": (
+                    "Poste non ha restituito "
+                    "una valorizzazione "
+                    "esplicitamente pronta."
+                )
+            }
+        # =====================================================
+        # 6D. PREPARAZIONE REALMENTE COMPLETATA
+        # =====================================================
         registra_evento_pratica(
             pratica_id=pratica_id,
-            evento="PREPARAZIONE_POSTE_COMPLETATA",
-            stato_precedente="AUTO_INVIO_IN_CORSO",
-            stato_nuovo="PREZZATA_DA_CONFERMARE",
+            evento=(
+                "PREPARAZIONE_POSTE_COMPLETATA"
+            ),
+            stato_precedente=(
+                "AUTO_INVIO_IN_CORSO"
+            ),
+            stato_nuovo=(
+                "PREZZATA_DA_CONFERMARE"
+            ),
             messaggio=(
                 "Preparazione e prezzatura "
                 "Poste completate."
@@ -1131,38 +1295,48 @@ def esegui_auto_invio_raccomandata_produzione(
                 )[:4000]
             }
         )
-
         # =====================================================
         # 7. CONFERMA DEFINITIVA
         # =====================================================
-
         confirm_result = confirm_poste_order(
             h2h_order_id
         )
-
         if (
-            isinstance(confirm_result, dict)
-            and confirm_result.get("in_progress")
+            isinstance(
+                confirm_result,
+                dict
+            )
+            and confirm_result.get(
+                "in_progress"
+            )
         ):
             return {
                 "success": False,
                 "pending": True,
                 "in_progress": True,
-                "step": "FINALIZZAZIONE_IN_CORSO",
+                "step": (
+                    "FINALIZZAZIONE_IN_CORSO"
+                ),
                 "pratica_id": pratica_id,
                 "h2h_order_id": h2h_order_id
             }
-
         if (
-            not isinstance(confirm_result, dict)
-            or not confirm_result.get("success")
+            not isinstance(
+                confirm_result,
+                dict
+            )
+            or not confirm_result.get(
+                "success"
+            )
         ):
             errore = (
                 confirm_result.get("error")
-                if isinstance(confirm_result, dict)
+                if isinstance(
+                    confirm_result,
+                    dict
+                )
                 else str(confirm_result)
             ) or "Errore finalizzazione Poste"
-
             segna_errore_auto_raccomandata(
                 pratica_id=pratica_id,
                 h2h_order_id=h2h_order_id,
@@ -1178,25 +1352,29 @@ def esegui_auto_invio_raccomandata_produzione(
                     "tentativo": nuovo_tentativo
                 }
             )
-
             return {
                 "success": False,
-                "step": "CONFERMA_POSTE_ERRORE",
+                "step": (
+                    "CONFERMA_POSTE_ERRORE"
+                ),
                 "pratica_id": pratica_id,
                 "h2h_order_id": h2h_order_id,
                 "error": str(errore),
                 "manual_check_required": True
             }
-
-        pratica_finale = get_pratica_by_id(
-            pratica_id
-        ) or {}
-
+        pratica_finale = (
+            get_pratica_by_id(
+                pratica_id
+            ) or {}
+        )
         return {
             "success": True,
             "step": (
                 confirm_result.get("step")
-                if isinstance(confirm_result, dict)
+                if isinstance(
+                    confirm_result,
+                    dict
+                )
                 else "INVIATO_POSTE"
             ),
             "pratica_id": pratica_id,
@@ -1222,27 +1400,29 @@ def esegui_auto_invio_raccomandata_produzione(
                 )
             )
         }
-
     except Exception as e:
         errore = str(e)
-
         traceback.print_exc()
-
         segna_errore_auto_raccomandata(
             pratica_id=pratica_id,
             h2h_order_id=h2h_order_id,
-            evento="AUTO_INVIO_POSTE_ECCEZIONE",
+            evento=(
+                "AUTO_INVIO_POSTE_ECCEZIONE"
+            ),
             errore=errore,
             payload={
                 "traceback": (
-                    traceback.format_exc()[-6000:]
+                    traceback.format_exc()[
+                        -6000:
+                    ]
                 )
             }
         )
-
         return {
             "success": False,
-            "step": "AUTO_INVIO_POSTE_ECCEZIONE",
+            "step": (
+                "AUTO_INVIO_POSTE_ECCEZIONE"
+            ),
             "pratica_id": pratica_id,
             "h2h_order_id": h2h_order_id,
             "error": errore
