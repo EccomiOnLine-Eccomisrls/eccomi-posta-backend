@@ -6706,11 +6706,44 @@ def invia_email_cliente_raccomandata(
 
 @app.get("/poste/h2h/finalizza/{order_id}")
 def confirm_poste_order(order_id: str):
+    """
+    Conferma definitiva della Raccomandata presso Poste.
+
+    Sicurezze:
+    - finalizzazione consentita solo da PREZZATA_DA_CONFERMARE
+    - lock atomico PREZZATA_DA_CONFERMARE -> FINALIZZAZIONE_IN_CORSO
+    - blocco doppia PreConferma
+    - risposta idempotente per pratiche già inviate
+    - salvataggio immediato del numero raccomandata
+    - errori PDF/email non annullano l'invio già effettuato
+    """
 
     history = HistoryPlugin()
 
+    pratica_collegata = {}
+    pratica_id = None
+
+    poste_confermata = False
+
+    numero_racc = None
+    id_ricevuta = None
+    id_ordine_poste = None
+    costo = None
+
+    xml_sent = None
+    xml_received = None
+
+    cliente_pdf_url = None
+
     try:
-        poste_invio_mode = os.getenv("POSTE_INVIO_MODE", "manual").strip().lower()
+        # =====================================================
+        # 1. CONTROLLO CONFIGURAZIONE
+        # =====================================================
+
+        poste_invio_mode = os.getenv(
+            "POSTE_INVIO_MODE",
+            "manual"
+        ).strip().lower()
 
         if poste_invio_mode == "disabled":
             return {
@@ -6718,62 +6751,110 @@ def confirm_poste_order(order_id: str):
                 "blocked": True,
                 "step": "POSTE_FINALIZZA_DISABILITATO",
                 "order_id": order_id,
-                "error": "Finalizzazione Poste produzione disabilitata da POSTE_INVIO_MODE."
+                "error": (
+                    "Finalizzazione Poste produzione "
+                    "disabilitata da POSTE_INVIO_MODE."
+                )
             }
 
-        if poste_invio_mode not in ["manual", "auto"]:
+        if poste_invio_mode not in [
+            "manual",
+            "auto"
+        ]:
             return {
                 "success": False,
                 "blocked": True,
                 "step": "POSTE_INVIO_MODE_NON_VALIDO",
                 "order_id": order_id,
                 "mode": poste_invio_mode,
-                "error": "POSTE_INVIO_MODE non valido. Valori ammessi: manual, auto, disabled."
+                "error": (
+                    "POSTE_INVIO_MODE non valido. "
+                    "Valori ammessi: manual, auto, disabled."
+                )
             }
 
-        client, service = poste_client(
-            timeout=120,
-            extra_plugins=[history]
-        )
+        # =====================================================
+        # 2. RECUPERO ORDINE H2H
+        # =====================================================
 
-        ordine_res = supabase.table("poste_h2h_orders") \
-            .select("*") \
-            .eq("id", order_id) \
-            .single() \
+        ordine_res = (
+            supabase
+            .table("poste_h2h_orders")
+            .select("*")
+            .eq("id", order_id)
+            .single()
             .execute()
+        )
 
         if not ordine_res.data:
             return {
                 "success": False,
-                "error": "Ordine non trovato"
+                "step": "ORDINE_H2H_NON_TROVATO",
+                "order_id": order_id,
+                "error": "Ordine H2H non trovato"
             }
 
         ordine = ordine_res.data
-        
+
+        stato_corrente = str(
+            ordine.get("stato") or ""
+        ).strip().upper()
+
+        numero_esistente = str(
+            ordine.get("numero_raccomandata") or ""
+        ).strip()
+
         # =====================================================
-        # BLOCCO SICUREZZA: evita doppia finalizzazione Poste
+        # 3. IDEMPOTENZA: PRATICA GIÀ INVIATA
         # =====================================================
 
-        stato_corrente = ordine.get("stato")
-        numero_esistente = ordine.get("numero_raccomandata")
+        if (
+            stato_corrente in {
+                "INVIATO_POSTE",
+                "RICEVUTA_SALVATA",
+                "COMPLETATO"
+            }
+            or numero_esistente
+        ):
+            return {
+                "success": True,
+                "skipped": True,
+                "already_sent": True,
+                "step": "GIA_INVIATO_POSTE",
+                "order_id": order_id,
+                "stato": stato_corrente,
+                "numero_raccomandata": numero_esistente,
+                "message": (
+                    "La Raccomandata risulta già inviata. "
+                    "Nessuna nuova finalizzazione eseguita."
+                )
+            }
 
-        if stato_corrente in ["INVIATO_POSTE", "RICEVUTA_SALVATA", "COMPLETATO"] or numero_esistente:
+        if stato_corrente == "FINALIZZAZIONE_IN_CORSO":
             return {
                 "success": False,
                 "blocked": True,
-                "error": "Pratica già inviata a Poste: finalizzazione bloccata",
+                "in_progress": True,
+                "step": "FINALIZZAZIONE_GIA_IN_CORSO",
+                "order_id": order_id,
                 "stato": stato_corrente,
-                "numero_raccomandata": numero_esistente,
-                "order_id": order_id
+                "error": (
+                    "Finalizzazione già in corso da un altro "
+                    "processo. Nessuna nuova chiamata a Poste."
+                )
             }
 
         if stato_corrente != "PREZZATA_DA_CONFERMARE":
             return {
                 "success": False,
                 "blocked": True,
-                "error": "Finalizzazione consentita solo per pratiche PREZZATA_DA_CONFERMARE",
+                "step": "STATO_NON_FINALIZZABILE",
+                "order_id": order_id,
                 "stato": stato_corrente,
-                "order_id": order_id
+                "error": (
+                    "Finalizzazione consentita solo per ordini "
+                    "PREZZATA_DA_CONFERMARE."
+                )
             }
 
         id_richiesta = ordine.get("id_richiesta")
@@ -6782,10 +6863,146 @@ def confirm_poste_order(order_id: str):
         if not id_richiesta or not guid_utente:
             return {
                 "success": False,
-                "error": "id_richiesta o guid_utente mancanti"
+                "step": "DATI_POSTE_MANCANTI",
+                "order_id": order_id,
+                "error": (
+                    "id_richiesta o guid_utente mancanti."
+                )
             }
 
-        RichiestaType = client.get_type("ns1:Richiesta")
+        # =====================================================
+        # 4. RECUPERO PRATICA COLLEGATA
+        # =====================================================
+
+        if ordine.get("pdf_url"):
+            pratica_res = (
+                supabase
+                .table("pratiche")
+                .select("*")
+                .eq("pdf_url", ordine.get("pdf_url"))
+                .limit(1)
+                .execute()
+            )
+
+            if pratica_res.data:
+                pratica_collegata = pratica_res.data[0]
+                pratica_id = pratica_collegata.get("id")
+
+        # =====================================================
+        # 5. LOCK ATOMICO DELLA FINALIZZAZIONE
+        # =====================================================
+
+        lock_res = (
+            supabase
+            .table("poste_h2h_orders")
+            .update({
+                "stato": "FINALIZZAZIONE_IN_CORSO"
+            })
+            .eq("id", order_id)
+            .eq("stato", "PREZZATA_DA_CONFERMARE")
+            .execute()
+        )
+
+        if not lock_res.data:
+            verifica_res = (
+                supabase
+                .table("poste_h2h_orders")
+                .select("*")
+                .eq("id", order_id)
+                .single()
+                .execute()
+            )
+
+            verifica = verifica_res.data or {}
+
+            stato_verifica = str(
+                verifica.get("stato") or ""
+            ).strip().upper()
+
+            numero_verifica = str(
+                verifica.get("numero_raccomandata") or ""
+            ).strip()
+
+            if (
+                stato_verifica in {
+                    "INVIATO_POSTE",
+                    "RICEVUTA_SALVATA",
+                    "COMPLETATO"
+                }
+                or numero_verifica
+            ):
+                return {
+                    "success": True,
+                    "skipped": True,
+                    "already_sent": True,
+                    "step": "GIA_INVIATO_POSTE",
+                    "order_id": order_id,
+                    "stato": stato_verifica,
+                    "numero_raccomandata": numero_verifica
+                }
+
+            return {
+                "success": False,
+                "blocked": True,
+                "in_progress": (
+                    stato_verifica
+                    == "FINALIZZAZIONE_IN_CORSO"
+                ),
+                "step": "LOCK_FINALIZZAZIONE_NON_ACQUISITO",
+                "order_id": order_id,
+                "stato": stato_verifica,
+                "error": (
+                    "Lock di finalizzazione non acquisito. "
+                    "L'ordine potrebbe essere già in lavorazione."
+                )
+            }
+
+        ordine = lock_res.data[0]
+
+        # Stato pratica coerente con il lock H2H
+        if pratica_id:
+            (
+                supabase
+                .table("pratiche")
+                .update({
+                    "stato": "FINALIZZAZIONE_IN_CORSO",
+                    "updated_at": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat()
+                })
+                .eq("id", pratica_id)
+                .execute()
+            )
+
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento="FINALIZZAZIONE_POSTE_AVVIATA",
+                stato_precedente="PREZZATA_DA_CONFERMARE",
+                stato_nuovo="FINALIZZAZIONE_IN_CORSO",
+                messaggio=(
+                    "Lock acquisito. Avviata la conferma "
+                    "definitiva della Raccomandata."
+                ),
+                source="confirm_poste_order",
+                payload={
+                    "h2h_order_id": order_id,
+                    "id_richiesta": id_richiesta,
+                    "guid_utente": guid_utente
+                }
+            )
+
+        # =====================================================
+        # 6. CLIENT POSTE E PRECONFERMA
+        # =====================================================
+
+        client, service = poste_client(
+            timeout=120,
+            extra_plugins=[history]
+        )
+
+        RichiestaType = client.get_type(
+            "ns1:Richiesta"
+        )
 
         richiesta = RichiestaType(
             IDRichiesta=id_richiesta,
@@ -6797,112 +7014,331 @@ def confirm_poste_order(order_id: str):
             autoConferma=True
         )
 
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            xml_sent = None
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            xml_received = None
+
         if not pre_result.DestinatariRaccomandata:
-            return {
-                "success": False,
-                "error": "PreConferma senza DestinatariRaccomandata",
-                "id_richiesta": id_richiesta,
-                "guid_utente": guid_utente,
-                "preconferma_response": str(pre_result)
-            }
+            raise RuntimeError(
+                "PreConferma senza DestinatariRaccomandata"
+            )
+
+        destinatari_raccomandata = (
+            pre_result
+            .DestinatariRaccomandata
+            .ArrayOfDestinatarioRaccomandata
+        )
+
+        if not destinatari_raccomandata:
+            raise RuntimeError(
+                "PreConferma senza destinatari utilizzabili"
+            )
+
+        destinatario_poste = destinatari_raccomandata[0]
 
         numero_racc = str(
-            pre_result.DestinatariRaccomandata
-            .ArrayOfDestinatarioRaccomandata[0]
-            .NumeroRaccomandata
+            destinatario_poste.NumeroRaccomandata
         )
 
         id_ricevuta = str(
-            pre_result.DestinatariRaccomandata
-            .ArrayOfDestinatarioRaccomandata[0]
-            .IdRicevuta
+            destinatario_poste.IdRicevuta
+        )
+
+        id_ordine_poste = str(
+            pre_result.IdOrdine
         )
 
         costo = float(
             pre_result.Valorizzazione.Totale.ImportoTotale
         )
 
-        pdf_cliente = genera_pdf_cliente_eccomi_posta(
-            numero_raccomandata=numero_racc,
-            mittente=ordine.get("mittente", {}).get("raw", ""),
-            destinatario=ordine.get("destinatario", {}).get("raw", "")
-        )
+        # Da questo momento Poste ha confermato realmente l'invio.
+        # Eventuali errori successivi NON devono provocare
+        # una nuova PreConferma.
+        poste_confermata = True
 
-        cliente_pdf_path = f"ricevute-clienti/{order_id}/ricevuta_cliente.pdf"
+        poste_response_text = str(pre_result)
 
-        supabase.storage.from_(SUPABASE_BUCKET).upload(
-            cliente_pdf_path,
-            pdf_cliente,
-            {
-                "content-type": "application/pdf",
-                "upsert": "true"
-            }
-        )
-
-        cliente_pdf_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(
-            cliente_pdf_path
-        )
+        # =====================================================
+        # 7. SALVATAGGIO IMMEDIATO ESITO POSTE
+        # =====================================================
 
         update_h2h_finale = {
             "stato": "INVIATO_POSTE",
             "numero_raccomandata": numero_racc,
             "id_ricevuta": id_ricevuta,
-            "id_ordine_poste": str(pre_result.IdOrdine),
+            "id_ordine_poste": id_ordine_poste,
             "costo": costo,
-            "poste_response": str(pre_result),
-            "pdf_ricevuta_cliente_url": cliente_pdf_url
+            "poste_response": poste_response_text,
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
         }
 
-        supabase.table("poste_h2h_orders") \
-            .update(update_h2h_finale) \
-            .eq("id", order_id) \
+        (
+            supabase
+            .table("poste_h2h_orders")
+            .update(update_h2h_finale)
+            .eq("id", order_id)
             .execute()
-
-        pratica_collegata = {}
-
-        if ordine.get("pdf_url"):
-            pratica_res = supabase.table("pratiche") \
-                .select("*") \
-                .eq("pdf_url", ordine.get("pdf_url")) \
-                .limit(1) \
-                .execute()
-
-            if pratica_res.data:
-                pratica_collegata = pratica_res.data[0]
+        )
 
         update_pratica_finale = {
             "numero_raccomandata": numero_racc,
+            "id_richiesta": id_richiesta,
             "stato": "INVIATO_POSTE",
-            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+            "poste_response": {
+                "raw": poste_response_text,
+                "id_ricevuta": id_ricevuta,
+                "id_ordine_poste": id_ordine_poste,
+                "costo": costo
+            },
+
+            "xml_sent": xml_sent,
+            "xml_received": xml_received,
+
+            "auto_invio_last_error": None,
+
+            "updated_at": datetime.datetime.now(
+                datetime.timezone.utc
+            ).isoformat()
         }
 
-        if ordine.get("pdf_url"):
-            supabase.table("pratiche") \
-                .update(update_pratica_finale) \
-                .eq("pdf_url", ordine.get("pdf_url")) \
+        if pratica_id:
+            (
+                supabase
+                .table("pratiche")
+                .update(update_pratica_finale)
+                .eq("id", pratica_id)
                 .execute()
+            )
 
-        if pratica_collegata:
-            pratica_collegata.update(update_pratica_finale)
+            pratica_collegata.update(
+                update_pratica_finale
+            )
 
-        ordine_email = dict(ordine)
-        ordine_email.update(update_h2h_finale)
-        ordine_email["id"] = order_id
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento="RACCOMANDATA_CONFERMATA_POSTE",
+                stato_precedente="FINALIZZAZIONE_IN_CORSO",
+                stato_nuovo="INVIATO_POSTE",
+                messaggio=(
+                    "Poste ha confermato definitivamente "
+                    f"la Raccomandata {numero_racc}."
+                ),
+                source="confirm_poste_order",
+                payload={
+                    "h2h_order_id": order_id,
+                    "numero_raccomandata": numero_racc,
+                    "id_ricevuta": id_ricevuta,
+                    "id_ordine_poste": id_ordine_poste,
+                    "costo": costo
+                }
+            )
+
+        # =====================================================
+        # 8. GENERAZIONE PDF CLIENTE
+        # Non deve annullare l'invio Poste in caso di errore.
+        # =====================================================
+
+        pdf_error = None
+
+        try:
+            mittente_value = ordine.get("mittente") or {}
+            destinatario_value = (
+                ordine.get("destinatario") or {}
+            )
+
+            if isinstance(mittente_value, dict):
+                mittente_raw = str(
+                    mittente_value.get("raw") or ""
+                )
+            else:
+                mittente_raw = str(mittente_value)
+
+            if isinstance(destinatario_value, dict):
+                destinatario_raw = str(
+                    destinatario_value.get("raw") or ""
+                )
+            else:
+                destinatario_raw = str(
+                    destinatario_value
+                )
+
+            pdf_cliente = genera_pdf_cliente_eccomi_posta(
+                numero_raccomandata=numero_racc,
+                mittente=mittente_raw,
+                destinatario=destinatario_raw
+            )
+
+            cliente_pdf_path = (
+                f"ricevute-clienti/{order_id}/"
+                "ricevuta_cliente.pdf"
+            )
+
+            supabase.storage.from_(
+                SUPABASE_BUCKET
+            ).upload(
+                cliente_pdf_path,
+                pdf_cliente,
+                {
+                    "content-type": "application/pdf",
+                    "upsert": "true"
+                }
+            )
+
+            cliente_pdf_url = (
+                supabase.storage
+                .from_(SUPABASE_BUCKET)
+                .get_public_url(cliente_pdf_path)
+            )
+
+            (
+                supabase
+                .table("poste_h2h_orders")
+                .update({
+                    "pdf_ricevuta_cliente_url": (
+                        cliente_pdf_url
+                    )
+                })
+                .eq("id", order_id)
+                .execute()
+            )
+
+            if pratica_id:
+                (
+                    supabase
+                    .table("pratiche")
+                    .update({
+                        "pdf_ricevuta_cliente_url": (
+                            cliente_pdf_url
+                        ),
+                        "updated_at": (
+                            datetime.datetime.now(
+                                datetime.timezone.utc
+                            ).isoformat()
+                        )
+                    })
+                    .eq("id", pratica_id)
+                    .execute()
+                )
+
+                pratica_collegata[
+                    "pdf_ricevuta_cliente_url"
+                ] = cliente_pdf_url
+
+        except Exception as pdf_exception:
+            pdf_error = str(pdf_exception)
+
+            print(
+                "ERRORE PDF CLIENTE DOPO INVIO POSTE:",
+                pdf_error
+            )
+
+            if pratica_id:
+                registra_evento_pratica(
+                    pratica_id=pratica_id,
+                    evento="PDF_CLIENTE_ERRORE",
+                    stato_precedente="INVIATO_POSTE",
+                    stato_nuovo=None,
+                    messaggio=(
+                        "Raccomandata inviata correttamente, "
+                        "ma generazione o salvataggio PDF cliente "
+                        f"falliti: {pdf_error}"
+                    ),
+                    source="confirm_poste_order",
+                    payload={
+                        "h2h_order_id": order_id,
+                        "numero_raccomandata": numero_racc
+                    }
+                )
+
+        # =====================================================
+        # 9. EMAIL CLIENTE
+        # Anche un errore email non annulla l'invio Poste.
+        # =====================================================
 
         email_result = {
             "success": False,
             "skipped": True,
-            "reason": "Funzione email non disponibile"
+            "reason": "Email non eseguita"
         }
 
-        email_fn = globals().get("invia_email_cliente_raccomandata")
+        ordine_email = dict(ordine)
+        ordine_email.update(update_h2h_finale)
+        ordine_email["id"] = order_id
+        ordine_email[
+            "pdf_ricevuta_cliente_url"
+        ] = cliente_pdf_url
 
-        if callable(email_fn):
-            email_result = email_fn(
-                ordine=ordine_email,
-                pratica=pratica_collegata,
-                pdf_cliente_url=cliente_pdf_url
-            )
+        email_fn = globals().get(
+            "invia_email_cliente_raccomandata"
+        )
+
+        if not cliente_pdf_url:
+            email_result = {
+                "success": False,
+                "skipped": True,
+                "reason": (
+                    "PDF cliente non disponibile. "
+                    "Email non inviata automaticamente."
+                )
+            }
+
+        elif callable(email_fn):
+            try:
+                email_result = email_fn(
+                    ordine=ordine_email,
+                    pratica=pratica_collegata,
+                    pdf_cliente_url=cliente_pdf_url,
+                    internal_bcc_email=globals().get(
+                        "INTERNAL_BCC_EMAIL"
+                    )
+                )
+
+            except Exception as email_exception:
+                email_result = {
+                    "success": False,
+                    "skipped": False,
+                    "error": str(email_exception)
+                }
+
+                print(
+                    "ERRORE EMAIL DOPO INVIO POSTE:",
+                    str(email_exception)
+                )
+
+                if pratica_id:
+                    registra_evento_pratica(
+                        pratica_id=pratica_id,
+                        evento="EMAIL_CLIENTE_ERRORE",
+                        stato_precedente="INVIATO_POSTE",
+                        stato_nuovo=None,
+                        messaggio=(
+                            "Raccomandata inviata correttamente, "
+                            "ma invio email cliente fallito: "
+                            f"{str(email_exception)}"
+                        ),
+                        source="confirm_poste_order",
+                        payload={
+                            "h2h_order_id": order_id,
+                            "numero_raccomandata": numero_racc
+                        }
+                    )
 
         return {
             "success": True,
@@ -6912,16 +7348,19 @@ def confirm_poste_order(order_id: str):
             "guid_utente": guid_utente,
             "numero_raccomandata": numero_racc,
             "id_ricevuta": id_ricevuta,
+            "id_ordine_poste": id_ordine_poste,
             "costo": costo,
             "pdf_cliente_url": cliente_pdf_url,
+            "pdf_error": pdf_error,
             "email": email_result,
-            "message": "Ordine confermato, raccomandata generata, PDF cliente salvato ed email cliente gestita"
+            "message": (
+                "Raccomandata confermata definitivamente "
+                "presso Poste Italiane."
+            )
         }
 
     except Exception as e:
-
-        xml_sent = None
-        xml_received = None
+        errore = str(e)
 
         try:
             xml_sent = etree.tostring(
@@ -6941,13 +7380,166 @@ def confirm_poste_order(order_id: str):
         except Exception:
             pass
 
+        print(
+            "ERRORE confirm_poste_order:",
+            errore
+        )
+
+        # Se Poste aveva già restituito il numero, non dobbiamo
+        # trasformare l'ordine in ERRORE_POSTE.
+        if poste_confermata:
+            try:
+                (
+                    supabase
+                    .table("poste_h2h_orders")
+                    .update({
+                        "stato": "INVIATO_POSTE",
+                        "numero_raccomandata": numero_racc,
+                        "id_ricevuta": id_ricevuta,
+                        "id_ordine_poste": id_ordine_poste,
+                        "costo": costo,
+                        "xml_sent": xml_sent,
+                        "xml_received": xml_received,
+                        "poste_response": (
+                            "Poste confermata. "
+                            "Errore successivo: "
+                            f"{errore}"
+                        )
+                    })
+                    .eq("id", order_id)
+                    .execute()
+                )
+            except Exception as recovery_error:
+                print(
+                    "ERRORE RECUPERO ESITO POSTE:",
+                    str(recovery_error)
+                )
+
+            if pratica_id:
+                try:
+                    (
+                        supabase
+                        .table("pratiche")
+                        .update({
+                            "stato": "INVIATO_POSTE",
+                            "numero_raccomandata": numero_racc,
+                            "auto_invio_last_error": errore[:5000],
+                            "updated_at": (
+                                datetime.datetime.now(
+                                    datetime.timezone.utc
+                                ).isoformat()
+                            )
+                        })
+                        .eq("id", pratica_id)
+                        .execute()
+                    )
+                except Exception:
+                    pass
+
+            return {
+                "success": True,
+                "warning": True,
+                "step": "INVIATO_POSTE_CON_AVVISO",
+                "order_id": order_id,
+                "numero_raccomandata": numero_racc,
+                "id_ricevuta": id_ricevuta,
+                "id_ordine_poste": id_ordine_poste,
+                "costo": costo,
+                "error_after_confirmation": errore,
+                "message": (
+                    "Poste ha confermato la Raccomandata. "
+                    "Si è verificato un errore successivo che "
+                    "non deve provocare un nuovo invio."
+                )
+            }
+
+        # Nessuna conferma certa ricevuta da Poste:
+        # blocchiamo ogni nuovo tentativo automatico.
+        try:
+            (
+                supabase
+                .table("poste_h2h_orders")
+                .update({
+                    "stato": "ERRORE_POSTE",
+                    "poste_response": errore,
+                    "xml_sent": xml_sent,
+                    "xml_received": xml_received
+                })
+                .eq("id", order_id)
+                .eq(
+                    "stato",
+                    "FINALIZZAZIONE_IN_CORSO"
+                )
+                .execute()
+            )
+        except Exception as update_error:
+            print(
+                "ERRORE UPDATE H2H FINALIZZAZIONE:",
+                str(update_error)
+            )
+
+        if pratica_id:
+            try:
+                (
+                    supabase
+                    .table("pratiche")
+                    .update({
+                        "stato": "ERRORE_POSTE",
+
+                        "poste_response": {
+                            "raw": errore,
+                            "fase": "PRECONFERMA_POSTE"
+                        },
+
+                        "xml_sent": xml_sent,
+                        "xml_received": xml_received,
+                        "auto_invio_last_error": errore[:5000],
+
+                        "updated_at": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat()
+                    })
+                    .eq("id", pratica_id)
+                    .execute()
+                )
+
+                registra_evento_pratica(
+                    pratica_id=pratica_id,
+                    evento="FINALIZZAZIONE_POSTE_ERRORE",
+                    stato_precedente=(
+                        "FINALIZZAZIONE_IN_CORSO"
+                    ),
+                    stato_nuovo="ERRORE_POSTE",
+                    messaggio=(
+                        "Errore durante la conferma definitiva. "
+                        "Non ripetere automaticamente senza "
+                        f"verifica: {errore}"
+                    ),
+                    source="confirm_poste_order",
+                    payload={
+                        "h2h_order_id": order_id,
+                        "xml_sent_present": bool(xml_sent),
+                        "xml_received_present": bool(
+                            xml_received
+                        )
+                    }
+                )
+
+            except Exception as pratica_error:
+                print(
+                    "ERRORE UPDATE PRATICA FINALIZZAZIONE:",
+                    str(pratica_error)
+                )
+
         return {
             "success": False,
             "step": "ERRORE_FINALIZZA_POSTE",
             "order_id": order_id,
-            "error": str(e),
+            "error": errore,
             "xml_sent": xml_sent,
-            "xml_received": xml_received
+            "xml_received": xml_received,
+            "manual_check_required": True,
+            "retry_automatico_consentito": False
         }
 
 
@@ -13020,6 +13612,17 @@ def dashboard_invia_diretto_poste(pratica_id: str):
         confirm_result = confirm_poste_order(
             h2h_order_id
         )
+        if (
+            isinstance(confirm_result, dict)
+            and confirm_result.get("in_progress")
+        ):
+            return RedirectResponse(
+                url=(
+                    "/dashboard/pratiche"
+                    "?stato=FINALIZZAZIONE_IN_CORSO"
+                ),
+                status_code=302
+            )
         if (
             not isinstance(confirm_result, dict)
             or not confirm_result.get("success")
