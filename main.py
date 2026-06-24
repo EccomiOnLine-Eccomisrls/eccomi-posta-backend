@@ -5352,23 +5352,269 @@ def telegramma_enum_values_fast(enum_name: str):
             "error": str(e)
         }
 
+def telegramma_anagrafica_is_azienda(data: dict) -> bool:
+    """
+    Determina se l'anagrafica rappresenta un'azienda/ente
+    oppure una persona fisica.
+
+    Priorità:
+    1. tipo_destinatario / tipo_soggetto esplicito;
+    2. ragione_sociale valorizzata;
+    3. riconoscimento della forma societaria.
+    """
+
+    data = data or {}
+
+    tipo = str(
+        data.get("tipo_destinatario")
+        or data.get("tipo_soggetto")
+        or data.get("tipo")
+        or ""
+    ).strip().upper()
+
+    tipi_azienda = {
+        "AZIENDA",
+        "IMPRESA",
+        "SOCIETA",
+        "SOCIETÀ",
+        "ENTE",
+        "DITTA",
+        "ASSOCIAZIONE",
+        "FONDAZIONE",
+        "CONDOMINIO"
+    }
+
+    tipi_persona = {
+        "PERSONA",
+        "PRIVATO",
+        "PERSONA_FISICA",
+        "PERSONA FISICA"
+    }
+
+    if tipo in tipi_azienda:
+        return True
+
+    if tipo in tipi_persona:
+        return False
+
+    ragione_sociale = str(
+        data.get("ragione_sociale")
+        or data.get("ragioneSociale")
+        or data.get("denominazione")
+        or ""
+    ).strip()
+
+    if ragione_sociale:
+        return True
+
+    denominazione = str(
+        data.get("nome")
+        or data.get("raw")
+        or ""
+    ).strip().upper()
+
+    testo_controllo = f" {denominazione} "
+
+    indicatori_azienda = [
+        " SRL ",
+        " S.R.L. ",
+        " S.R.L ",
+        " SRLS ",
+        " S.R.L.S. ",
+        " S.R.L.S ",
+        " SPA ",
+        " S.P.A. ",
+        " S.P.A ",
+        " SNC ",
+        " S.N.C. ",
+        " SAS ",
+        " S.A.S. ",
+        " SAA ",
+        " COOPERATIVA ",
+        " CONSORZIO ",
+        " ASSOCIAZIONE ",
+        " FONDAZIONE ",
+        " ONLUS ",
+        " ETS ",
+        " CONDOMINIO ",
+        " COMUNE DI ",
+        " MINISTERO ",
+        " ISTITUTO ",
+        " UNIVERSITA ",
+        " UNIVERSITÀ ",
+        " AZIENDA "
+    ]
+
+    return any(
+        indicatore in testo_controllo
+        for indicatore in indicatori_azienda
+    )
+
+
+def telegramma_prepara_anagrafica_poste(data: dict) -> dict:
+    """
+    Prepara Nome, Cognome e RagioneSociale
+    per i tipi SOAP Telegramma Poste.
+
+    Azienda:
+    - Nome vuoto
+    - Cognome vuoto
+    - RagioneSociale completa
+
+    Persona:
+    - Nome
+    - Cognome
+    - RagioneSociale vuota
+    """
+
+    data = data or {}
+
+    nome_originale = str(
+        data.get("nome")
+        or ""
+    ).strip()
+
+    cognome_originale = str(
+        data.get("cognome")
+        or ""
+    ).strip()
+
+    ragione_sociale_originale = str(
+        data.get("ragione_sociale")
+        or data.get("ragioneSociale")
+        or data.get("denominazione")
+        or ""
+    ).strip()
+
+    if telegramma_anagrafica_is_azienda(data):
+        denominazione = (
+            ragione_sociale_originale
+            or " ".join(
+                valore
+                for valore in [
+                    nome_originale,
+                    cognome_originale
+                ]
+                if valore
+            ).strip()
+        )
+
+        return {
+            "is_azienda": True,
+            "nome": "",
+            "cognome": "",
+            "ragione_sociale": denominazione
+        }
+
+    if cognome_originale:
+        nome_persona = nome_originale
+        cognome_persona = cognome_originale
+    else:
+        nome_persona, cognome_persona = (
+            telegramma_split_nome_cognome(
+                nome_originale
+            )
+        )
+
+    return {
+        "is_azienda": False,
+        "nome": nome_persona or "",
+        "cognome": cognome_persona or "",
+        "ragione_sociale": ""
+    }
+
+
+def telegramma_estrai_esito_validazione(
+    validation_plain
+) -> dict:
+    """
+    Estrae ResType, descrizione e suggerimenti dalla
+    risposta RecipientsValidation di Poste.
+    """
+
+    validation_source = validation_plain
+
+    if isinstance(validation_plain, dict):
+        validation_source = (
+            validation_plain.get(
+                "RecipientValidationResult"
+            )
+            or validation_plain.get(
+                "RecipientsValidationResult"
+            )
+            or validation_plain
+        )
+
+    validation_item = {}
+
+    if isinstance(validation_source, list):
+        if validation_source:
+            validation_item = (
+                validation_source[0]
+                or {}
+            )
+
+    elif isinstance(validation_source, dict):
+        validation_item = validation_source
+
+    result_info = (
+        validation_item.get("Result")
+        or {}
+    )
+
+    destinatari_info = (
+        validation_item.get("Destinatari")
+        or {}
+    )
+
+    suggerimenti = (
+        destinatari_info.get("Recipient")
+        or []
+    )
+
+    if isinstance(suggerimenti, dict):
+        suggerimenti = [suggerimenti]
+
+    if not isinstance(suggerimenti, list):
+        suggerimenti = []
+
+    return {
+        "res_type": str(
+            result_info.get("ResType")
+            or ""
+        ).strip().upper(),
+
+        "description": str(
+            result_info.get("Description")
+            or ""
+        ).strip(),
+
+        "suggerimenti": suggerimenti
+    }
+
 
 @app.get("/poste/h2h/telegramma/submit-preview/{pratica_id}")
 def telegramma_submit_preview(pratica_id: str):
     """
     Genera anteprima XML Submit Telegramma.
-    NON invia Telegrammi.
+
     NON chiama service.Submit.
-    NON genera costi.
-    Serve solo per verificare la struttura XML prima dell'invio reale.
+    NON esegue PreConfirm.
+    NON esegue Confirm.
+    NON genera costi Poste.
     """
 
+    from zeep import xsd
+
     try:
-        pratica_res = supabase.table("pratiche") \
-            .select("*") \
-            .eq("id", pratica_id) \
-            .single() \
+        pratica_res = (
+            supabase
+            .table("pratiche")
+            .select("*")
+            .eq("id", pratica_id)
+            .single()
             .execute()
+        )
 
         if not pratica_res.data:
             return {
@@ -5383,20 +5629,28 @@ def telegramma_submit_preview(pratica_id: str):
             return {
                 "success": False,
                 "error": "Questa pratica non è un Telegramma",
-                "tipo_servizio": pratica.get("tipo_servizio"),
+                "tipo_servizio": pratica.get(
+                    "tipo_servizio"
+                ),
                 "pratica_id": pratica_id
             }
 
-        mittente_data = telegramma_normalizza_dati_indirizzo(
-            pratica.get("mittente") or {}
+        mittente_data = (
+            telegramma_normalizza_dati_indirizzo(
+                pratica.get("mittente") or {}
+            )
         )
 
-        destinatario_data = telegramma_normalizza_dati_indirizzo(
-            pratica.get("destinatario") or {}
+        destinatario_data = (
+            telegramma_normalizza_dati_indirizzo(
+                pratica.get("destinatario") or {}
+            )
         )
 
         testo = (
-            clean_h2h_text(pratica.get("testo") or "")
+            clean_h2h_text(
+                pratica.get("testo") or ""
+            )
             .replace("Ã™", "U'")
             .replace("Ãš", "U'")
             .replace("Ù", "U'")
@@ -5411,7 +5665,9 @@ def telegramma_submit_preview(pratica_id: str):
                 "pratica_id": pratica_id
             }
 
-        client, service = telegramma_service(timeout=60)
+        client, service = telegramma_service(
+            timeout=60
+        )
 
         TelegrammaType = telegramma_find_type(
             client,
@@ -5431,10 +5687,12 @@ def telegramma_submit_preview(pratica_id: str):
             "Telegramma.Schema"
         )
 
-        TelegrammaDestinatarioType = telegramma_find_type(
-            client,
-            "TelegrammaDestinatario",
-            "Telegramma.Schema"
+        TelegrammaDestinatarioType = (
+            telegramma_find_type(
+                client,
+                "TelegrammaDestinatario",
+                "Telegramma.Schema"
+            )
         )
 
         InfoTestoType = telegramma_find_type(
@@ -5449,50 +5707,98 @@ def telegramma_submit_preview(pratica_id: str):
             "Telegramma.WS"
         )
 
-        mitt_nome, mitt_cognome = telegramma_split_nome_cognome(
-            mittente_data.get("nome")
-        )
-
-        dest_nome, dest_cognome = telegramma_split_nome_cognome(
-            destinatario_data.get("nome")
-        )
-
-        mittente_obj = MittenteType(
-            CAP=mittente_data.get("cap"),
-            Citta=mittente_data.get("comune"),
-            Cognome=mitt_cognome,
-            Indirizzo=mittente_data.get("indirizzo"),
-            InvioAlMittente=False,
-            Nome=mitt_nome,
-            RagioneSociale="",
-            Telefono=mittente_data.get("telefono")
-        )
-
-        destinatario_obj = DestinatarioType(
-            CAP=destinatario_data.get("cap"),
-            Citta=destinatario_data.get("comune"),
-            Cognome=dest_cognome,
-            Indirizzo=destinatario_data.get("indirizzo"),
-            Nome=dest_nome,
-            RagioneSociale="",
-            Stato="ITALIA",
-            Telefono=destinatario_data.get("telefono")
-        )
-
         TipoRecType = telegramma_find_type(
             client,
             "TelegrammaDestinatarioTipoRec",
             "Telegramma.Schema"
         )
 
-        telegramma_destinatario = TelegrammaDestinatarioType(
-            Destinatario=destinatario_obj,
-            Frazionario="",
-            IDTelegramma="",
-            LineaPilota="",
-            NumeroDestinatarioCorrente=1,
-            TipoRec=TipoRecType("Item"),
-            TipoRecapitoJokid=None
+        mitt_anagrafica = (
+            telegramma_prepara_anagrafica_poste(
+                mittente_data
+            )
+        )
+
+        dest_anagrafica = (
+            telegramma_prepara_anagrafica_poste(
+                destinatario_data
+            )
+        )
+
+        firma_mittente = (
+            mitt_anagrafica.get(
+                "ragione_sociale"
+            )
+            or " ".join(
+                valore
+                for valore in [
+                    str(
+                        mitt_anagrafica.get("nome")
+                        or ""
+                    ).strip(),
+                    str(
+                        mitt_anagrafica.get("cognome")
+                        or ""
+                    ).strip()
+                ]
+                if valore
+            ).strip()
+            or str(
+                mittente_data.get("nome")
+                or ""
+            ).strip()
+        )
+
+        mittente_obj = MittenteType(
+            CAP=mittente_data.get("cap"),
+            Citta=mittente_data.get("comune"),
+            Cognome=mitt_anagrafica.get(
+                "cognome"
+            ),
+            Indirizzo=mittente_data.get(
+                "indirizzo"
+            ),
+            InvioAlMittente=False,
+            Nome=mitt_anagrafica.get("nome"),
+            RagioneSociale=mitt_anagrafica.get(
+                "ragione_sociale"
+            ),
+            Telefono=mittente_data.get(
+                "telefono"
+            )
+        )
+
+        destinatario_obj = DestinatarioType(
+            CAP=destinatario_data.get("cap"),
+            Citta=destinatario_data.get(
+                "comune"
+            ),
+            Cognome=dest_anagrafica.get(
+                "cognome"
+            ),
+            Indirizzo=destinatario_data.get(
+                "indirizzo"
+            ),
+            Nome=dest_anagrafica.get("nome"),
+            RagioneSociale=dest_anagrafica.get(
+                "ragione_sociale"
+            ),
+            Stato="ITALIA",
+            Telefono=destinatario_data.get(
+                "telefono"
+            )
+        )
+
+        telegramma_destinatario = (
+            TelegrammaDestinatarioType(
+                Destinatario=destinatario_obj,
+                Frazionario="",
+                IDTelegramma="",
+                LineaPilota="",
+                NumeroDestinatarioCorrente=1,
+                TipoRec=TipoRecType("Item"),
+                TipoRecapitoJokid=None
+            )
         )
 
         info_testo = InfoTestoType(
@@ -5504,16 +5810,20 @@ def telegramma_submit_preview(pratica_id: str):
             CTA=False,
             Note=""
         )
-        
+
         parole = int(
-            pratica.get("parole") or len(testo.split()) or 1
+            pratica.get("parole")
+            or len(testo.split())
+            or 1
         )
 
-        valorizzazione_obj = xsd.SkipValue
-
         pricing_plain = {
-            "note": "Preventivo rimosso dal flusso come indicato da Poste",
-            "preventivo_chiamato": False
+            "note": (
+                "Preventivo rimosso dal flusso "
+                "come indicato da Poste"
+            ),
+            "preventivo_chiamato": False,
+            "parole": parole
         }
 
         id_request = str(uuid.uuid4())
@@ -5521,13 +5831,16 @@ def telegramma_submit_preview(pratica_id: str):
 
         telegramma_obj = TelegrammaType(
             Coupon=None,
-            DataTelegramma=datetime.datetime.now().replace(microsecond=0),
+            DataTelegramma=(
+                datetime.datetime.now()
+                .replace(microsecond=0)
+            ),
             Destinatari={
                 "TelegrammaDestinatario": [
                     telegramma_destinatario
                 ]
             },
-            Firma=mittente_data.get("nome") or "",
+            Firma=firma_mittente,
             GUIDMessage=guid_message,
             Jokid=None,
             Mittente=mittente_obj,
@@ -5537,7 +5850,7 @@ def telegramma_submit_preview(pratica_id: str):
             PartiTesto=info_testo,
             TipoRecapitoMod60=None,
             TipoTelegramma="TS",
-            Valorizzazione=valorizzazione_obj
+            Valorizzazione=xsd.SkipValue
         )
 
         message = client.create_message(
@@ -5546,9 +5859,11 @@ def telegramma_submit_preview(pratica_id: str):
             telegramma=telegramma_obj,
             Customer=POSTE_H2H_TOL_CUSTOMER,
             idRequest=id_request,
-            CodiceContratto=POSTE_H2H_TOL_CONTRACT_ID
+            CodiceContratto=(
+                POSTE_H2H_TOL_CONTRACT_ID
+            )
         )
-        
+
         fix_telegramma_wsa_to(message)
 
         xml_string = etree.tostring(
@@ -5559,12 +5874,21 @@ def telegramma_submit_preview(pratica_id: str):
 
         return {
             "success": True,
-            "step": "TELEGRAMMA_SUBMIT_PREVIEW",
+            "step": (
+                "TELEGRAMMA_SUBMIT_PREVIEW"
+            ),
             "pratica_id": pratica_id,
             "id_request": id_request,
             "guid_message": guid_message,
             "mittente": mittente_data,
             "destinatario": destinatario_data,
+            "mittente_anagrafica_poste": (
+                mitt_anagrafica
+            ),
+            "destinatario_anagrafica_poste": (
+                dest_anagrafica
+            ),
+            "firma_mittente": firma_mittente,
             "pricing": pricing_plain,
             "xml_preview": xml_string
         }
@@ -5572,7 +5896,9 @@ def telegramma_submit_preview(pratica_id: str):
     except Exception as e:
         return {
             "success": False,
-            "step": "ERRORE_TELEGRAMMA_SUBMIT_PREVIEW",
+            "step": (
+                "ERRORE_TELEGRAMMA_SUBMIT_PREVIEW"
+            ),
             "pratica_id": pratica_id,
             "error": str(e)
         }
@@ -5623,31 +5949,40 @@ def poste_reporting_debug_operations():
             "error": str(e)
         }
 
-@app.get("//pratiche/telegramma-submit-poste/{pratica_id}")
-def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
+@app.get(
+    "/pratiche/telegramma-submit-poste/{pratica_id}"
+)
+@app.get(
+    "//pratiche/telegramma-submit-poste/{pratica_id}",
+    include_in_schema=False
+)
+def _telegramma_submit_poste(
+    pratica_id: str,
+    variant: str = ""
+):
     """
     Esegue il Submit reale Telegramma su Poste H2H.
-    ATTENZIONE:
-    - chiama davvero service.Submit
-    - NON esegue PreConfirm
-    - NON esegue Confirm
-    - salva XML e risposta Poste
 
-    Sicurezza:
-    - sempre permesso sulla pratica tecnica #1392
-    - sulle pratiche reali serve TELEGRAMMA_H2H_AUTO_ENABLED=true
-    - blocca automaticamente se l'ambiente Poste è ancora sptest
+    ATTENZIONE:
+    - chiama davvero service.Submit;
+    - non esegue PreConfirm;
+    - non esegue Confirm;
+    - salva XML e risposta Poste;
+    - blocca gli indirizzi non validati definitivamente.
     """
 
     history = HistoryPlugin()
     from zeep import xsd
 
     try:
-        pratica_res = supabase.table("pratiche") \
-            .select("*") \
-            .eq("id", pratica_id) \
-            .single() \
+        pratica_res = (
+            supabase
+            .table("pratiche")
+            .select("*")
+            .eq("id", pratica_id)
+            .single()
             .execute()
+        )
 
         if not pratica_res.data:
             return {
@@ -5662,119 +5997,218 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             return {
                 "success": False,
                 "error": "Questa pratica non è un Telegramma",
-                "tipo_servizio": pratica.get("tipo_servizio"),
+                "tipo_servizio": pratica.get(
+                    "tipo_servizio"
+                ),
                 "pratica_id": pratica_id
             }
 
         stato = pratica.get("stato")
 
-        # =====================================================
-        # SICUREZZA TELEGRAMMA H2H AUTOMATICO
-        # =====================================================
-        # Sempre permesso sulla pratica tecnica #1392.
-        # Sulle pratiche reali serve TELEGRAMMA_H2H_AUTO_ENABLED=true
-        # e non deve essere ambiente sptest.
-        # =====================================================
+        # Evita un secondo Submit della stessa pratica.
+        if stato == "SUBMIT_POSTE_OK":
+            return {
+                "success": True,
+                "skipped": True,
+                "blocked": True,
+                "step": (
+                    "TELEGRAMMA_SUBMIT_GIA_ESEGUITO"
+                ),
+                "message": (
+                    "Il Submit risulta già eseguito. "
+                    "Nessuna nuova chiamata a Poste."
+                ),
+                "pratica_id": pratica_id,
+                "id_richiesta": pratica.get(
+                    "id_richiesta"
+                )
+            }
 
         telegramma_auto_enabled = os.getenv(
             "TELEGRAMMA_H2H_AUTO_ENABLED",
             "false"
-        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+        ).strip().lower() in [
+            "true",
+            "1",
+            "yes",
+            "si",
+            "sì",
+            "on"
+        ]
 
-        is_pratica_tecnica = pratica_id == "525aceed-cd97-400e-9a25-49ec102078f1"
+        is_pratica_tecnica = (
+            pratica_id
+            == "525aceed-cd97-400e-9a25-49ec102078f1"
+        )
 
-        if not is_pratica_tecnica and not telegramma_auto_enabled:
+        if (
+            not is_pratica_tecnica
+            and not telegramma_auto_enabled
+        ):
             return {
                 "success": False,
                 "blocked": True,
-                "step": "TELEGRAMMA_H2H_SUBMIT_BLOCCATO",
-                "error": "Submit Telegramma H2H automatico disattivato. Imposta TELEGRAMMA_H2H_AUTO_ENABLED=true su Render.",
+                "step": (
+                    "TELEGRAMMA_H2H_SUBMIT_BLOCCATO"
+                ),
+                "error": (
+                    "Submit Telegramma H2H automatico "
+                    "disattivato. Imposta "
+                    "TELEGRAMMA_H2H_AUTO_ENABLED=true "
+                    "su Render."
+                ),
                 "pratica_id": pratica_id,
-                "order_name": pratica.get("order_name"),
+                "order_name": pratica.get(
+                    "order_name"
+                ),
                 "stato": stato
             }
 
         telegramma_test_send_enabled = os.getenv(
             "TELEGRAMMA_H2H_TEST_SEND_ENABLED",
             "false"
-        ).strip().lower() in ["true", "1", "yes", "si", "sì", "on"]
+        ).strip().lower() in [
+            "true",
+            "1",
+            "yes",
+            "si",
+            "sì",
+            "on"
+        ]
 
         if (
             not is_pratica_tecnica
-            and "sptest" in str(POSTE_H2H_TOL_SERVICE_URL).lower()
+            and "sptest" in str(
+                POSTE_H2H_TOL_SERVICE_URL
+            ).lower()
             and not telegramma_test_send_enabled
         ):
             return {
                 "success": False,
                 "blocked": True,
-                "step": "TELEGRAMMA_AMBIENTE_TEST_BLOCCATO",
-                "error": "Ambiente Poste TEST rilevato. Per testare su sptest imposta TELEGRAMMA_H2H_TEST_SEND_ENABLED=true.",
-                "service_url": POSTE_H2H_TOL_SERVICE_URL,
+                "step": (
+                    "TELEGRAMMA_AMBIENTE_TEST_BLOCCATO"
+                ),
+                "error": (
+                    "Ambiente Poste TEST rilevato. "
+                    "Per testare su sptest imposta "
+                    "TELEGRAMMA_H2H_TEST_SEND_ENABLED=true."
+                ),
+                "service_url": (
+                    POSTE_H2H_TOL_SERVICE_URL
+                ),
                 "pratica_id": pratica_id
             }
-        
-        if stato not in [
+
+        stati_consentiti = [
             "PREZZATA_DA_CONFERMARE",
             "ERRORE_POSTE",
             "ERRORE_SUBMIT_POSTE",
-            "SUBMIT_POSTE_OK"
-        ]:
+            "INDIRIZZO_DA_VERIFICARE"
+        ]
+
+        if stato not in stati_consentiti:
             return {
                 "success": False,
                 "blocked": True,
-                "error": "Submit Telegramma consentito solo da PREZZATA_DA_CONFERMARE, ERRORE_POSTE, ERRORE_SUBMIT_POSTE o SUBMIT_POSTE_OK",
+                "error": (
+                    "Submit Telegramma consentito solo "
+                    "da PREZZATA_DA_CONFERMARE, "
+                    "ERRORE_POSTE, "
+                    "ERRORE_SUBMIT_POSTE oppure "
+                    "INDIRIZZO_DA_VERIFICARE."
+                ),
                 "stato": stato,
                 "pratica_id": pratica_id
             }
 
-        mittente_data = telegramma_normalizza_dati_indirizzo(
-            pratica.get("mittente") or {}
+        mittente_data = (
+            telegramma_normalizza_dati_indirizzo(
+                pratica.get("mittente") or {}
+            )
         )
 
-        destinatario_data = telegramma_normalizza_dati_indirizzo(
-            pratica.get("destinatario") or {}
+        destinatario_data = (
+            telegramma_normalizza_dati_indirizzo(
+                pratica.get("destinatario") or {}
+            )
         )
 
         # =====================================================
-        # VARIANTI SOLO TEST SU PRATICA TECNICA #1392
+        # VARIANTI SOLO PER LA PRATICA TECNICA
         # =====================================================
 
-        if is_pratica_tecnica and variant == "clean_address":
-            mittente_data["indirizzo"] = "VIA ROMA 1"
-            destinatario_data["indirizzo"] = "VIA ROMA 1"
+        if (
+            is_pratica_tecnica
+            and variant == "clean_address"
+        ):
+            mittente_data["indirizzo"] = (
+                "VIA ROMA 1"
+            )
+            destinatario_data["indirizzo"] = (
+                "VIA ROMA 1"
+            )
 
-        if is_pratica_tecnica and variant == "clean_all":
-            mittente_data["nome"] = "MARIO ROSSI"
-            mittente_data["indirizzo"] = "VIA ROMA 1"
-            mittente_data["cap"] = "00131"
-            mittente_data["comune"] = "ROMA"
-            mittente_data["provincia"] = "RM"
-            mittente_data["telefono"] = ""
+        if (
+            is_pratica_tecnica
+            and variant == "clean_all"
+        ):
+            mittente_data.update({
+                "nome": "MARIO ROSSI",
+                "cognome": "",
+                "ragione_sociale": "",
+                "tipo_destinatario": "PERSONA",
+                "indirizzo": "VIA ROMA 1",
+                "cap": "00131",
+                "comune": "ROMA",
+                "provincia": "RM",
+                "telefono": ""
+            })
 
-            destinatario_data["nome"] = "LUCA BIANCHI"
-            destinatario_data["indirizzo"] = "VIA ROMA 1"
-            destinatario_data["cap"] = "00131"
-            destinatario_data["comune"] = "ROMA"
-            destinatario_data["provincia"] = "RM"
-            destinatario_data["telefono"] = ""
+            destinatario_data.update({
+                "nome": "LUCA BIANCHI",
+                "cognome": "",
+                "ragione_sociale": "",
+                "tipo_destinatario": "PERSONA",
+                "indirizzo": "VIA ROMA 1",
+                "cap": "00131",
+                "comune": "ROMA",
+                "provincia": "RM",
+                "telefono": ""
+            })
 
-        if is_pratica_tecnica and variant == "paderna_15":
-            mittente_data["nome"] = "MARIO ROSSI"
-            mittente_data["indirizzo"] = "VIA ROMA 1"
-            mittente_data["cap"] = "15050"
-            mittente_data["comune"] = "PADERNA"
-            mittente_data["provincia"] = "AL"
-            mittente_data["telefono"] = ""
+        if (
+            is_pratica_tecnica
+            and variant == "paderna_15"
+        ):
+            mittente_data.update({
+                "nome": "MARIO ROSSI",
+                "cognome": "",
+                "ragione_sociale": "",
+                "tipo_destinatario": "PERSONA",
+                "indirizzo": "VIA ROMA 1",
+                "cap": "15050",
+                "comune": "PADERNA",
+                "provincia": "AL",
+                "telefono": ""
+            })
 
-            destinatario_data["nome"] = "LUCA BIANCHI"
-            destinatario_data["indirizzo"] = "VIA ROMA 1"
-            destinatario_data["cap"] = "15050"
-            destinatario_data["comune"] = "PADERNA"
-            destinatario_data["provincia"] = "AL"
-            destinatario_data["telefono"] = ""
+            destinatario_data.update({
+                "nome": "LUCA BIANCHI",
+                "cognome": "",
+                "ragione_sociale": "",
+                "tipo_destinatario": "PERSONA",
+                "indirizzo": "VIA ROMA 1",
+                "cap": "15050",
+                "comune": "PADERNA",
+                "provincia": "AL",
+                "telefono": ""
+            })
 
         testo = (
-            clean_h2h_text(pratica.get("testo") or "")
+            clean_h2h_text(
+                pratica.get("testo") or ""
+            )
             .replace("Ã™", "U'")
             .replace("Ãš", "U'")
             .replace("Ù", "U'")
@@ -5789,10 +6223,16 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
                 "pratica_id": pratica_id
             }
 
-        # Test tecnico: forziamo testo controllato solo sulla pratica #1392
         if is_pratica_tecnica:
-            if variant in ["15_words", "paderna_15"]:
-                testo = "QUESTO E UN TEST TELEGRAMMA H2H CON QUINDICI PAROLE PER VERIFICA INTEGRAZIONE POSTE SERVIZIO ONLINE"
+            if variant in [
+                "15_words",
+                "paderna_15"
+            ]:
+                testo = (
+                    "QUESTO E UN TEST TELEGRAMMA H2H "
+                    "CON QUINDICI PAROLE PER VERIFICA "
+                    "INTEGRAZIONE POSTE SERVIZIO ONLINE"
+                )
             else:
                 testo = "TEST TELEGRAMMA H2H"
 
@@ -5819,10 +6259,12 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             "Telegramma.Schema"
         )
 
-        TelegrammaDestinatarioType = telegramma_find_type(
-            client,
-            "TelegrammaDestinatario",
-            "Telegramma.Schema"
+        TelegrammaDestinatarioType = (
+            telegramma_find_type(
+                client,
+                "TelegrammaDestinatario",
+                "Telegramma.Schema"
+            )
         )
 
         InfoTestoType = telegramma_find_type(
@@ -5843,44 +6285,94 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             "Telegramma.Schema"
         )
 
-        mitt_nome, mitt_cognome = telegramma_split_nome_cognome(
-            mittente_data.get("nome")
+        RecipientType = telegramma_find_type(
+            client,
+            "Recipient",
+            "Telegramma.WS"
         )
 
-        dest_nome, dest_cognome = telegramma_split_nome_cognome(
-            destinatario_data.get("nome")
+        ArrayOfRecipientType = (
+            telegramma_find_type(
+                client,
+                "ArrayOfRecipient",
+                "Telegramma.WS"
+            )
+        )
+
+        mitt_anagrafica = (
+            telegramma_prepara_anagrafica_poste(
+                mittente_data
+            )
+        )
+
+        dest_anagrafica = (
+            telegramma_prepara_anagrafica_poste(
+                destinatario_data
+            )
+        )
+
+        firma_mittente = (
+            mitt_anagrafica.get(
+                "ragione_sociale"
+            )
+            or " ".join(
+                valore
+                for valore in [
+                    str(
+                        mitt_anagrafica.get("nome")
+                        or ""
+                    ).strip(),
+                    str(
+                        mitt_anagrafica.get("cognome")
+                        or ""
+                    ).strip()
+                ]
+                if valore
+            ).strip()
+            or str(
+                mittente_data.get("nome")
+                or ""
+            ).strip()
         )
 
         mittente_obj = MittenteType(
             CAP=mittente_data.get("cap"),
             Citta=mittente_data.get("comune"),
-            Cognome=mitt_cognome,
-            Indirizzo=mittente_data.get("indirizzo"),
+            Cognome=mitt_anagrafica.get(
+                "cognome"
+            ),
+            Indirizzo=mittente_data.get(
+                "indirizzo"
+            ),
             InvioAlMittente=False,
-            Nome=mitt_nome,
-            RagioneSociale="",
-            Telefono=mittente_data.get("telefono")
+            Nome=mitt_anagrafica.get("nome"),
+            RagioneSociale=mitt_anagrafica.get(
+                "ragione_sociale"
+            ),
+            Telefono=mittente_data.get(
+                "telefono"
+            )
         )
 
         destinatario_obj = DestinatarioType(
             CAP=destinatario_data.get("cap"),
-            Citta=destinatario_data.get("comune"),
-            Cognome=dest_cognome,
-            Indirizzo=destinatario_data.get("indirizzo"),
-            Nome=dest_nome,
-            RagioneSociale="",
+            Citta=destinatario_data.get(
+                "comune"
+            ),
+            Cognome=dest_anagrafica.get(
+                "cognome"
+            ),
+            Indirizzo=destinatario_data.get(
+                "indirizzo"
+            ),
+            Nome=dest_anagrafica.get("nome"),
+            RagioneSociale=dest_anagrafica.get(
+                "ragione_sociale"
+            ),
             Stato="ITALIA",
-            Telefono=destinatario_data.get("telefono")
-        )
-
-        telegramma_destinatario = TelegrammaDestinatarioType(
-            Destinatario=destinatario_obj,
-            Frazionario="",
-            IDTelegramma="",
-            LineaPilota="",
-            NumeroDestinatarioCorrente=1,
-            TipoRec=TipoRecType("Item"),
-            TipoRecapitoJokid=None
+            Telefono=destinatario_data.get(
+                "telefono"
+            )
         )
 
         info_testo = InfoTestoType(
@@ -5897,13 +6389,16 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             parole = len(testo.split()) or 1
         else:
             parole = int(
-                pratica.get("parole") or len(testo.split()) or 1
+                pratica.get("parole")
+                or len(testo.split())
+                or 1
             )
 
-        valorizzazione_da_inviare = xsd.SkipValue
-
         pricing_plain = {
-            "note": "Preventivo rimosso dal flusso come indicato da Poste",
+            "note": (
+                "Preventivo rimosso dal flusso "
+                "come indicato da Poste"
+            ),
             "preventivo_chiamato": False,
             "parole": parole
         }
@@ -5913,57 +6408,43 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
         except Exception:
             id_request = str(uuid.uuid4())
 
+        id_request = str(id_request)
+
         guid_message = id_request
         guid_message_da_inviare = id_request
 
-        # Varianti vecchie mantenute solo per debug sulla pratica tecnica
-        if is_pratica_tecnica and variant in ["no_guid", "no_guid_no_valorizzazione"]:
-            try:
-                from zeep import xsd
-                guid_message_da_inviare = xsd.SkipValue
-            except Exception:
-                guid_message_da_inviare = None
+        if (
+            is_pratica_tecnica
+            and variant in [
+                "no_guid",
+                "no_guid_no_valorizzazione"
+            ]
+        ):
+            guid_message_da_inviare = (
+                xsd.SkipValue
+            )
 
-        if is_pratica_tecnica and variant == "guid_equals_id":
+        if (
+            is_pratica_tecnica
+            and variant == "guid_equals_id"
+        ):
             guid_message = id_request
-            guid_message_da_inviare = id_request
+            guid_message_da_inviare = (
+                id_request
+            )
 
-        telegramma_obj = TelegrammaType(
-            Coupon=None,
-            DataTelegramma=datetime.datetime.now().replace(microsecond=0),
-            Destinatari={
-                "TelegrammaDestinatario": [
-                    telegramma_destinatario
-                ]
-            },
-            Firma=mittente_data.get("nome") or "",
-            GUIDMessage=guid_message_da_inviare,
-            Jokid=None,
-            Mittente=mittente_obj,
-            Mod60Elettronico=None,
-            Nazionale=True,
-            Opzioni=opzioni,
-            PartiTesto=info_testo,
-            TipoRecapitoMod60=None,
-            TipoTelegramma="TS",
-            Valorizzazione=valorizzazione_da_inviare
-        )
-
-        RecipientType = telegramma_find_type(
-            client,
-            "Recipient",
-            "Telegramma.WS"
-        )
-
-        ArrayOfRecipientType = telegramma_find_type(
-            client,
-            "ArrayOfRecipient",
-            "Telegramma.WS"
-        )
+        # =====================================================
+        # PRIMA VALIDAZIONE DESTINATARIO
+        # =====================================================
 
         recipient_obj = RecipientType(
             ClientIDRecipient="1",
-            Provincia=destinatario_data.get("provincia") or "",
+            Provincia=(
+                destinatario_data.get(
+                    "provincia"
+                )
+                or ""
+            ),
             destinatario=destinatario_obj
         )
 
@@ -5973,186 +6454,388 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             ]
         )
 
-        validation_result = service.RecipientsValidation(
-            recipients=recipients_obj,
-            idRequest=id_request
+        validation_result = (
+            service.RecipientsValidation(
+                recipients=recipients_obj,
+                idRequest=id_request
+            )
         )
 
-        validation_plain = make_json_safe(
-            zeep_to_plain(validation_result)
+        validation_iniziale_plain = (
+            make_json_safe(
+                zeep_to_plain(
+                    validation_result
+                )
+            )
         )
 
-# =====================================================
-# PRODUZIONE: APPLICA SUGGERIMENTO INDIRIZZO POSTE
-# =====================================================
-# Se Poste risponde "Invalid address. Suggestions available",
-# prendiamo il primo suggerimento e ricostruiamo il destinatario.
-# Questo evita l'errore produzione:
-# "throw Linea Pilota exception"
-# =====================================================
+        validation_finale_plain = (
+            validation_iniziale_plain
+        )
 
-        try:
-            validation_item = None
+        esito_validation = (
+            telegramma_estrai_esito_validazione(
+                validation_iniziale_plain
+            )
+        )
 
-            if isinstance(validation_plain, list) and len(validation_plain) > 0:
-                validation_item = validation_plain[0]
-            elif isinstance(validation_plain, dict):
-                validation_item = validation_plain
+        # =====================================================
+        # APPLICAZIONE SUGGERIMENTO POSTE
+        # =====================================================
+        # Modifica solamente:
+        # - CAP
+        # - città
+        # - indirizzo
+        # - provincia
+        #
+        # Nome/Cognome/RagioneSociale restano invariati.
+        # =====================================================
 
-            validation_result_info = (
-                (validation_item or {}).get("Result")
+        if (
+            esito_validation.get("res_type")
+            == "W"
+            and esito_validation.get(
+                "suggerimenti"
+            )
+        ):
+            primo_suggerimento = (
+                esito_validation[
+                    "suggerimenti"
+                ][0]
                 or {}
             )
 
-            validation_res_type = validation_result_info.get("ResType")
-            validation_description = validation_result_info.get("Description")
-
-            destinatari_validation = (
-                (validation_item or {}).get("Destinatari")
+            destinatario_suggerito = (
+                primo_suggerimento.get(
+                    "destinatario"
+                )
                 or {}
             )
 
-            suggerimenti = destinatari_validation.get("Recipient") or []
+            provincia_suggerita = (
+                primo_suggerimento.get(
+                    "Provincia"
+                )
+            )
 
-            if isinstance(suggerimenti, dict):
-                suggerimenti = [suggerimenti]
-
-            if suggerimenti and len(suggerimenti) > 0:
-                primo_suggerimento = suggerimenti[0] or {}
-
-                destinatario_suggerito = (
-                    primo_suggerimento.get("destinatario")
-                    or {}
+            if destinatario_suggerito:
+                destinatario_data["cap"] = (
+                    destinatario_suggerito.get(
+                        "CAP"
+                    )
+                    or destinatario_data.get(
+                        "cap"
+                    )
                 )
 
-                provincia_suggerita = primo_suggerimento.get("Provincia")
-
-                if destinatario_suggerito:
-                    destinatario_data["cap"] = (
-                        destinatario_suggerito.get("CAP")
-                        or destinatario_data.get("cap")
+                destinatario_data["comune"] = (
+                    destinatario_suggerito.get(
+                        "Citta"
                     )
-
-                    destinatario_data["comune"] = (
-                        destinatario_suggerito.get("Citta")
-                        or destinatario_data.get("comune")
+                    or destinatario_data.get(
+                        "comune"
                     )
+                )
 
-                    destinatario_data["indirizzo"] = (
-                        destinatario_suggerito.get("Indirizzo")
-                        or destinatario_data.get("indirizzo")
+                destinatario_data[
+                    "indirizzo"
+                ] = (
+                    destinatario_suggerito.get(
+                        "Indirizzo"
                     )
-
-                    destinatario_data["nome"] = " ".join(
-                        [
-                            str(destinatario_suggerito.get("Nome") or "").strip(),
-                            str(destinatario_suggerito.get("Cognome") or "").strip()
-                        ]
-                    ).strip() or destinatario_data.get("nome")
-
-                    destinatario_data["provincia"] = (
-                        provincia_suggerita
-                        or destinatario_data.get("provincia")
+                    or destinatario_data.get(
+                        "indirizzo"
                     )
+                )
 
-                    print(
-                        "SUGGERIMENTO_POSTE_APPLICATO_TELEGRAMMA:",
+                destinatario_data[
+                    "provincia"
+                ] = (
+                    provincia_suggerita
+                    or destinatario_data.get(
+                        "provincia"
+                    )
+                )
+
+                # Rigenera l'anagrafica senza
+                # modificare il nome originale.
+                dest_anagrafica = (
+                    telegramma_prepara_anagrafica_poste(
                         destinatario_data
                     )
+                )
 
-                    dest_nome, dest_cognome = telegramma_split_nome_cognome(
-                        destinatario_data.get("nome")
-                    )
-
-                    destinatario_obj = DestinatarioType(
-                        CAP=destinatario_data.get("cap"),
-                        Citta=destinatario_data.get("comune"),
-                        Cognome=dest_cognome,
-                        Indirizzo=destinatario_data.get("indirizzo"),
-                        Nome=dest_nome,
-                        RagioneSociale="",
+                destinatario_obj = (
+                    DestinatarioType(
+                        CAP=destinatario_data.get(
+                            "cap"
+                        ),
+                        Citta=destinatario_data.get(
+                            "comune"
+                        ),
+                        Cognome=dest_anagrafica.get(
+                            "cognome"
+                        ),
+                        Indirizzo=destinatario_data.get(
+                            "indirizzo"
+                        ),
+                        Nome=dest_anagrafica.get(
+                            "nome"
+                        ),
+                        RagioneSociale=(
+                            dest_anagrafica.get(
+                                "ragione_sociale"
+                            )
+                        ),
                         Stato="ITALIA",
-                        Telefono=destinatario_data.get("telefono")
+                        Telefono=destinatario_data.get(
+                            "telefono"
+                        )
                     )
+                )
 
-                    telegramma_destinatario = TelegrammaDestinatarioType(
-                        Destinatario=destinatario_obj,
-                        Frazionario="",
-                        IDTelegramma="",
-                        LineaPilota="",
-                        NumeroDestinatarioCorrente=1,
-                        TipoRec=TipoRecType("Item"),
-                        TipoRecapitoJokid=None
+                recipient_obj = RecipientType(
+                    ClientIDRecipient="1",
+                    Provincia=(
+                        destinatario_data.get(
+                            "provincia"
+                        )
+                        or ""
+                    ),
+                    destinatario=destinatario_obj
+                )
+
+                recipients_obj = (
+                    ArrayOfRecipientType(
+                        Recipient=[
+                            recipient_obj
+                        ]
                     )
+                )
 
-                    telegramma_obj = TelegrammaType(
-                        Coupon=None,
-                        DataTelegramma=datetime.datetime.now().replace(microsecond=0),
-                        Destinatari={
-                            "TelegrammaDestinatario": [
-                                telegramma_destinatario
-                            ]
-                        },
-                        Firma=mittente_data.get("nome") or "",
-                        GUIDMessage=guid_message_da_inviare,
-                        Jokid=None,
-                        Mittente=mittente_obj,
-                        Mod60Elettronico=None,
-                        Nazionale=True,
-                        Opzioni=opzioni,
-                        PartiTesto=info_testo,
-                        TipoRecapitoMod60=None,
-                        TipoTelegramma="TS",
-                        Valorizzazione=valorizzazione_da_inviare
+                validation_result_2 = (
+                    service.RecipientsValidation(
+                        recipients=recipients_obj,
+                        idRequest=id_request
                     )
+                )
 
-            elif validation_res_type == "E":
-                now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                validation_finale_plain = (
+                    make_json_safe(
+                        zeep_to_plain(
+                            validation_result_2
+                        )
+                    )
+                )
 
-                poste_payload = {
-                    "step": "TELEGRAMMA_VALIDAZIONE_DESTINATARIO_KO",
-                    "variant": variant,
-                    "customer": POSTE_H2H_TOL_CUSTOMER,
-                    "note": "Validazione destinatario Poste fallita prima del Submit",        
-                    "id_request": id_request,
-                    "guid_message": guid_message,
-                    "validation_res_type": validation_res_type,
-                    "validation_description": validation_description,
-                    "validation_same_id_request": validation_plain,
-                    "submit_at": now_iso
-                }
+                esito_validation = (
+                    telegramma_estrai_esito_validazione(
+                        validation_finale_plain
+                    )
+                )
 
-                supabase.table("pratiche") \
-                    .update({
-                        "stato": "ERRORE_SUBMIT_POSTE",
-                        "id_richiesta": id_request,
-                        "poste_response": poste_payload,
-                        "updated_at": now_iso
-                    }) \
-                    .eq("id", pratica_id) \
-                    .execute()
+                print(
+                    "SUGGERIMENTO_POSTE_APPLICATO_"
+                    "TELEGRAMMA:",
+                    {
+                        "destinatario": (
+                            destinatario_data
+                        ),
+                        "anagrafica": (
+                            dest_anagrafica
+                        ),
+                        "esito_finale": (
+                            esito_validation
+                        )
+                    }
+                )
 
-                return {
-                    "success": False,
-                    "step": "TELEGRAMMA_VALIDAZIONE_DESTINATARIO_KO",
-                    "pratica_id": pratica_id,
-                    "id_request": id_request,
-                    "guid_message": guid_message,
-                    "validation_same_id_request": validation_plain,
-                    "error": validation_description
-                }
+        validation_plain = (
+            validation_finale_plain
+        )
 
-        except Exception as suggest_err:
-            print(
-                "ERRORE_APPLICAZIONE_SUGGERIMENTO_POSTE:",
-                str(suggest_err)
+        validation_res_type = (
+            esito_validation.get("res_type")
+            or ""
+        )
+
+        validation_description = (
+            esito_validation.get(
+                "description"
             )
+            or ""
+        )
+
+        # Errore Poste: blocco sempre.
+        # Warning o risultato vuoto:
+        # blocco sulle pratiche reali.
+        deve_bloccare_validazione = (
+            validation_res_type == "E"
+            or (
+                not is_pratica_tecnica
+                and validation_res_type != "I"
+            )
+        )
+
+        if deve_bloccare_validazione:
+            now_iso = (
+                datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat()
+            )
+
+            stato_blocco = (
+                "ERRORE_SUBMIT_POSTE"
+                if validation_res_type == "E"
+                else "INDIRIZZO_DA_VERIFICARE"
+            )
+
+            step_blocco = (
+                "TELEGRAMMA_VALIDAZIONE_"
+                "DESTINATARIO_KO"
+                if validation_res_type == "E"
+                else
+                "TELEGRAMMA_INDIRIZZO_"
+                "DA_VERIFICARE"
+            )
+
+            poste_payload = {
+                "step": step_blocco,
+                "variant": variant,
+                "customer": (
+                    POSTE_H2H_TOL_CUSTOMER
+                ),
+                "note": (
+                    "Submit bloccato prima "
+                    "dell'invio: indirizzo non "
+                    "validato definitivamente da Poste."
+                ),
+                "id_request": id_request,
+                "guid_message": guid_message,
+                "validation_res_type": (
+                    validation_res_type
+                ),
+                "validation_description": (
+                    validation_description
+                ),
+                "validation_initial": (
+                    validation_iniziale_plain
+                ),
+                "validation_final": (
+                    validation_finale_plain
+                ),
+                "destinatario_normalizzato": (
+                    destinatario_data
+                ),
+                "mittente_anagrafica_poste": (
+                    mitt_anagrafica
+                ),
+                "destinatario_anagrafica_poste": (
+                    dest_anagrafica
+                ),
+                "checked_at": now_iso
+            }
+
+            (
+                supabase
+                .table("pratiche")
+                .update({
+                    "stato": stato_blocco,
+                    "id_richiesta": id_request,
+                    "poste_response": (
+                        poste_payload
+                    ),
+                    "updated_at": now_iso
+                })
+                .eq("id", pratica_id)
+                .execute()
+            )
+
+            return {
+                "success": False,
+                "blocked": True,
+                "step": step_blocco,
+                "pratica_id": pratica_id,
+                "id_request": id_request,
+                "guid_message": guid_message,
+                "validation_res_type": (
+                    validation_res_type
+                ),
+                "validation_description": (
+                    validation_description
+                ),
+                "validation_initial": (
+                    validation_iniziale_plain
+                ),
+                "validation_final": (
+                    validation_finale_plain
+                ),
+                "destinatario_normalizzato": (
+                    destinatario_data
+                ),
+                "destinatario_anagrafica_poste": (
+                    dest_anagrafica
+                ),
+                "error": (
+                    "Indirizzo non validato "
+                    "definitivamente da Poste. "
+                    "Submit non eseguito."
+                )
+            }
+
+        # =====================================================
+        # COSTRUZIONE TELEGRAMMA DEFINITIVO
+        # =====================================================
+
+        telegramma_destinatario = (
+            TelegrammaDestinatarioType(
+                Destinatario=destinatario_obj,
+                Frazionario="",
+                IDTelegramma="",
+                LineaPilota="",
+                NumeroDestinatarioCorrente=1,
+                TipoRec=TipoRecType("Item"),
+                TipoRecapitoJokid=None
+            )
+        )
+
+        telegramma_obj = TelegrammaType(
+            Coupon=None,
+            DataTelegramma=(
+                datetime.datetime.now()
+                .replace(microsecond=0)
+            ),
+            Destinatari={
+                "TelegrammaDestinatario": [
+                    telegramma_destinatario
+                ]
+            },
+            Firma=firma_mittente,
+            GUIDMessage=(
+                guid_message_da_inviare
+            ),
+            Jokid=None,
+            Mittente=mittente_obj,
+            Mod60Elettronico=None,
+            Nazionale=True,
+            Opzioni=opzioni,
+            PartiTesto=info_testo,
+            TipoRecapitoMod60=None,
+            TipoTelegramma="TS",
+            Valorizzazione=xsd.SkipValue
+        )
+
+        # =====================================================
+        # SUBMIT REALE
+        # =====================================================
 
         submit_result = service.Submit(
             telegramma=telegramma_obj,
             Customer=POSTE_H2H_TOL_CUSTOMER,
             idRequest=id_request,
-            CodiceContratto=POSTE_H2H_TOL_CONTRACT_ID
+            CodiceContratto=(
+                POSTE_H2H_TOL_CONTRACT_ID
+            )
         )
 
         xml_sent = None
@@ -6169,7 +6852,9 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
 
         try:
             xml_received = etree.tostring(
-                history.last_received["envelope"],
+                history.last_received[
+                    "envelope"
+                ],
                 pretty_print=True,
                 encoding="unicode"
             )
@@ -6180,54 +6865,129 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             zeep_to_plain(submit_result)
         )
 
-        submit_result_block = plain_result.get("SubmitResult") or {}
-        submit_result_info = submit_result_block.get("Result") or {}
+        if not isinstance(plain_result, dict):
+            plain_result = {
+                "raw_result": plain_result
+            }
 
-        poste_res_type = submit_result_info.get("ResType")
-        poste_description = submit_result_info.get("Description")
+        submit_result_block = (
+            plain_result.get("SubmitResult")
+            or {}
+        )
 
-        submit_ok = poste_res_type in ["I", "W"]
+        submit_result_info = (
+            submit_result_block.get("Result")
+            or {}
+        )
 
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        poste_res_type = (
+            submit_result_info.get("ResType")
+        )
+
+        poste_description = (
+            submit_result_info.get(
+                "Description"
+            )
+        )
+
+        submit_ok = (
+            poste_res_type in ["I", "W"]
+        )
+
+        now_iso = datetime.datetime.now(
+            datetime.timezone.utc
+        ).isoformat()
 
         poste_payload = {
             "step": "TELEGRAMMA_SUBMIT_POSTE",
             "variant": variant,
-            "customer": POSTE_H2H_TOL_CUSTOMER,
-            "note": "Submit Telegramma eseguito su Poste H2H. PreConfirm/Confirm non ancora eseguiti.",
+            "customer": (
+                POSTE_H2H_TOL_CUSTOMER
+            ),
+            "note": (
+                "Submit Telegramma eseguito su "
+                "Poste H2H. PreConfirm/Confirm "
+                "non ancora eseguiti."
+            ),
             "id_request": id_request,
             "guid_message": guid_message,
             "poste_res_type": poste_res_type,
-            "poste_description": poste_description,
+            "poste_description": (
+                poste_description
+            ),
             "submit_ok": submit_ok,
             "pricing": pricing_plain,
-            "validation_same_id_request": validation_plain,
+            "validation_same_id_request": (
+                validation_plain
+            ),
+            "validation_initial": (
+                validation_iniziale_plain
+            ),
+            "validation_final": (
+                validation_finale_plain
+            ),
+            "mittente_anagrafica_poste": (
+                mitt_anagrafica
+            ),
+            "destinatario_anagrafica_poste": (
+                dest_anagrafica
+            ),
+            "destinatario_normalizzato": (
+                destinatario_data
+            ),
             "submit_result": plain_result,
             "raw": str(submit_result),
             "submit_at": now_iso
         }
 
-        supabase.table("pratiche") \
+        (
+            supabase
+            .table("pratiche")
             .update({
-                "stato": "SUBMIT_POSTE_OK" if submit_ok else "ERRORE_SUBMIT_POSTE",
+                "stato": (
+                    "SUBMIT_POSTE_OK"
+                    if submit_ok
+                    else "ERRORE_SUBMIT_POSTE"
+                ),
                 "id_richiesta": id_request,
                 "poste_response": poste_payload,
                 "xml_sent": xml_sent,
                 "xml_received": xml_received,
                 "updated_at": now_iso
-            }) \
-            .eq("id", pratica_id) \
+            })
+            .eq("id", pratica_id)
             .execute()
+        )
 
         return {
-            "success": True,
+            "success": submit_ok,
             "step": "TELEGRAMMA_SUBMIT_POSTE",
             "variant": variant,
-            "customer": POSTE_H2H_TOL_CUSTOMER,
+            "customer": (
+                POSTE_H2H_TOL_CUSTOMER
+            ),
             "pratica_id": pratica_id,
             "id_request": id_request,
             "guid_message": guid_message,
-            "validation_same_id_request": validation_plain,
+            "poste_res_type": poste_res_type,
+            "poste_description": (
+                poste_description
+            ),
+            "validation_initial": (
+                validation_iniziale_plain
+            ),
+            "validation_final": (
+                validation_finale_plain
+            ),
+            "mittente_anagrafica_poste": (
+                mitt_anagrafica
+            ),
+            "destinatario_anagrafica_poste": (
+                dest_anagrafica
+            ),
+            "destinatario_normalizzato": (
+                destinatario_data
+            ),
             "submit_result": plain_result,
             "xml_sent": xml_sent,
             "xml_received": xml_received
@@ -6248,7 +7008,9 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
 
         try:
             xml_received = etree.tostring(
-                history.last_received["envelope"],
+                history.last_received[
+                    "envelope"
+                ],
                 pretty_print=True,
                 encoding="unicode"
             )
@@ -6256,25 +7018,39 @@ def _telegramma_submit_poste(pratica_id: str, variant: str = ""):
             pass
 
         try:
-            supabase.table("pratiche") \
+            (
+                supabase
+                .table("pratiche")
                 .update({
-                    "stato": "ERRORE_SUBMIT_POSTE",
+                    "stato": (
+                        "ERRORE_SUBMIT_POSTE"
+                    ),
                     "poste_response": {
-                        "step": "ERRORE_TELEGRAMMA_SUBMIT_POSTE",
+                        "step": (
+                            "ERRORE_TELEGRAMMA_"
+                            "SUBMIT_POSTE"
+                        ),
                         "error": str(e)
                     },
                     "xml_sent": xml_sent,
                     "xml_received": xml_received,
-                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                }) \
-                .eq("id", pratica_id) \
+                    "updated_at": (
+                        datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat()
+                    )
+                })
+                .eq("id", pratica_id)
                 .execute()
+            )
         except Exception:
             pass
 
         return {
             "success": False,
-            "step": "ERRORE_TELEGRAMMA_SUBMIT_POSTE",
+            "step": (
+                "ERRORE_TELEGRAMMA_SUBMIT_POSTE"
+            ),
             "pratica_id": pratica_id,
             "error": str(e),
             "xml_sent": xml_sent,
