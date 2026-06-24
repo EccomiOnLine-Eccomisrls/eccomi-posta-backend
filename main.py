@@ -15511,7 +15511,25 @@ def preview_xml_h2h_pratica(pratica_id: str):
             """
 
         pratica = result.data
-        has_rr = bool_from_any(pratica.get("ricevuta_ritorno"))
+
+        # Telegramma → anteprima TOL corretta
+        tipo_servizio = str(
+            pratica.get("tipo_servizio") or ""
+        ).strip().upper()
+
+        if tipo_servizio == "TELEGRAMMA":
+            return RedirectResponse(
+                url=(
+                    "/poste/h2h/telegramma/"
+                    f"submit-preview/{pratica_id}"
+                ),
+                status_code=302
+            )
+
+        # Raccomandata / ROL → continua con questo endpoint
+        has_rr = bool_from_any(
+            pratica.get("ricevuta_ritorno")
+        )
 
         def safe_html(value):
             return (
