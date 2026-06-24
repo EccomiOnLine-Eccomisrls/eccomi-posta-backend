@@ -5563,6 +5563,68 @@ def telegramma_anagrafica_is_azienda(data: dict) -> bool:
         for indicatore in indicatori_azienda
     )
 
+def telegramma_split_persona_legacy(nome_completo: str):
+    """
+    Divide un nominativo completo proveniente dai vecchi ordini.
+
+    Regola:
+    - ultima parola = cognome;
+    - le parole precedenti = nome;
+    - conserva particelle dei cognomi come Del Libano, De Luca, Della Valle.
+    """
+
+    testo = " ".join(
+        str(nome_completo or "").strip().split()
+    )
+
+    if not testo:
+        return "", ""
+
+    parti = testo.split()
+
+    if len(parti) == 1:
+        return parti[0], ""
+
+    if len(parti) == 2:
+        return parti[0], parti[1]
+
+    particelle_cognome = {
+        "DA",
+        "DAL",
+        "DALLA",
+        "DE",
+        "DEI",
+        "DEL",
+        "DELLA",
+        "DELLE",
+        "DI",
+        "LA",
+        "LE",
+        "LI",
+        "LO",
+        "VAN",
+        "VON"
+    }
+
+    indice_cognome = len(parti) - 1
+
+    while (
+        indice_cognome - 1 >= 1
+        and parti[indice_cognome - 1].upper()
+        in particelle_cognome
+    ):
+        indice_cognome -= 1
+
+    nome = " ".join(
+        parti[:indice_cognome]
+    ).strip()
+
+    cognome = " ".join(
+        parti[indice_cognome:]
+    ).strip()
+
+    return nome, cognome
+
 
 def telegramma_prepara_anagrafica_poste(data: dict) -> dict:
     """
@@ -5624,7 +5686,7 @@ def telegramma_prepara_anagrafica_poste(data: dict) -> dict:
         cognome_persona = cognome_originale
     else:
         nome_persona, cognome_persona = (
-            telegramma_split_nome_cognome(
+            telegramma_split_persona_legacy(
                 nome_originale
             )
         )
