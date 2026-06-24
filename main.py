@@ -6700,6 +6700,657 @@ def poste_reporting_debug_operations():
         }
 
 @app.get(
+    "/poste/h2h/telegramma/verifica-indirizzo/{pratica_id}",
+    response_class=HTMLResponse
+)
+def telegramma_verifica_indirizzo(pratica_id: str):
+    """
+    Verifica esclusivamente il destinatario tramite
+    RecipientsValidation di Poste.
+
+    NON esegue Submit.
+    NON invia il Telegramma.
+    NON esegue PreConfirm o Confirm.
+    """
+
+    import html
+
+    try:
+        pratica_res = (
+            supabase
+            .table("pratiche")
+            .select("*")
+            .eq("id", pratica_id)
+            .single()
+            .execute()
+        )
+
+        if not pratica_res.data:
+            return HTMLResponse(
+                content="""
+                <html>
+                <body style="font-family:Arial;padding:30px;">
+                    <h1>Pratica non trovata</h1>
+                    <a href="/dashboard/pratiche">
+                        ← Torna alla dashboard
+                    </a>
+                </body>
+                </html>
+                """,
+                status_code=404
+            )
+
+        pratica = pratica_res.data
+
+        tipo_servizio = str(
+            pratica.get("tipo_servizio") or ""
+        ).strip().upper()
+
+        if tipo_servizio != "TELEGRAMMA":
+            return HTMLResponse(
+                content="""
+                <html>
+                <body style="font-family:Arial;padding:30px;">
+                    <h1>Servizio non valido</h1>
+                    <p>Questa pratica non è un Telegramma.</p>
+                    <a href="/dashboard/pratiche">
+                        ← Torna alla dashboard
+                    </a>
+                </body>
+                </html>
+                """,
+                status_code=400
+            )
+
+        destinatario_data = (
+            telegramma_normalizza_dati_indirizzo(
+                pratica.get("destinatario") or {}
+            )
+        )
+
+        client, service = telegramma_service(
+            timeout=60
+        )
+
+        DestinatarioType = telegramma_find_type(
+            client,
+            "Destinatario",
+            "Telegramma.Schema"
+        )
+
+        RecipientType = telegramma_find_type(
+            client,
+            "Recipient",
+            "Telegramma.WS"
+        )
+
+        ArrayOfRecipientType = telegramma_find_type(
+            client,
+            "ArrayOfRecipient",
+            "Telegramma.WS"
+        )
+
+        dest_anagrafica = (
+            telegramma_prepara_anagrafica_poste(
+                destinatario_data
+            )
+        )
+
+        destinatario_obj = DestinatarioType(
+            CAP=destinatario_data.get("cap"),
+            Citta=destinatario_data.get("comune"),
+            Cognome=dest_anagrafica.get("cognome"),
+            Indirizzo=destinatario_data.get("indirizzo"),
+            Nome=dest_anagrafica.get("nome"),
+            RagioneSociale=dest_anagrafica.get(
+                "ragione_sociale"
+            ),
+            Stato="ITALIA",
+            Telefono=destinatario_data.get("telefono")
+        )
+
+        recipient_obj = RecipientType(
+            ClientIDRecipient="1",
+            Provincia=(
+                destinatario_data.get("provincia")
+                or ""
+            ),
+            destinatario=destinatario_obj
+        )
+
+        recipients_obj = ArrayOfRecipientType(
+            Recipient=[
+                recipient_obj
+            ]
+        )
+
+        try:
+            id_request = str(
+                service.GetIdRequest()
+            )
+        except Exception:
+            id_request = str(uuid.uuid4())
+
+        validation_result = (
+            service.RecipientsValidation(
+                recipients=recipients_obj,
+                idRequest=id_request
+            )
+        )
+
+        validation_plain = make_json_safe(
+            zeep_to_plain(validation_result)
+        )
+
+        esito = telegramma_estrai_esito_validazione(
+            validation_plain
+        )
+
+        res_type = str(
+            esito.get("res_type") or ""
+        ).strip().upper()
+
+        descrizione = str(
+            esito.get("description")
+            or "Nessuna descrizione restituita"
+        ).strip()
+
+        suggerimenti = (
+            esito.get("suggerimenti")
+            or []
+        )
+
+        if res_type == "I":
+            titolo_esito = "INDIRIZZO ACCETTATO"
+            colore = "#16a34a"
+            sfondo = "#f0fdf4"
+            messaggio = (
+                "Poste ha accettato l'indirizzo "
+                "trasmesso senza blocchi."
+            )
+
+        elif res_type == "W":
+            titolo_esito = "INDIRIZZO DA NORMALIZZARE"
+            colore = "#d97706"
+            sfondo = "#fffbeb"
+            messaggio = (
+                "Poste ha restituito un avviso o "
+                "uno o più suggerimenti. "
+                "Nessun Telegramma è stato inviato."
+            )
+
+        elif res_type == "E":
+            titolo_esito = "INDIRIZZO NON VALIDATO"
+            colore = "#dc2626"
+            sfondo = "#fef2f2"
+            messaggio = (
+                "Poste ha segnalato un errore. "
+                "Il Submit deve rimanere bloccato."
+            )
+
+        else:
+            titolo_esito = "ESITO NON DETERMINATO"
+            colore = "#64748b"
+            sfondo = "#f8fafc"
+            messaggio = (
+                "La risposta Poste non contiene "
+                "un ResType riconosciuto."
+            )
+
+        def esc(value):
+            return html.escape(
+                str(value or "-"),
+                quote=True
+            )
+
+        ordine = (
+            pratica.get("shopify_order_name")
+            or pratica.get("order_name")
+            or "-"
+        )
+
+        nome_destinatario = (
+            dest_anagrafica.get("ragione_sociale")
+            or " ".join(
+                valore
+                for valore in [
+                    str(
+                        dest_anagrafica.get("nome")
+                        or ""
+                    ).strip(),
+                    str(
+                        dest_anagrafica.get("cognome")
+                        or ""
+                    ).strip()
+                ]
+                if valore
+            ).strip()
+            or "-"
+        )
+
+        tipo_destinatario = (
+            "AZIENDA / ENTE"
+            if dest_anagrafica.get("is_azienda")
+            else "PERSONA FISICA"
+        )
+
+        suggerimenti_html = ""
+
+        if suggerimenti:
+            for indice, suggerimento in enumerate(
+                suggerimenti,
+                start=1
+            ):
+                suggerimento = suggerimento or {}
+
+                dati_suggeriti = (
+                    suggerimento.get("destinatario")
+                    or {}
+                )
+
+                provincia_suggerita = (
+                    suggerimento.get("Provincia")
+                    or destinatario_data.get("provincia")
+                    or ""
+                )
+
+                suggerimenti_html += f"""
+                <div class="suggestion">
+                    <h3>Suggerimento Poste {indice}</h3>
+
+                    <div class="grid">
+                        <div class="field">
+                            <span class="label">Indirizzo</span>
+                            <span class="value">
+                                {esc(dati_suggeriti.get("Indirizzo"))}
+                            </span>
+                        </div>
+
+                        <div class="field">
+                            <span class="label">CAP</span>
+                            <span class="value">
+                                {esc(dati_suggeriti.get("CAP"))}
+                            </span>
+                        </div>
+
+                        <div class="field">
+                            <span class="label">Città</span>
+                            <span class="value">
+                                {esc(dati_suggeriti.get("Citta"))}
+                            </span>
+                        </div>
+
+                        <div class="field">
+                            <span class="label">Provincia</span>
+                            <span class="value">
+                                {esc(provincia_suggerita)}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                """
+        else:
+            suggerimenti_html = """
+            <p class="muted">
+                Nessun suggerimento restituito da Poste.
+            </p>
+            """
+
+        try:
+            raw_json = json.dumps(
+                validation_plain,
+                ensure_ascii=False,
+                indent=2
+            )
+        except Exception:
+            raw_json = str(validation_plain)
+
+        raw_json_safe = html.escape(
+            raw_json,
+            quote=False
+        )
+
+        return HTMLResponse(
+            content=f"""
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="utf-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>
+        Verifica indirizzo Telegramma {esc(ordine)}
+    </title>
+
+    <style>
+        * {{
+            box-sizing: border-box;
+        }}
+
+        body {{
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f6f9;
+            color: #111827;
+        }}
+
+        .page {{
+            max-width: 1050px;
+            margin: 0 auto;
+            padding: 28px 18px 60px;
+        }}
+
+        .topbar {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }}
+
+        h1 {{
+            margin: 0 0 10px;
+        }}
+
+        h2 {{
+            margin-top: 0;
+        }}
+
+        .back {{
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: bold;
+        }}
+
+        .card {{
+            background: white;
+            border-radius: 15px;
+            padding: 22px;
+            margin-top: 20px;
+            box-shadow: 0 2px 12px rgba(15,23,42,.06);
+        }}
+
+        .grid {{
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(210px, 1fr));
+            gap: 15px;
+        }}
+
+        .field {{
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 11px;
+            padding: 13px;
+        }}
+
+        .label {{
+            display: block;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }}
+
+        .value {{
+            font-size: 16px;
+            font-weight: 600;
+            word-break: break-word;
+        }}
+
+        .badge {{
+            display: inline-block;
+            padding: 7px 11px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: bold;
+            background: #dbeafe;
+            color: #1d4ed8;
+        }}
+
+        .safe {{
+            background: #ecfdf5;
+            border-left: 5px solid #16a34a;
+            color: #166534;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: bold;
+        }}
+
+        .result {{
+            margin-top: 18px;
+            padding: 18px;
+            border-radius: 12px;
+            border-left: 6px solid {colore};
+            background: {sfondo};
+        }}
+
+        .result h2 {{
+            margin: 0 0 8px;
+            color: {colore};
+        }}
+
+        .suggestion {{
+            border: 1px solid #fde68a;
+            background: #fffbeb;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 13px;
+        }}
+
+        .suggestion h3 {{
+            margin-top: 0;
+        }}
+
+        .muted {{
+            color: #64748b;
+        }}
+
+        pre {{
+            background: #111827;
+            color: #d1d5db;
+            padding: 18px;
+            border-radius: 12px;
+            overflow: auto;
+            max-height: 520px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 12px;
+            line-height: 1.45;
+        }}
+
+        @media (max-width: 650px) {{
+            .page {{
+                padding: 20px 12px 45px;
+            }}
+
+            .card {{
+                padding: 17px;
+            }}
+
+            h1 {{
+                font-size: 24px;
+            }}
+        }}
+    </style>
+</head>
+
+<body>
+<div class="page">
+
+    <div class="topbar">
+        <div>
+            <h1>📍 Verifica indirizzo Telegramma</h1>
+
+            <a class="back" href="/dashboard/pratiche">
+                ← Torna alla dashboard
+            </a>
+        </div>
+
+        <span class="badge">
+            SOLO VALIDAZIONE
+        </span>
+    </div>
+
+    <div class="card">
+        <div class="safe">
+            È stata eseguita soltanto
+            RecipientsValidation.
+
+            Nessun Telegramma è stato inviato.
+            Non è stato eseguito alcun Submit,
+            PreConfirm o Confirm.
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Pratica</h2>
+
+        <div class="grid">
+            <div class="field">
+                <span class="label">Ordine</span>
+                <span class="value">{esc(ordine)}</span>
+            </div>
+
+            <div class="field">
+                <span class="label">ID pratica</span>
+                <span class="value">{esc(pratica_id)}</span>
+            </div>
+
+            <div class="field">
+                <span class="label">ID richiesta</span>
+                <span class="value">{esc(id_request)}</span>
+            </div>
+
+            <div class="field">
+                <span class="label">Tipo destinatario</span>
+                <span class="value">
+                    {esc(tipo_destinatario)}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Destinatario verificato</h2>
+
+        <div class="grid">
+            <div class="field">
+                <span class="label">Nominativo</span>
+                <span class="value">
+                    {esc(nome_destinatario)}
+                </span>
+            </div>
+
+            <div class="field">
+                <span class="label">Indirizzo</span>
+                <span class="value">
+                    {esc(destinatario_data.get("indirizzo"))}
+                </span>
+            </div>
+
+            <div class="field">
+                <span class="label">CAP</span>
+                <span class="value">
+                    {esc(destinatario_data.get("cap"))}
+                </span>
+            </div>
+
+            <div class="field">
+                <span class="label">Città</span>
+                <span class="value">
+                    {esc(destinatario_data.get("comune"))}
+                </span>
+            </div>
+
+            <div class="field">
+                <span class="label">Provincia</span>
+                <span class="value">
+                    {esc(destinatario_data.get("provincia"))}
+                </span>
+            </div>
+        </div>
+
+        <div class="result">
+            <h2>{esc(titolo_esito)}</h2>
+
+            <p>
+                <strong>ResType:</strong>
+                {esc(res_type)}
+            </p>
+
+            <p>
+                <strong>Descrizione Poste:</strong>
+                {esc(descrizione)}
+            </p>
+
+            <p>{esc(messaggio)}</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Suggerimenti restituiti da Poste</h2>
+        {suggerimenti_html}
+    </div>
+
+    <div class="card">
+        <h2>Risposta tecnica completa</h2>
+        <pre>{raw_json_safe}</pre>
+    </div>
+
+</div>
+</body>
+</html>
+            """
+        )
+
+    except Exception as e:
+        errore = html.escape(
+            str(e),
+            quote=True
+        )
+
+        return HTMLResponse(
+            content=f"""
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="utf-8">
+    <title>Errore verifica indirizzo</title>
+</head>
+
+<body style="
+    font-family:Arial;
+    background:#f4f6f9;
+    padding:30px;
+">
+    <div style="
+        background:white;
+        max-width:900px;
+        margin:auto;
+        padding:24px;
+        border-radius:14px;
+    ">
+        <h1>Errore verifica indirizzo Telegramma</h1>
+
+        <pre>{errore}</pre>
+
+        <a href="/dashboard/pratiche">
+            ← Torna alla dashboard
+        </a>
+    </div>
+</body>
+</html>
+            """,
+            status_code=500
+        )
+
+@app.get(
     "/pratiche/telegramma-submit-poste/{pratica_id}"
 )
 @app.get(
