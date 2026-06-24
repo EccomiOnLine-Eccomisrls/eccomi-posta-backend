@@ -6084,17 +6084,24 @@ def telegramma_submit_preview(pratica_id: str):
 )
 def telegramma_verifica_indirizzo(pratica_id: str):
     """
-    Verifica esclusivamente l'indirizzo del destinatario
-    tramite RecipientsValidation di Poste.
+    Verifica sicura dell'indirizzo Telegramma.
 
-    NON chiama Submit.
-    NON chiama PreConfirm.
-    NON chiama Confirm.
-    NON genera un Telegramma.
-    NON genera costi postali.
+    Flusso:
+    1. RecipientsValidation con i dati originali.
+    2. Se Poste restituisce W con suggerimenti:
+       - applica solo CAP, città, indirizzo e provincia;
+       - conserva Nome, Cognome o RagioneSociale;
+       - esegue una seconda RecipientsValidation.
+    3. Mostra entrambi gli esiti.
+
+    NON esegue Submit.
+    NON esegue PreConfirm.
+    NON esegue Confirm.
+    NON invia Telegrammi.
     """
 
     import html
+    import json
 
     try:
         pratica_res = (
@@ -6123,7 +6130,11 @@ def telegramma_verifica_indirizzo(pratica_id: str):
 
         pratica = pratica_res.data
 
-        if pratica.get("tipo_servizio") != "TELEGRAMMA":
+        tipo_servizio = str(
+            pratica.get("tipo_servizio") or ""
+        ).strip().upper()
+
+        if tipo_servizio != "TELEGRAMMA":
             return HTMLResponse(
                 content="""
                 <html>
@@ -6139,10 +6150,15 @@ def telegramma_verifica_indirizzo(pratica_id: str):
                 status_code=400
             )
 
-        destinatario_data = (
+        destinatario_originale = (
             telegramma_normalizza_dati_indirizzo(
                 pratica.get("destinatario") or {}
             )
+        )
+
+        # Copia separata che potrà essere normalizzata.
+        destinatario_finale = dict(
+            destinatario_originale
         )
 
         client, service = telegramma_service(
@@ -6167,40 +6183,6 @@ def telegramma_verifica_indirizzo(pratica_id: str):
             "Telegramma.WS"
         )
 
-        dest_anagrafica = (
-            telegramma_prepara_anagrafica_poste(
-                destinatario_data
-            )
-        )
-
-        destinatario_obj = DestinatarioType(
-            CAP=destinatario_data.get("cap"),
-            Citta=destinatario_data.get("comune"),
-            Cognome=dest_anagrafica.get("cognome"),
-            Indirizzo=destinatario_data.get("indirizzo"),
-            Nome=dest_anagrafica.get("nome"),
-            RagioneSociale=dest_anagrafica.get(
-                "ragione_sociale"
-            ),
-            Stato="ITALIA",
-            Telefono=destinatario_data.get("telefono")
-        )
-
-        recipient_obj = RecipientType(
-            ClientIDRecipient="1",
-            Provincia=(
-                destinatario_data.get("provincia")
-                or ""
-            ),
-            destinatario=destinatario_obj
-        )
-
-        recipients_obj = ArrayOfRecipientType(
-            Recipient=[
-                recipient_obj
-            ]
-        )
-
         try:
             id_request = str(
                 service.GetIdRequest()
@@ -6208,66 +6190,304 @@ def telegramma_verifica_indirizzo(pratica_id: str):
         except Exception:
             id_request = str(uuid.uuid4())
 
-        validation_result = (
-            service.RecipientsValidation(
-                recipients=recipients_obj,
-                idRequest=id_request
+        def costruisci_destinatario_poste(
+            dati: dict
+        ):
+            anagrafica = (
+                telegramma_prepara_anagrafica_poste(
+                    dati
+                )
             )
+
+            destinatario_obj = DestinatarioType(
+                CAP=dati.get("cap"),
+                Citta=dati.get("comune"),
+                Cognome=anagrafica.get(
+                    "cognome"
+                ),
+                Indirizzo=dati.get(
+                    "indirizzo"
+                ),
+                Nome=anagrafica.get("nome"),
+                RagioneSociale=anagrafica.get(
+                    "ragione_sociale"
+                ),
+                Stato="ITALIA",
+                Telefono=dati.get("telefono")
+            )
+
+            return destinatario_obj, anagrafica
+
+        def esegui_validazione(
+            dati: dict
+        ):
+            destinatario_obj, anagrafica = (
+                costruisci_destinatario_poste(
+                    dati
+                )
+            )
+
+            recipient_obj = RecipientType(
+                ClientIDRecipient="1",
+                Provincia=(
+                    dati.get("provincia")
+                    or ""
+                ),
+                destinatario=destinatario_obj
+            )
+
+            recipients_obj = ArrayOfRecipientType(
+                Recipient=[
+                    recipient_obj
+                ]
+            )
+
+            validation_result = (
+                service.RecipientsValidation(
+                    recipients=recipients_obj,
+                    idRequest=id_request
+                )
+            )
+
+            validation_plain = make_json_safe(
+                zeep_to_plain(
+                    validation_result
+                )
+            )
+
+            esito = (
+                telegramma_estrai_esito_validazione(
+                    validation_plain
+                )
+            )
+
+            return {
+                "plain": validation_plain,
+                "esito": esito,
+                "anagrafica": anagrafica
+            }
+
+        # =====================================================
+        # PRIMA VALIDAZIONE
+        # =====================================================
+
+        prima_validazione = esegui_validazione(
+            destinatario_originale
         )
 
-        validation_plain = make_json_safe(
-            zeep_to_plain(validation_result)
+        esito_iniziale = (
+            prima_validazione.get("esito")
+            or {}
         )
 
-        esito = telegramma_estrai_esito_validazione(
-            validation_plain
-        )
-
-        res_type = (
-            esito.get("res_type")
+        res_type_iniziale = str(
+            esito_iniziale.get("res_type")
             or ""
-        ).upper()
+        ).strip().upper()
 
-        descrizione = (
-            esito.get("description")
+        descrizione_iniziale = str(
+            esito_iniziale.get("description")
             or "Nessuna descrizione restituita"
-        )
+        ).strip()
 
         suggerimenti = (
-            esito.get("suggerimenti")
+            esito_iniziale.get("suggerimenti")
             or []
         )
 
-        if res_type == "I":
+        suggerimento_applicato = None
+        seconda_validazione = None
+
+        # =====================================================
+        # APPLICA SUGGERIMENTO SOLO SE LA PRIMA RISPOSTA È W
+        # =====================================================
+
+        if (
+            res_type_iniziale == "W"
+            and suggerimenti
+        ):
+            primo_suggerimento = (
+                suggerimenti[0] or {}
+            )
+
+            dati_suggeriti = (
+                primo_suggerimento.get(
+                    "destinatario"
+                )
+                or {}
+            )
+
+            provincia_suggerita = (
+                primo_suggerimento.get(
+                    "Provincia"
+                )
+            )
+
+            if dati_suggeriti:
+                destinatario_finale["cap"] = (
+                    dati_suggeriti.get("CAP")
+                    or destinatario_finale.get(
+                        "cap"
+                    )
+                )
+
+                destinatario_finale["comune"] = (
+                    dati_suggeriti.get("Citta")
+                    or destinatario_finale.get(
+                        "comune"
+                    )
+                )
+
+                destinatario_finale[
+                    "indirizzo"
+                ] = (
+                    dati_suggeriti.get(
+                        "Indirizzo"
+                    )
+                    or destinatario_finale.get(
+                        "indirizzo"
+                    )
+                )
+
+                destinatario_finale[
+                    "provincia"
+                ] = (
+                    provincia_suggerita
+                    or destinatario_finale.get(
+                        "provincia"
+                    )
+                )
+
+                # Non modifichiamo mai:
+                # - nome
+                # - cognome
+                # - ragione_sociale
+                # - tipo_destinatario
+
+                suggerimento_applicato = {
+                    "indirizzo": (
+                        destinatario_finale.get(
+                            "indirizzo"
+                        )
+                    ),
+                    "cap": (
+                        destinatario_finale.get(
+                            "cap"
+                        )
+                    ),
+                    "comune": (
+                        destinatario_finale.get(
+                            "comune"
+                        )
+                    ),
+                    "provincia": (
+                        destinatario_finale.get(
+                            "provincia"
+                        )
+                    )
+                }
+
+                # =================================================
+                # SECONDA VALIDAZIONE
+                # =================================================
+
+                seconda_validazione = (
+                    esegui_validazione(
+                        destinatario_finale
+                    )
+                )
+
+        esito_finale = (
+            (
+                seconda_validazione.get(
+                    "esito"
+                )
+                if seconda_validazione
+                else esito_iniziale
+            )
+            or {}
+        )
+
+        res_type_finale = str(
+            esito_finale.get("res_type")
+            or ""
+        ).strip().upper()
+
+        descrizione_finale = str(
+            esito_finale.get("description")
+            or descrizione_iniziale
+            or "Nessuna descrizione restituita"
+        ).strip()
+
+        anagrafica_finale = (
+            (
+                seconda_validazione.get(
+                    "anagrafica"
+                )
+                if seconda_validazione
+                else prima_validazione.get(
+                    "anagrafica"
+                )
+            )
+            or {}
+        )
+
+        # =====================================================
+        # CLASSIFICAZIONE ESITO FINALE
+        # =====================================================
+
+        if (
+            res_type_iniziale == "W"
+            and res_type_finale == "I"
+        ):
+            titolo_esito = (
+                "INDIRIZZO NORMALIZZATO E ACCETTATO"
+            )
+            colore = "#16a34a"
+            sfondo = "#f0fdf4"
+            messaggio = (
+                "Poste ha proposto una normalizzazione. "
+                "Il sistema l'ha applicata esclusivamente "
+                "ai dati postali e la seconda verifica "
+                "ha confermato che l'indirizzo è valido."
+            )
+
+        elif res_type_finale == "I":
             titolo_esito = "INDIRIZZO ACCETTATO"
             colore = "#16a34a"
             sfondo = "#f0fdf4"
             messaggio = (
-                "Poste ha accettato l’indirizzo "
-                "trasmesso senza blocchi."
+                "Poste ha accettato l'indirizzo "
+                "senza necessità di correzioni."
             )
 
-        elif res_type == "W":
-            titolo_esito = "INDIRIZZO DA NORMALIZZARE"
+        elif res_type_finale == "W":
+            titolo_esito = (
+                "INDIRIZZO ANCORA DA VERIFICARE"
+            )
             colore = "#d97706"
             sfondo = "#fffbeb"
             messaggio = (
-                "Poste ha restituito uno o più "
-                "suggerimenti. Nessun Telegramma "
-                "è stato inviato."
+                "Anche dopo la normalizzazione Poste "
+                "continua a restituire un warning. "
+                "Il Submit deve rimanere bloccato."
             )
 
-        elif res_type == "E":
-            titolo_esito = "INDIRIZZO NON VALIDATO"
+        elif res_type_finale == "E":
+            titolo_esito = (
+                "INDIRIZZO NON VALIDATO"
+            )
             colore = "#dc2626"
             sfondo = "#fef2f2"
             messaggio = (
-                "Poste ha segnalato un errore. "
+                "Poste ha restituito un errore. "
                 "Il Submit deve rimanere bloccato."
             )
 
         else:
-            titolo_esito = "ESITO NON DETERMINATO"
+            titolo_esito = (
+                "ESITO NON DETERMINATO"
+            )
             colore = "#64748b"
             sfondo = "#f8fafc"
             messaggio = (
@@ -6276,76 +6496,16 @@ def telegramma_verifica_indirizzo(pratica_id: str):
             )
 
         def esc(value):
+            valore = (
+                "-"
+                if value in [None, ""]
+                else value
+            )
+
             return html.escape(
-                str(value or "-"),
+                str(valore),
                 quote=True
             )
-
-        suggerimenti_html = ""
-
-        if suggerimenti:
-            for indice, suggerimento in enumerate(
-                suggerimenti,
-                start=1
-            ):
-                suggerimento = suggerimento or {}
-
-                dati_suggeriti = (
-                    suggerimento.get("destinatario")
-                    or {}
-                )
-
-                provincia_suggerita = (
-                    suggerimento.get("Provincia")
-                    or destinatario_data.get("provincia")
-                    or ""
-                )
-
-                suggerimenti_html += f"""
-                <div class="suggestion">
-                    <h3>Suggerimento Poste {indice}</h3>
-
-                    <p>
-                        <strong>Indirizzo:</strong>
-                        {esc(dati_suggeriti.get("Indirizzo"))}
-                    </p>
-
-                    <p>
-                        <strong>CAP:</strong>
-                        {esc(dati_suggeriti.get("CAP"))}
-                    </p>
-
-                    <p>
-                        <strong>Città:</strong>
-                        {esc(dati_suggeriti.get("Citta"))}
-                    </p>
-
-                    <p>
-                        <strong>Provincia:</strong>
-                        {esc(provincia_suggerita)}
-                    </p>
-                </div>
-                """
-        else:
-            suggerimenti_html = """
-            <p class="muted">
-                Nessun suggerimento restituito da Poste.
-            </p>
-            """
-
-        try:
-            raw_json = json.dumps(
-                validation_plain,
-                ensure_ascii=False,
-                indent=2
-            )
-        except Exception:
-            raw_json = str(validation_plain)
-
-        raw_json_safe = html.escape(
-            raw_json,
-            quote=False
-        )
 
         ordine = (
             pratica.get("shopify_order_name")
@@ -6354,23 +6514,170 @@ def telegramma_verifica_indirizzo(pratica_id: str):
         )
 
         nome_destinatario = (
-            dest_anagrafica.get("ragione_sociale")
+            anagrafica_finale.get(
+                "ragione_sociale"
+            )
             or " ".join(
-                valore
-                for valore in [
+                parte
+                for parte in [
                     str(
-                        dest_anagrafica.get("nome")
+                        anagrafica_finale.get(
+                            "nome"
+                        )
                         or ""
                     ).strip(),
                     str(
-                        dest_anagrafica.get("cognome")
+                        anagrafica_finale.get(
+                            "cognome"
+                        )
                         or ""
                     ).strip()
                 ]
-                if valore
+                if parte
             ).strip()
             or "-"
         )
+
+        tipo_destinatario = (
+            "AZIENDA / ENTE"
+            if anagrafica_finale.get(
+                "is_azienda"
+            )
+            else "PERSONA FISICA"
+        )
+
+        try:
+            prima_json = json.dumps(
+                prima_validazione.get("plain"),
+                ensure_ascii=False,
+                indent=2
+            )
+        except Exception:
+            prima_json = str(
+                prima_validazione.get("plain")
+            )
+
+        try:
+            seconda_json = json.dumps(
+                (
+                    seconda_validazione.get(
+                        "plain"
+                    )
+                    if seconda_validazione
+                    else {}
+                ),
+                ensure_ascii=False,
+                indent=2
+            )
+        except Exception:
+            seconda_json = str(
+                seconda_validazione
+            )
+
+        prima_json_safe = html.escape(
+            prima_json,
+            quote=False
+        )
+
+        seconda_json_safe = html.escape(
+            seconda_json,
+            quote=False
+        )
+
+        confronto_html = ""
+
+        if suggerimento_applicato:
+            confronto_html = f"""
+            <div class="compare-grid">
+                <div class="compare-box original">
+                    <h3>Dati iniziali</h3>
+
+                    <p>
+                        <strong>Indirizzo:</strong>
+                        {esc(destinatario_originale.get("indirizzo"))}
+                    </p>
+
+                    <p>
+                        <strong>CAP:</strong>
+                        {esc(destinatario_originale.get("cap"))}
+                    </p>
+
+                    <p>
+                        <strong>Città:</strong>
+                        {esc(destinatario_originale.get("comune"))}
+                    </p>
+
+                    <p>
+                        <strong>Provincia:</strong>
+                        {esc(destinatario_originale.get("provincia"))}
+                    </p>
+                </div>
+
+                <div class="arrow">
+                    →
+                </div>
+
+                <div class="compare-box normalized">
+                    <h3>Dati normalizzati da Poste</h3>
+
+                    <p>
+                        <strong>Indirizzo:</strong>
+                        {esc(destinatario_finale.get("indirizzo"))}
+                    </p>
+
+                    <p>
+                        <strong>CAP:</strong>
+                        {esc(destinatario_finale.get("cap"))}
+                    </p>
+
+                    <p>
+                        <strong>Città:</strong>
+                        {esc(destinatario_finale.get("comune"))}
+                    </p>
+
+                    <p>
+                        <strong>Provincia:</strong>
+                        {esc(destinatario_finale.get("provincia"))}
+                    </p>
+                </div>
+            </div>
+            """
+        else:
+            confronto_html = """
+            <p class="muted">
+                Nessuna normalizzazione è stata necessaria.
+            </p>
+            """
+
+        secondo_esito_html = ""
+
+        if seconda_validazione:
+            secondo_esito_html = f"""
+            <div class="validation second">
+                <h3>Seconda validazione</h3>
+
+                <p>
+                    <strong>ResType:</strong>
+                    {esc(res_type_finale)}
+                </p>
+
+                <p>
+                    <strong>Descrizione:</strong>
+                    {esc(descrizione_finale)}
+                </p>
+            </div>
+            """
+        else:
+            secondo_esito_html = """
+            <div class="validation second">
+                <h3>Seconda validazione</h3>
+
+                <p>
+                    Non necessaria: la prima validazione
+                    non ha richiesto una normalizzazione.
+                </p>
+            </div>
+            """
 
         return HTMLResponse(
             content=f"""
@@ -6401,13 +6708,25 @@ def telegramma_verifica_indirizzo(pratica_id: str):
         }}
 
         .page {{
-            max-width: 1050px;
+            max-width: 1100px;
             margin: 0 auto;
             padding: 28px 18px 60px;
         }}
 
+        .topbar {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }}
+
         h1 {{
-            margin-bottom: 8px;
+            margin: 0 0 10px;
+        }}
+
+        h2 {{
+            margin-top: 0;
         }}
 
         .back {{
@@ -6421,13 +6740,27 @@ def telegramma_verifica_indirizzo(pratica_id: str):
             border-radius: 15px;
             padding: 22px;
             margin-top: 20px;
-            box-shadow: 0 2px 12px rgba(15,23,42,.06);
+            box-shadow:
+                0 2px 12px
+                rgba(15,23,42,.06);
+        }}
+
+        .safe {{
+            background: #ecfdf5;
+            border-left: 5px solid #16a34a;
+            color: #166534;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: bold;
         }}
 
         .grid {{
             display: grid;
             grid-template-columns:
-                repeat(auto-fit, minmax(230px, 1fr));
+                repeat(
+                    auto-fit,
+                    minmax(210px, 1fr)
+                );
             gap: 15px;
         }}
 
@@ -6450,10 +6783,20 @@ def telegramma_verifica_indirizzo(pratica_id: str):
         .value {{
             font-size: 16px;
             font-weight: 600;
+            word-break: break-word;
+        }}
+
+        .badge {{
+            display: inline-block;
+            padding: 7px 11px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: bold;
+            background: #dbeafe;
+            color: #1d4ed8;
         }}
 
         .result {{
-            margin-top: 18px;
             padding: 18px;
             border-radius: 12px;
             border-left: 6px solid {colore};
@@ -6465,25 +6808,61 @@ def telegramma_verifica_indirizzo(pratica_id: str):
             color: {colore};
         }}
 
-        .suggestion {{
-            border: 1px solid #fde68a;
-            background: #fffbeb;
-            border-radius: 12px;
-            padding: 16px;
-            margin-top: 13px;
+        .validation-grid {{
+            display: grid;
+            grid-template-columns:
+                repeat(
+                    auto-fit,
+                    minmax(280px, 1fr)
+                );
+            gap: 15px;
         }}
 
-        .suggestion h3 {{
+        .validation {{
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid #e5e7eb;
+            background: #f8fafc;
+        }}
+
+        .validation h3 {{
             margin-top: 0;
         }}
 
-        .safe {{
-            background: #ecfdf5;
-            border-left: 5px solid #16a34a;
-            color: #166534;
-            padding: 15px;
-            border-radius: 10px;
+        .second {{
+            background: #f0fdf4;
+            border-color: #bbf7d0;
+        }}
+
+        .compare-grid {{
+            display: grid;
+            grid-template-columns:
+                minmax(0, 1fr)
+                auto
+                minmax(0, 1fr);
+            gap: 15px;
+            align-items: center;
+        }}
+
+        .compare-box {{
+            border-radius: 12px;
+            padding: 16px;
+        }}
+
+        .original {{
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+        }}
+
+        .normalized {{
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+        }}
+
+        .arrow {{
+            font-size: 32px;
             font-weight: bold;
+            color: #64748b;
         }}
 
         .muted {{
@@ -6496,10 +6875,34 @@ def telegramma_verifica_indirizzo(pratica_id: str):
             padding: 18px;
             border-radius: 12px;
             overflow: auto;
-            max-height: 500px;
+            max-height: 520px;
             white-space: pre-wrap;
             word-break: break-word;
             font-size: 12px;
+            line-height: 1.45;
+        }}
+
+        @media (max-width: 720px) {{
+            .page {{
+                padding: 20px 12px 45px;
+            }}
+
+            .card {{
+                padding: 17px;
+            }}
+
+            h1 {{
+                font-size: 24px;
+            }}
+
+            .compare-grid {{
+                grid-template-columns: 1fr;
+            }}
+
+            .arrow {{
+                transform: rotate(90deg);
+                text-align: center;
+            }}
         }}
     </style>
 </head>
@@ -6507,17 +6910,30 @@ def telegramma_verifica_indirizzo(pratica_id: str):
 <body>
 <div class="page">
 
-    <h1>📍 Verifica indirizzo Telegramma</h1>
+    <div class="topbar">
+        <div>
+            <h1>
+                📍 Verifica indirizzo Telegramma
+            </h1>
 
-    <a class="back" href="/dashboard/pratiche">
-        ← Torna alla dashboard
-    </a>
+            <a class="back" href="/dashboard/pratiche">
+                ← Torna alla dashboard
+            </a>
+        </div>
+
+        <span class="badge">
+            DOPPIA VALIDAZIONE SICURA
+        </span>
+    </div>
 
     <div class="card">
         <div class="safe">
-            Controllo sicuro: è stata eseguita soltanto
-            RecipientsValidation. Nessun Telegramma è stato
-            inviato e non è stato eseguito alcun Submit.
+            Sono state eseguite esclusivamente
+            chiamate RecipientsValidation.
+
+            Nessun Telegramma è stato inviato.
+            Non è stato eseguito alcun Submit,
+            PreConfirm o Confirm.
         </div>
     </div>
 
@@ -6527,72 +6943,117 @@ def telegramma_verifica_indirizzo(pratica_id: str):
         <div class="grid">
             <div class="field">
                 <span class="label">Ordine</span>
-                <span class="value">{esc(ordine)}</span>
+                <span class="value">
+                    {esc(ordine)}
+                </span>
             </div>
 
             <div class="field">
                 <span class="label">ID pratica</span>
-                <span class="value">{esc(pratica_id)}</span>
+                <span class="value">
+                    {esc(pratica_id)}
+                </span>
             </div>
 
             <div class="field">
                 <span class="label">ID richiesta</span>
-                <span class="value">{esc(id_request)}</span>
+                <span class="value">
+                    {esc(id_request)}
+                </span>
+            </div>
+
+            <div class="field">
+                <span class="label">
+                    Tipo destinatario
+                </span>
+
+                <span class="value">
+                    {esc(tipo_destinatario)}
+                </span>
             </div>
         </div>
     </div>
 
     <div class="card">
-        <h2>Destinatario verificato</h2>
+        <h2>Destinatario</h2>
 
         <div class="grid">
             <div class="field">
-                <span class="label">Nominativo</span>
+                <span class="label">
+                    Nominativo
+                </span>
+
                 <span class="value">
                     {esc(nome_destinatario)}
                 </span>
             </div>
 
             <div class="field">
-                <span class="label">Indirizzo</span>
+                <span class="label">
+                    Indirizzo finale
+                </span>
+
                 <span class="value">
-                    {esc(destinatario_data.get("indirizzo"))}
+                    {esc(
+                        destinatario_finale.get(
+                            "indirizzo"
+                        )
+                    )}
                 </span>
             </div>
 
             <div class="field">
                 <span class="label">CAP</span>
+
                 <span class="value">
-                    {esc(destinatario_data.get("cap"))}
+                    {esc(
+                        destinatario_finale.get(
+                            "cap"
+                        )
+                    )}
                 </span>
             </div>
 
             <div class="field">
-                <span class="label">Città</span>
+                <span class="label">Città finale</span>
+
                 <span class="value">
-                    {esc(destinatario_data.get("comune"))}
+                    {esc(
+                        destinatario_finale.get(
+                            "comune"
+                        )
+                    )}
                 </span>
             </div>
 
             <div class="field">
                 <span class="label">Provincia</span>
+
                 <span class="value">
-                    {esc(destinatario_data.get("provincia"))}
+                    {esc(
+                        destinatario_finale.get(
+                            "provincia"
+                        )
+                    )}
                 </span>
             </div>
         </div>
+    </div>
+
+    <div class="card">
+        <h2>Esito definitivo</h2>
 
         <div class="result">
             <h2>{esc(titolo_esito)}</h2>
 
             <p>
-                <strong>ResType:</strong>
-                {esc(res_type)}
+                <strong>ResType finale:</strong>
+                {esc(res_type_finale)}
             </p>
 
             <p>
-                <strong>Descrizione Poste:</strong>
-                {esc(descrizione)}
+                <strong>Descrizione finale:</strong>
+                {esc(descrizione_finale)}
             </p>
 
             <p>{esc(messaggio)}</p>
@@ -6600,14 +7061,47 @@ def telegramma_verifica_indirizzo(pratica_id: str):
     </div>
 
     <div class="card">
-        <h2>Suggerimenti restituiti da Poste</h2>
-        {suggerimenti_html}
+        <h2>Confronto indirizzo</h2>
+        {confronto_html}
     </div>
 
     <div class="card">
-        <h2>Risposta tecnica completa</h2>
-        <pre>{raw_json_safe}</pre>
+        <h2>Controlli Poste</h2>
+
+        <div class="validation-grid">
+            <div class="validation">
+                <h3>Prima validazione</h3>
+
+                <p>
+                    <strong>ResType:</strong>
+                    {esc(res_type_iniziale)}
+                </p>
+
+                <p>
+                    <strong>Descrizione:</strong>
+                    {esc(descrizione_iniziale)}
+                </p>
+            </div>
+
+            {secondo_esito_html}
+        </div>
     </div>
+
+    <div class="card">
+        <h2>Risposta tecnica — Prima validazione</h2>
+        <pre>{prima_json_safe}</pre>
+    </div>
+
+    {
+        f'''
+        <div class="card">
+            <h2>Risposta tecnica — Seconda validazione</h2>
+            <pre>{seconda_json_safe}</pre>
+        </div>
+        '''
+        if seconda_validazione
+        else ""
+    }
 
 </div>
 </body>
@@ -6623,36 +7117,42 @@ def telegramma_verifica_indirizzo(pratica_id: str):
 
         return HTMLResponse(
             content=f"""
-            <html>
-            <body style="
-                font-family:Arial;
-                background:#f4f6f9;
-                padding:30px;
-            ">
-                <div style="
-                    background:white;
-                    max-width:900px;
-                    margin:auto;
-                    padding:24px;
-                    border-radius:14px;
-                ">
-                    <h1>
-                        Errore verifica indirizzo Telegramma
-                    </h1>
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="utf-8">
+    <title>
+        Errore verifica indirizzo Telegramma
+    </title>
+</head>
 
-                    <pre>{errore}</pre>
+<body style="
+    font-family:Arial;
+    background:#f4f6f9;
+    padding:30px;
+">
+    <div style="
+        background:white;
+        max-width:900px;
+        margin:auto;
+        padding:24px;
+        border-radius:14px;
+    ">
+        <h1>
+            Errore verifica indirizzo Telegramma
+        </h1>
 
-                    <a href="/dashboard/pratiche">
-                        ← Torna alla dashboard
-                    </a>
-                </div>
-            </body>
-            </html>
+        <pre>{errore}</pre>
+
+        <a href="/dashboard/pratiche">
+            ← Torna alla dashboard
+        </a>
+    </div>
+</body>
+</html>
             """,
             status_code=500
         )
-
-
 
 
 @app.get("/poste/h2h/reporting/debug-operations")
@@ -7792,7 +8292,7 @@ def telegramma_submit_preview_html(pratica_id: str):
 
     <div class="topbar">
         <div>
-            <h1>🧪 Anteprima XML Telegramma</h1>
+            <h1> Anteprima XML Telegramma</h1>
 
             <a class="back" href="/dashboard/pratiche">
                 ← Torna alla dashboard
@@ -22514,7 +23014,7 @@ def dashboard_pratiche(stato: str = None):
                     <a class="btn-action"
                        href="/poste/h2h/preview-xml/{pratica_id}"
                        target="_blank">
-                        🧪 Anteprima XML
+                         Anteprima XML
                     </a>
 
                     {invia_poste_html}
