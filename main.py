@@ -19455,7 +19455,23 @@ def dashboard_pratiche(stato: str = None):
             
             direct_button_html = ""
             
-            if POSTE_INVIO_MODE == "auto" and POSTE_INVIO_DIRETTO_ENABLED:
+            if (
+                os.getenv(
+                    "POSTE_INVIO_MODE",
+                    "manual"
+                ).strip().lower() == "auto"
+                and os.getenv(
+                    "POSTE_INVIO_DIRETTO_ENABLED",
+                    "false"
+                ).strip().lower() in [
+                    "true",
+                    "1",
+                    "yes",
+                    "si",
+                    "sì",
+                    "on"
+                ]
+            ):
                 direct_button_html = (
                     '<a class="btn-action btn-send" '
                     f'href="/dashboard/pratiche/invia-diretto-poste/{pratica_id}" '
