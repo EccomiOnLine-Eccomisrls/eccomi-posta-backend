@@ -22978,6 +22978,21 @@ def dashboard_pratiche(stato: str = None):
                 '</span>'
             )
 
+        verifica_indirizzo_html = ""
+
+        if str(
+            p.get("tipo_servizio") or ""
+        ).strip().upper() == "TELEGRAMMA":
+            verifica_indirizzo_html = f"""
+                <a class="btn-action"
+                   href="/poste/h2h/telegramma/verifica-indirizzo/{pratica_id}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   title="Verifica e normalizza l'indirizzo con Poste senza inviare il Telegramma">
+                    📍 Verifica indirizzo
+                </a>
+            """
+                
         rows += f"""
         <tr class="main-row searchable-row" style="background:{row_bg};">
             <td>{clean_order_display(order_display)}</td>
@@ -23014,8 +23029,10 @@ def dashboard_pratiche(stato: str = None):
                     <a class="btn-action"
                        href="/poste/h2h/preview-xml/{pratica_id}"
                        target="_blank">
-                         Anteprima XML
+                        🧪 Anteprima XML
                     </a>
+
+                    {verifica_indirizzo_html}
 
                     {invia_poste_html}
 
@@ -23036,11 +23053,11 @@ def dashboard_pratiche(stato: str = None):
                        target="_blank">
                         {pdf_documento_label}
                     </a>
-                    
+
                     {ricevuta_cliente_html}
 
                     {email_cliente_html}
-                    
+
                     {monitor_btn}
 
                     {ricevuta_poste_html}
