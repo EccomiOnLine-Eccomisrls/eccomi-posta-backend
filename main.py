@@ -1814,6 +1814,555 @@ def dashboard_riprendi_valorizzazione(
     return riprendi_solo_valorizzazione_raccomandata(
         pratica_id
     )
+
+def raccomandata_valorizzazione_worker_enabled():
+    return os.getenv(
+        "RACCOMANDATA_VALORIZZAZIONE_WORKER_ENABLED",
+        "false"
+    ).strip().lower() in [
+        "true",
+        "1",
+        "yes",
+        "si",
+        "sì",
+        "on"
+    ]
+
+
+def esegui_worker_valorizzazioni_raccomandata():
+    """
+    Controlla automaticamente le pratiche Raccomandata
+    ferme in VALORIZZAZIONE_IN_CORSO.
+
+    Per ogni pratica:
+    - acquisisce un lock atomico sull'ordine H2H;
+    - richiama esclusivamente Valorizza;
+    - se ancora pending, torna in VALORIZZAZIONE_IN_CORSO;
+    - se pronta, chiama confirm_poste_order una sola volta.
+
+    Non esegue mai un nuovo Invio tecnico.
+    """
+
+    risultati = []
+
+    # =====================================================
+    # 1. INTERRUTTORI DI SICUREZZA
+    # =====================================================
+
+    if not raccomandata_valorizzazione_worker_enabled():
+        return {
+            "success": True,
+            "skipped": True,
+            "step": "WORKER_VALORIZZAZIONE_DISATTIVATO",
+            "message": (
+                "Worker valorizzazione Raccomandata "
+                "disattivato."
+            ),
+            "risultati": []
+        }
+
+    if not raccomandata_auto_produzione_enabled():
+        return {
+            "success": False,
+            "blocked": True,
+            "step": "AUTO_PRODUZIONE_DISATTIVATA",
+            "error": (
+                "Worker bloccato perché "
+                "RACCOMANDATA_AUTO_PRODUZIONE_ENABLED "
+                "non è true."
+            ),
+            "risultati": []
+        }
+
+    poste_invio_mode = os.getenv(
+        "POSTE_INVIO_MODE",
+        "manual"
+    ).strip().lower()
+
+    if poste_invio_mode != "auto":
+        return {
+            "success": False,
+            "blocked": True,
+            "step": "POSTE_INVIO_MODE_NON_AUTO",
+            "mode": poste_invio_mode,
+            "error": (
+                "Worker bloccato perché "
+                "POSTE_INVIO_MODE non è auto."
+            ),
+            "risultati": []
+        }
+
+    try:
+        limite = int(
+            os.getenv(
+                "RACCOMANDATA_VALORIZZAZIONE_WORKER_LIMIT",
+                "5"
+            )
+        )
+    except Exception:
+        limite = 5
+
+    limite = max(
+        1,
+        min(limite, 20)
+    )
+
+    # =====================================================
+    # 2. RICERCA PRATICHE DA CONTROLLARE
+    # =====================================================
+
+    pratiche_res = (
+        supabase
+        .table("pratiche")
+        .select("*")
+        .eq("tipo_servizio", "RACCOMANDATA")
+        .eq("stato", "VALORIZZAZIONE_IN_CORSO")
+        .limit(limite)
+        .execute()
+    )
+
+    pratiche = pratiche_res.data or []
+
+    if not pratiche:
+        return {
+            "success": True,
+            "step": "NESSUNA_VALORIZZAZIONE_IN_CORSO",
+            "count": 0,
+            "risultati": []
+        }
+
+    # =====================================================
+    # 3. ELABORAZIONE SINGOLE PRATICHE
+    # =====================================================
+
+    for pratica in pratiche:
+        pratica_id = str(
+            pratica.get("id") or ""
+        ).strip()
+
+        h2h_order_id = None
+
+        if not pratica_id:
+            risultati.append({
+                "success": False,
+                "step": "PRATICA_SENZA_ID"
+            })
+            continue
+
+        try:
+            h2h_order_id = resolve_h2h_order_id(
+                pratica_id
+            )
+
+            if not h2h_order_id:
+                risultati.append({
+                    "success": False,
+                    "step": "ORDINE_H2H_NON_TROVATO",
+                    "pratica_id": pratica_id
+                })
+                continue
+
+            # =============================================
+            # LOCK ATOMICO DEL CONTROLLO VALORIZZAZIONE
+            # =============================================
+
+            lock_res = (
+                supabase
+                .table("poste_h2h_orders")
+                .update({
+                    "stato": (
+                        "VALORIZZAZIONE_CHECK_IN_CORSO"
+                    )
+                })
+                .eq("id", h2h_order_id)
+                .eq(
+                    "stato",
+                    "VALORIZZAZIONE_IN_CORSO"
+                )
+                .execute()
+            )
+
+            if not lock_res.data:
+                risultati.append({
+                    "success": True,
+                    "skipped": True,
+                    "in_progress": True,
+                    "step": (
+                        "LOCK_VALORIZZAZIONE_NON_ACQUISITO"
+                    ),
+                    "pratica_id": pratica_id,
+                    "h2h_order_id": h2h_order_id
+                })
+                continue
+
+            (
+                supabase
+                .table("pratiche")
+                .update({
+                    "stato": (
+                        "VALORIZZAZIONE_CHECK_IN_CORSO"
+                    ),
+                    "updated_at": now_iso()
+                })
+                .eq("id", pratica_id)
+                .eq(
+                    "stato",
+                    "VALORIZZAZIONE_IN_CORSO"
+                )
+                .execute()
+            )
+
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento=(
+                    "CONTROLLO_VALORIZZAZIONE_AVVIATO"
+                ),
+                stato_precedente=(
+                    "VALORIZZAZIONE_IN_CORSO"
+                ),
+                stato_nuovo=(
+                    "VALORIZZAZIONE_CHECK_IN_CORSO"
+                ),
+                messaggio=(
+                    "Worker automatico: avviato controllo "
+                    "della valorizzazione Poste."
+                ),
+                source=(
+                    "worker_valorizzazione_raccomandata"
+                ),
+                payload={
+                    "h2h_order_id": h2h_order_id
+                }
+            )
+
+            # =============================================
+            # SOLA CHIAMATA VALORIZZA
+            # =============================================
+
+            valorizza_result = (
+                riprendi_solo_valorizzazione_raccomandata(
+                    pratica_id=pratica_id,
+                    allow_auto_worker=True
+                )
+            )
+
+            if (
+                not isinstance(
+                    valorizza_result,
+                    dict
+                )
+                or not valorizza_result.get(
+                    "success"
+                )
+            ):
+                errore = (
+                    valorizza_result.get("error")
+                    if isinstance(
+                        valorizza_result,
+                        dict
+                    )
+                    else str(valorizza_result)
+                ) or "Errore controllo valorizzazione"
+
+                # Ripristino sicuro del lock.
+                (
+                    supabase
+                    .table("poste_h2h_orders")
+                    .update({
+                        "stato": (
+                            "VALORIZZAZIONE_IN_CORSO"
+                        )
+                    })
+                    .eq("id", h2h_order_id)
+                    .eq(
+                        "stato",
+                        "VALORIZZAZIONE_CHECK_IN_CORSO"
+                    )
+                    .execute()
+                )
+
+                (
+                    supabase
+                    .table("pratiche")
+                    .update({
+                        "stato": (
+                            "VALORIZZAZIONE_IN_CORSO"
+                        ),
+                        "auto_invio_last_error": str(
+                            errore
+                        )[:5000],
+                        "updated_at": now_iso()
+                    })
+                    .eq("id", pratica_id)
+                    .execute()
+                )
+
+                registra_evento_pratica(
+                    pratica_id=pratica_id,
+                    evento=(
+                        "CONTROLLO_VALORIZZAZIONE_ERRORE"
+                    ),
+                    stato_precedente=(
+                        "VALORIZZAZIONE_CHECK_IN_CORSO"
+                    ),
+                    stato_nuovo=(
+                        "VALORIZZAZIONE_IN_CORSO"
+                    ),
+                    messaggio=str(errore),
+                    source=(
+                        "worker_valorizzazione_"
+                        "raccomandata"
+                    ),
+                    payload={
+                        "h2h_order_id": h2h_order_id
+                    }
+                )
+
+                risultati.append({
+                    "success": False,
+                    "step": (
+                        "CONTROLLO_VALORIZZAZIONE_ERRORE"
+                    ),
+                    "pratica_id": pratica_id,
+                    "h2h_order_id": h2h_order_id,
+                    "error": str(errore)
+                })
+                continue
+
+            # =============================================
+            # POSTE STA ANCORA ELABORANDO
+            # =============================================
+
+            if valorizza_result.get("pending") is True:
+                risultati.append({
+                    "success": True,
+                    "pending": True,
+                    "step": "VALORIZZAZIONE_IN_CORSO",
+                    "pratica_id": pratica_id,
+                    "h2h_order_id": h2h_order_id,
+                    "costo": valorizza_result.get(
+                        "costo"
+                    )
+                })
+                continue
+
+            # =============================================
+            # VALORIZZAZIONE PRONTA
+            # =============================================
+
+            if (
+                valorizza_result.get(
+                    "ready_for_confirm"
+                ) is not True
+                or valorizza_result.get("step")
+                != "PREZZATA_DA_CONFERMARE"
+            ):
+                (
+                    supabase
+                    .table("poste_h2h_orders")
+                    .update({
+                        "stato": (
+                            "VALORIZZAZIONE_IN_CORSO"
+                        )
+                    })
+                    .eq("id", h2h_order_id)
+                    .execute()
+                )
+
+                (
+                    supabase
+                    .table("pratiche")
+                    .update({
+                        "stato": (
+                            "VALORIZZAZIONE_IN_CORSO"
+                        ),
+                        "updated_at": now_iso()
+                    })
+                    .eq("id", pratica_id)
+                    .execute()
+                )
+
+                risultati.append({
+                    "success": False,
+                    "blocked": True,
+                    "step": (
+                        "VALORIZZAZIONE_NON_ESPLICITAMENTE_PRONTA"
+                    ),
+                    "pratica_id": pratica_id,
+                    "h2h_order_id": h2h_order_id
+                })
+                continue
+
+            registra_evento_pratica(
+                pratica_id=pratica_id,
+                evento="VALORIZZAZIONE_PRONTA",
+                stato_precedente=(
+                    "VALORIZZAZIONE_CHECK_IN_CORSO"
+                ),
+                stato_nuovo=(
+                    "PREZZATA_DA_CONFERMARE"
+                ),
+                messaggio=(
+                    "Valorizzazione Poste pronta. "
+                    "Avvio conferma definitiva."
+                ),
+                source=(
+                    "worker_valorizzazione_raccomandata"
+                ),
+                payload={
+                    "h2h_order_id": h2h_order_id,
+                    "costo": valorizza_result.get(
+                        "costo"
+                    )
+                }
+            )
+
+            # =============================================
+            # CONFERMA DEFINITIVA IDEMPOTENTE
+            # =============================================
+
+            confirm_result = confirm_poste_order(
+                h2h_order_id
+            )
+
+            risultati.append({
+                "success": bool(
+                    isinstance(confirm_result, dict)
+                    and confirm_result.get("success")
+                ),
+                "step": (
+                    confirm_result.get("step")
+                    if isinstance(
+                        confirm_result,
+                        dict
+                    )
+                    else "RISPOSTA_CONFERMA_NON_VALIDA"
+                ),
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "numero_raccomandata": (
+                    confirm_result.get(
+                        "numero_raccomandata"
+                    )
+                    if isinstance(
+                        confirm_result,
+                        dict
+                    )
+                    else None
+                ),
+                "confirm_result": (
+                    ecx_clean_for_supabase(
+                        confirm_result
+                    )
+                    if isinstance(
+                        confirm_result,
+                        dict
+                    )
+                    else str(confirm_result)
+                )
+            })
+
+        except Exception as worker_error:
+            errore = str(worker_error)
+
+            traceback.print_exc()
+
+            if h2h_order_id:
+                try:
+                    (
+                        supabase
+                        .table("poste_h2h_orders")
+                        .update({
+                            "stato": (
+                                "VALORIZZAZIONE_IN_CORSO"
+                            )
+                        })
+                        .eq("id", h2h_order_id)
+                        .eq(
+                            "stato",
+                            "VALORIZZAZIONE_CHECK_IN_CORSO"
+                        )
+                        .execute()
+                    )
+                except Exception:
+                    pass
+
+            try:
+                (
+                    supabase
+                    .table("pratiche")
+                    .update({
+                        "stato": (
+                            "VALORIZZAZIONE_IN_CORSO"
+                        ),
+                        "auto_invio_last_error": (
+                            errore[:5000]
+                        ),
+                        "updated_at": now_iso()
+                    })
+                    .eq("id", pratica_id)
+                    .execute()
+                )
+            except Exception:
+                pass
+
+            risultati.append({
+                "success": False,
+                "step": "WORKER_PRATICA_ECCEZIONE",
+                "pratica_id": pratica_id,
+                "h2h_order_id": h2h_order_id,
+                "error": errore
+            })
+
+    return {
+        "success": True,
+        "step": "WORKER_COMPLETATO",
+        "count": len(risultati),
+        "risultati": risultati
+    }
+
+
+@app.post(
+    "/internal/worker/"
+    "raccomandata-valorizzazioni"
+)
+def internal_worker_raccomandata_valorizzazioni(
+    request: Request
+):
+    """
+    Endpoint interno destinato al Cron Job.
+
+    Richiede header:
+    X-Worker-Token: valore di RACCOMANDATA_WORKER_TOKEN
+    """
+
+    token_atteso = os.getenv(
+        "RACCOMANDATA_WORKER_TOKEN",
+        ""
+    ).strip()
+
+    token_ricevuto = str(
+        request.headers.get(
+            "X-Worker-Token",
+            ""
+        )
+    ).strip()
+
+    if (
+        not token_atteso
+        or not token_ricevuto
+        or not hmac.compare_digest(
+            token_atteso,
+            token_ricevuto
+        )
+    ):
+        return {
+            "success": False,
+            "blocked": True,
+            "step": "WORKER_TOKEN_NON_VALIDO"
+        }
+
+    return esegui_worker_valorizzazioni_raccomandata()
         
 
 @app.get("/rubrica-posta")
