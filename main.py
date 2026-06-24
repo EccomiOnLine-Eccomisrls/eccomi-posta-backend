@@ -6653,6 +6653,8 @@ def telegramma_verifica_indirizzo(pratica_id: str):
         )
 
 
+
+
 @app.get("/poste/h2h/reporting/debug-operations")
 def poste_reporting_debug_operations():
     try:
@@ -7346,6 +7348,716 @@ def telegramma_verifica_indirizzo(pratica_id: str):
     </div>
 </body>
 </html>
+            """,
+            status_code=500
+        )
+
+@app.get(
+    "/poste/h2h/telegramma/submit-preview-html/{pratica_id}",
+    response_class=HTMLResponse
+)
+def telegramma_submit_preview_html(pratica_id: str):
+    """
+    Anteprima grafica del Submit Telegramma.
+
+    NON esegue Submit.
+    NON invia Telegrammi.
+    NON esegue PreConfirm o Confirm.
+    NON genera costi Poste.
+    """
+
+    import html
+    import json
+
+    try:
+        # Utilizza l'anteprima tecnica già funzionante
+        preview = telegramma_submit_preview(pratica_id)
+
+        if not isinstance(preview, dict):
+            return HTMLResponse(
+                content="""
+                <html>
+                <body style="font-family:Arial;padding:30px;">
+                    <h1>Errore anteprima Telegramma</h1>
+                    <p>La risposta tecnica non è valida.</p>
+                    <a href="/dashboard/pratiche">
+                        ← Torna alla dashboard
+                    </a>
+                </body>
+                </html>
+                """,
+                status_code=500
+            )
+
+        if not preview.get("success"):
+            errore = html.escape(
+                str(
+                    preview.get("error")
+                    or "Errore sconosciuto"
+                ),
+                quote=True
+            )
+
+            return HTMLResponse(
+                content=f"""
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>Errore anteprima Telegramma</title>
+                </head>
+
+                <body style="
+                    font-family:Arial;
+                    background:#f4f6f9;
+                    padding:30px;
+                ">
+                    <div style="
+                        background:white;
+                        max-width:900px;
+                        margin:auto;
+                        padding:24px;
+                        border-radius:14px;
+                    ">
+                        <h1>Errore anteprima Telegramma</h1>
+                        <pre>{errore}</pre>
+
+                        <a href="/dashboard/pratiche">
+                            ← Torna alla dashboard
+                        </a>
+                    </div>
+                </body>
+                </html>
+                """,
+                status_code=400
+            )
+
+        pratica_res = (
+            supabase
+            .table("pratiche")
+            .select("*")
+            .eq("id", pratica_id)
+            .single()
+            .execute()
+        )
+
+        pratica = pratica_res.data or {}
+
+        mittente = preview.get("mittente") or {}
+        destinatario = preview.get("destinatario") or {}
+
+        mitt_anagrafica = (
+            preview.get("mittente_anagrafica_poste")
+            or {}
+        )
+
+        dest_anagrafica = (
+            preview.get("destinatario_anagrafica_poste")
+            or {}
+        )
+
+        pricing = preview.get("pricing") or {}
+
+        xml_preview = str(
+            preview.get("xml_preview")
+            or ""
+        )
+
+        def esc(value):
+            valore = "-" if value in [None, ""] else value
+
+            return html.escape(
+                str(valore),
+                quote=True
+            )
+
+        def esc_pre(value):
+            return html.escape(
+                str(value or ""),
+                quote=False
+            )
+
+        ordine = (
+            pratica.get("shopify_order_name")
+            or pratica.get("order_name")
+            or "-"
+        )
+
+        stato = pratica.get("stato") or "-"
+        cliente_email = pratica.get("cliente_email") or "-"
+        testo_telegramma = pratica.get("testo") or ""
+
+        parole = (
+            pricing.get("parole")
+            or pratica.get("parole")
+            or 0
+        )
+
+        mitt_tipo = (
+            "AZIENDA / ENTE"
+            if mitt_anagrafica.get("is_azienda")
+            else "PERSONA FISICA"
+        )
+
+        dest_tipo = (
+            "AZIENDA / ENTE"
+            if dest_anagrafica.get("is_azienda")
+            else "PERSONA FISICA"
+        )
+
+        mitt_badge = (
+            "badge-company"
+            if mitt_anagrafica.get("is_azienda")
+            else "badge-person"
+        )
+
+        dest_badge = (
+            "badge-company"
+            if dest_anagrafica.get("is_azienda")
+            else "badge-person"
+        )
+
+        mitt_nome_completo = (
+            mitt_anagrafica.get("ragione_sociale")
+            or " ".join(
+                parte
+                for parte in [
+                    str(
+                        mitt_anagrafica.get("nome")
+                        or ""
+                    ).strip(),
+                    str(
+                        mitt_anagrafica.get("cognome")
+                        or ""
+                    ).strip()
+                ]
+                if parte
+            ).strip()
+            or "-"
+        )
+
+        dest_nome_completo = (
+            dest_anagrafica.get("ragione_sociale")
+            or " ".join(
+                parte
+                for parte in [
+                    str(
+                        dest_anagrafica.get("nome")
+                        or ""
+                    ).strip(),
+                    str(
+                        dest_anagrafica.get("cognome")
+                        or ""
+                    ).strip()
+                ]
+                if parte
+            ).strip()
+            or "-"
+        )
+
+        mittente_json = json.dumps(
+            mittente,
+            ensure_ascii=False,
+            indent=2
+        )
+
+        destinatario_json = json.dumps(
+            destinatario,
+            ensure_ascii=False,
+            indent=2
+        )
+
+        return HTMLResponse(
+            content=f"""
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="utf-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>Anteprima XML Telegramma {esc(ordine)}</title>
+
+    <style>
+        * {{
+            box-sizing: border-box;
+        }}
+
+        body {{
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f6f9;
+            color: #111827;
+        }}
+
+        .page {{
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 28px 18px 60px;
+        }}
+
+        .topbar {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }}
+
+        h1 {{
+            margin: 0 0 10px;
+            font-size: 30px;
+        }}
+
+        h2 {{
+            margin-top: 0;
+        }}
+
+        h3 {{
+            margin-top: 0;
+        }}
+
+        .back {{
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: bold;
+        }}
+
+        .card {{
+            background: white;
+            border-radius: 15px;
+            padding: 22px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 12px rgba(15,23,42,.06);
+        }}
+
+        .grid {{
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(230px, 1fr));
+            gap: 15px;
+        }}
+
+        .field {{
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 11px;
+            padding: 13px;
+        }}
+
+        .label {{
+            display: block;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }}
+
+        .value {{
+            font-size: 16px;
+            font-weight: 600;
+            word-break: break-word;
+        }}
+
+        .badge {{
+            display: inline-block;
+            padding: 7px 11px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: bold;
+        }}
+
+        .badge-service {{
+            background: #dbeafe;
+            color: #1d4ed8;
+        }}
+
+        .badge-safe {{
+            background: #dcfce7;
+            color: #166534;
+        }}
+
+        .badge-status {{
+            background: #fef3c7;
+            color: #92400e;
+        }}
+
+        .badge-person {{
+            background: #ede9fe;
+            color: #6d28d9;
+        }}
+
+        .badge-company {{
+            background: #cffafe;
+            color: #155e75;
+        }}
+
+        .safe-box {{
+            margin-top: 18px;
+            background: #f0fdf4;
+            border-left: 5px solid #16a34a;
+            color: #166534;
+            padding: 16px;
+            border-radius: 10px;
+            font-weight: bold;
+        }}
+
+        .address {{
+            margin-top: 15px;
+            background: #ffffff;
+            border: 1px solid #dbe2ea;
+            border-radius: 11px;
+            padding: 15px;
+            line-height: 1.55;
+        }}
+
+        .telegram-text {{
+            white-space: pre-wrap;
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 18px;
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 17px;
+            line-height: 1.55;
+        }}
+
+        .raw-box {{
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 11px;
+            padding: 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: monospace;
+            font-size: 13px;
+        }}
+
+        .warning {{
+            background: #fffbeb;
+            border-left: 5px solid #f59e0b;
+            color: #92400e;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 14px;
+        }}
+
+        pre.xml {{
+            margin: 0;
+            background: #111827;
+            color: #d1d5db;
+            border-radius: 12px;
+            padding: 20px;
+            overflow: auto;
+            max-height: 720px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 13px;
+            line-height: 1.45;
+        }}
+
+        .footer {{
+            text-align: center;
+            color: #64748b;
+            font-size: 13px;
+            margin-top: 28px;
+        }}
+
+        @media (max-width: 650px) {{
+            .page {{
+                padding: 20px 12px 45px;
+            }}
+
+            h1 {{
+                font-size: 24px;
+            }}
+
+            .card {{
+                padding: 17px;
+            }}
+
+            pre.xml {{
+                font-size: 11px;
+            }}
+        }}
+    </style>
+</head>
+
+<body>
+<div class="page">
+
+    <div class="topbar">
+        <div>
+            <h1>🧪 Anteprima XML Telegramma</h1>
+
+            <a class="back" href="/dashboard/pratiche">
+                ← Torna alla dashboard
+            </a>
+        </div>
+
+        <div>
+            <span class="badge badge-service">
+                TELEGRAMMA
+            </span>
+
+            <span class="badge badge-safe">
+                ANTEPRIMA SICURA
+            </span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Pratica</h2>
+
+        <div class="grid">
+            <div class="field">
+                <span class="label">ID pratica</span>
+                <span class="value">{esc(pratica_id)}</span>
+            </div>
+
+            <div class="field">
+                <span class="label">Ordine</span>
+                <span class="value">{esc(ordine)}</span>
+            </div>
+
+            <div class="field">
+                <span class="label">Stato</span>
+                <span class="value">
+                    <span class="badge badge-status">
+                        {esc(stato)}
+                    </span>
+                </span>
+            </div>
+
+            <div class="field">
+                <span class="label">Email cliente</span>
+                <span class="value">{esc(cliente_email)}</span>
+            </div>
+
+            <div class="field">
+                <span class="label">Numero parole</span>
+                <span class="value">{esc(parole)}</span>
+            </div>
+
+            <div class="field">
+                <span class="label">ID anteprima</span>
+                <span class="value">
+                    {esc(preview.get("id_request"))}
+                </span>
+            </div>
+        </div>
+
+        <div class="safe-box">
+            Invio reale a Poste: NO. Questa pagina genera
+            esclusivamente l'anteprima XML del Telegramma.
+        </div>
+    </div>
+
+    <div class="grid">
+
+        <div class="card">
+            <div style="
+                display:flex;
+                justify-content:space-between;
+                align-items:center;
+                gap:12px;
+                flex-wrap:wrap;
+            ">
+                <h2 style="margin:0;">Mittente</h2>
+
+                <span class="badge {mitt_badge}">
+                    {esc(mitt_tipo)}
+                </span>
+            </div>
+
+            <div class="address">
+                <strong>{esc(mitt_nome_completo)}</strong>
+                <br>
+                {esc(mittente.get("indirizzo"))}
+                <br>
+                {esc(mittente.get("cap"))}
+                {esc(mittente.get("comune"))}
+                ({esc(mittente.get("provincia"))})
+                <br>
+                Telefono: {esc(mittente.get("telefono"))}
+            </div>
+
+            <h3 style="margin-top:20px;">
+                Campi trasmessi a Poste
+            </h3>
+
+            <div class="grid">
+                <div class="field">
+                    <span class="label">Nome</span>
+                    <span class="value">
+                        {esc(mitt_anagrafica.get("nome"))}
+                    </span>
+                </div>
+
+                <div class="field">
+                    <span class="label">Cognome</span>
+                    <span class="value">
+                        {esc(mitt_anagrafica.get("cognome"))}
+                    </span>
+                </div>
+
+                <div class="field">
+                    <span class="label">Ragione sociale</span>
+                    <span class="value">
+                        {esc(
+                            mitt_anagrafica.get(
+                                "ragione_sociale"
+                            )
+                        )}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div style="
+                display:flex;
+                justify-content:space-between;
+                align-items:center;
+                gap:12px;
+                flex-wrap:wrap;
+            ">
+                <h2 style="margin:0;">Destinatario</h2>
+
+                <span class="badge {dest_badge}">
+                    {esc(dest_tipo)}
+                </span>
+            </div>
+
+            <div class="address">
+                <strong>{esc(dest_nome_completo)}</strong>
+                <br>
+                {esc(destinatario.get("indirizzo"))}
+                <br>
+                {esc(destinatario.get("cap"))}
+                {esc(destinatario.get("comune"))}
+                ({esc(destinatario.get("provincia"))})
+                <br>
+                Telefono: {esc(destinatario.get("telefono"))}
+            </div>
+
+            <h3 style="margin-top:20px;">
+                Campi trasmessi a Poste
+            </h3>
+
+            <div class="grid">
+                <div class="field">
+                    <span class="label">Nome</span>
+                    <span class="value">
+                        {esc(dest_anagrafica.get("nome"))}
+                    </span>
+                </div>
+
+                <div class="field">
+                    <span class="label">Cognome</span>
+                    <span class="value">
+                        {esc(dest_anagrafica.get("cognome"))}
+                    </span>
+                </div>
+
+                <div class="field">
+                    <span class="label">Ragione sociale</span>
+                    <span class="value">
+                        {esc(
+                            dest_anagrafica.get(
+                                "ragione_sociale"
+                            )
+                        )}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="card">
+        <h2>Testo del Telegramma</h2>
+
+        <div class="telegram-text">{esc_pre(testo_telegramma)}</div>
+    </div>
+
+    <div class="card">
+        <h2>Dati normalizzati</h2>
+
+        <div class="grid">
+            <div>
+                <h3>Mittente</h3>
+                <div class="raw-box">{esc_pre(mittente_json)}</div>
+            </div>
+
+            <div>
+                <h3>Destinatario</h3>
+                <div class="raw-box">{esc_pre(destinatario_json)}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>XML Telegramma generato</h2>
+
+        <div class="warning">
+            Controllare Nome, Cognome, RagioneSociale,
+            CAP, città e indirizzo prima di riattivare
+            l'automazione Telegramma.
+        </div>
+
+        <pre class="xml">{esc_pre(xml_preview)}</pre>
+    </div>
+
+    <div class="footer">
+        Eccomi Posta — Anteprima tecnica Telegramma
+    </div>
+
+</div>
+</body>
+</html>
+            """
+        )
+
+    except Exception as e:
+        errore = html.escape(
+            str(e),
+            quote=True
+        )
+
+        return HTMLResponse(
+            content=f"""
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>Errore anteprima Telegramma</title>
+            </head>
+
+            <body style="
+                font-family:Arial;
+                background:#f4f6f9;
+                padding:30px;
+            ">
+                <div style="
+                    background:white;
+                    max-width:900px;
+                    margin:auto;
+                    padding:24px;
+                    border-radius:14px;
+                ">
+                    <h1>Errore anteprima Telegramma</h1>
+                    <pre>{errore}</pre>
+
+                    <a href="/dashboard/pratiche">
+                        ← Torna alla dashboard
+                    </a>
+                </div>
+            </body>
+            </html>
             """,
             status_code=500
         )
