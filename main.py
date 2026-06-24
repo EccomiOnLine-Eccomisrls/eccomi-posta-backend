@@ -5106,7 +5106,13 @@ def telegramma_build_valorizzazione(client, service, parole):
 def telegramma_normalizza_dati_indirizzo(data):
     """
     Normalizza mittente/destinatario Telegramma dalla pratica Supabase.
-    Gestisce sia dict strutturato sia raw.
+
+    Gestisce:
+    - dict strutturato;
+    - vecchio campo raw;
+    - persona fisica;
+    - azienda/ente;
+    - ragione sociale separata.
     """
 
     data = data or {}
@@ -5116,34 +5122,141 @@ def telegramma_normalizza_dati_indirizzo(data):
             "raw": data
         }
 
-    raw = str(data.get("raw") or "").strip()
+    raw = str(
+        data.get("raw")
+        or ""
+    ).strip()
 
     if raw:
-        parsed = estrai_dati_rubrica_da_raw(raw)
+        parsed = estrai_dati_rubrica_da_raw(raw) or {}
     else:
         parsed = {
-            "nome": str(data.get("nome") or "").strip(),
-            "via": str(data.get("via") or "").strip(),
-            "civico": str(data.get("civico") or "").strip(),
-            "cap": str(data.get("cap") or "").strip(),
-            "comune": str(data.get("comune") or "").strip(),
-            "provincia": str(data.get("provincia") or "").strip().upper()[:2],
-            "contatto": str(data.get("contatto") or "").strip()
+            "nome": str(
+                data.get("nome")
+                or ""
+            ).strip(),
+
+            "cognome": str(
+                data.get("cognome")
+                or ""
+            ).strip(),
+
+            "ragione_sociale": str(
+                data.get("ragione_sociale")
+                or data.get("ragioneSociale")
+                or data.get("denominazione")
+                or ""
+            ).strip(),
+
+            "via": str(
+                data.get("via")
+                or ""
+            ).strip(),
+
+            "civico": str(
+                data.get("civico")
+                or ""
+            ).strip(),
+
+            "cap": str(
+                data.get("cap")
+                or ""
+            ).strip(),
+
+            "comune": str(
+                data.get("comune")
+                or ""
+            ).strip(),
+
+            "provincia": str(
+                data.get("provincia")
+                or ""
+            ).strip().upper()[:2],
+
+            "contatto": str(
+                data.get("contatto")
+                or ""
+            ).strip()
         }
 
-    indirizzo = " ".join([
-        str(parsed.get("via") or "").strip(),
-        str(parsed.get("civico") or "").strip()
-    ]).strip()
+    indirizzo = " ".join(
+        valore
+        for valore in [
+            str(
+                parsed.get("via")
+                or ""
+            ).strip(),
+
+            str(
+                parsed.get("civico")
+                or ""
+            ).strip()
+        ]
+        if valore
+    ).strip()
+
+    nome = clean_h2h_text(
+        parsed.get("nome")
+        or data.get("nome")
+        or ""
+    )
+
+    cognome = clean_h2h_text(
+        parsed.get("cognome")
+        or data.get("cognome")
+        or ""
+    )
+
+    ragione_sociale = clean_h2h_text(
+        parsed.get("ragione_sociale")
+        or parsed.get("ragioneSociale")
+        or parsed.get("denominazione")
+        or data.get("ragione_sociale")
+        or data.get("ragioneSociale")
+        or data.get("denominazione")
+        or ""
+    )
+
+    tipo_destinatario = clean_h2h_text(
+        data.get("tipo_destinatario")
+        or data.get("tipo_soggetto")
+        or data.get("tipo")
+        or ""
+    ).upper()
 
     return {
-        "nome": clean_h2h_text(parsed.get("nome") or ""),
-        "indirizzo": clean_h2h_text(indirizzo),
-        "cap": normalizza_cap(parsed.get("cap") or ""),
-        "comune": clean_h2h_text(parsed.get("comune") or "").upper(),
-        "provincia": normalizza_provincia(parsed.get("provincia") or ""),
+        "nome": nome,
+        "cognome": cognome,
+        "ragione_sociale": ragione_sociale,
+        "tipo_destinatario": tipo_destinatario,
+
+        "indirizzo": clean_h2h_text(
+            indirizzo
+        ),
+
+        "cap": normalizza_cap(
+            parsed.get("cap")
+            or data.get("cap")
+            or ""
+        ),
+
+        "comune": clean_h2h_text(
+            parsed.get("comune")
+            or data.get("comune")
+            or ""
+        ).upper(),
+
+        "provincia": normalizza_provincia(
+            parsed.get("provincia")
+            or data.get("provincia")
+            or ""
+        ),
+
         "telefono": telegramma_clean_telefono(
-            parsed.get("contatto") or data.get("contatto") or ""
+            parsed.get("contatto")
+            or data.get("contatto")
+            or data.get("telefono")
+            or ""
         )
     }
 
@@ -11013,14 +11126,27 @@ def poste_send_test():
         return {"success": False, "error": str(e)}
 
 def clean_h2h_text(value):
-    return (value or "") \
-        .replace("’", "'") \
-        .replace("‘", "'") \
-        .replace("“", '"') \
-        .replace("", '"') \
-        .replace("–", "-") \
-        .replace("—", "-") \
+    """
+    Normalizza i caratteri tipografici senza alterare
+    lettere, parole, spazi o righe del contenuto.
+    """
+
+    if value is None:
+        return ""
+
+    value = str(value)
+
+    return (
+        value
+        .replace("’", "'")
+        .replace("‘", "'")
+        .replace("“", '"')
+        .replace("”", '"')
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("\u00a0", " ")
         .strip()
+    )
 
 def clean_poste_h2h_attr(value, max_len=None, uppercase=True):
     if value is None:
