@@ -7029,6 +7029,753 @@ def telegramma_submit_preview(pratica_id: str):
         }
 
 @app.get(
+    "/poste/h2h/telegramma/submit-preview-elettronico/{pratica_id}"
+)
+def telegramma_submit_preview_elettronico(
+    pratica_id: str
+):
+    """
+    Genera l'anteprima XML del Submit Telegramma
+    con Mod60 elettronico inviato all'email del cliente.
+    SICUREZZA:
+    - NON chiama service.Submit
+    - NON esegue SubmitJokid
+    - NON esegue PreConfirm
+    - NON esegue Confirm
+    - NON invia il Telegramma
+    - NON genera costi Poste
+    """
+    import datetime
+    import re
+    import uuid
+    from lxml import etree
+    from zeep import xsd
+    try:
+        # Endpoint diagnostico di sola lettura.
+        if not TELEGRAMMA_GET_STATUS_JOKID_ENABLED:
+            return {
+                "success": False,
+                "step": (
+                    "TELEGRAMMA_PREVIEW_ELETTRONICO_DISABILITATA"
+                ),
+                "safe_read_only": True,
+                "error": (
+                    "La diagnostica Telegramma elettronico "
+                    "è disabilitata"
+                ),
+                "pratica_id": pratica_id
+            }
+        pratica_res = (
+            supabase
+            .table("pratiche")
+            .select("*")
+            .eq("id", pratica_id)
+            .single()
+            .execute()
+        )
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "PRATICA_NON_TROVATA",
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+        pratica = pratica_res.data
+        if pratica.get("tipo_servizio") != "TELEGRAMMA":
+            return {
+                "success": False,
+                "step": "SERVIZIO_NON_TELEGRAMMA",
+                "error": (
+                    "Questa pratica non è un Telegramma"
+                ),
+                "tipo_servizio": pratica.get(
+                    "tipo_servizio"
+                ),
+                "pratica_id": pratica_id
+            }
+        # Prima scelta: email cliente della pratica.
+        # Fallback: email usata per eventuali comunicazioni.
+        email_esito = str(
+            pratica.get("cliente_email")
+            or pratica.get("email_to")
+            or ""
+        ).strip()
+        email_pattern = (
+            r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+        )
+        if not re.match(
+            email_pattern,
+            email_esito
+        ):
+            return {
+                "success": False,
+                "step": "EMAIL_ESITO_NON_VALIDA",
+                "error": (
+                    "La pratica non contiene una email "
+                    "valida per il Mod60 elettronico"
+                ),
+                "pratica_id": pratica_id,
+                "cliente_email": pratica.get(
+                    "cliente_email"
+                ),
+                "email_to": pratica.get(
+                    "email_to"
+                )
+            }
+        mittente_data = (
+            telegramma_normalizza_dati_indirizzo(
+                pratica.get("mittente") or {}
+            )
+        )
+        destinatario_data = (
+            telegramma_normalizza_dati_indirizzo(
+                pratica.get("destinatario") or {}
+            )
+        )
+        testo = (
+            clean_h2h_text(
+                pratica.get("testo") or ""
+            )
+            .replace("Ã™", "U'")
+            .replace("Ãš", "U'")
+            .replace("Ù", "U'")
+            .replace("ù", "u'")
+            .upper()
+        )
+        if not testo:
+            return {
+                "success": False,
+                "step": "TESTO_TELEGRAMMA_MANCANTE",
+                "error": "Testo Telegramma mancante",
+                "pratica_id": pratica_id
+            }
+        client, service = telegramma_service(
+            timeout=60
+        )
+        TelegrammaType = telegramma_find_type(
+            client,
+            "Telegramma",
+            "Telegramma.WS"
+        )
+        MittenteType = telegramma_find_type(
+            client,
+            "Mittente",
+            "Telegramma.Schema"
+        )
+        DestinatarioType = telegramma_find_type(
+            client,
+            "Destinatario",
+            "Telegramma.Schema"
+        )
+        TelegrammaDestinatarioType = (
+            telegramma_find_type(
+                client,
+                "TelegrammaDestinatario",
+                "Telegramma.Schema"
+            )
+        )
+        InfoTestoType = telegramma_find_type(
+            client,
+            "InfoTesto",
+            "Telegramma.Schema"
+        )
+        OpzioniType = telegramma_find_type(
+            client,
+            "Opzioni",
+            "Telegramma.WS"
+        )
+        TipoRecType = telegramma_find_type(
+            client,
+            "TelegrammaDestinatarioTipoRec",
+            "Telegramma.Schema"
+        )
+        IndirizzoElettronicoType = (
+            telegramma_find_type(
+                client,
+                "IndirizzoElettronico",
+                "Telegramma.WS"
+            )
+        )
+        ArrayIndirizzoElettronicoType = (
+            telegramma_find_type(
+                client,
+                "ArrayOfIndirizzoElettronico",
+                "Telegramma.WS"
+            )
+        )
+        Mod60ElettronicoType = (
+            telegramma_find_type(
+                client,
+                "Mod60Elettronico",
+                "Telegramma.WS"
+            )
+        )
+        mitt_anagrafica = (
+            telegramma_prepara_anagrafica_poste(
+                mittente_data
+            )
+        )
+        dest_anagrafica = (
+            telegramma_prepara_anagrafica_poste(
+                destinatario_data
+            )
+        )
+        firma_mittente = (
+            mitt_anagrafica.get(
+                "ragione_sociale"
+            )
+            or " ".join(
+                valore
+                for valore in [
+                    str(
+                        mitt_anagrafica.get("nome")
+                        or ""
+                    ).strip(),
+                    str(
+                        mitt_anagrafica.get("cognome")
+                        or ""
+                    ).strip()
+                ]
+                if valore
+            ).strip()
+            or str(
+                mittente_data.get("nome")
+                or ""
+            ).strip()
+        )
+        mittente_obj = MittenteType(
+            CAP=mittente_data.get("cap"),
+            Citta=mittente_data.get("comune"),
+            Cognome=mitt_anagrafica.get(
+                "cognome"
+            ),
+            Indirizzo=mittente_data.get(
+                "indirizzo"
+            ),
+            InvioAlMittente=False,
+            Nome=mitt_anagrafica.get("nome"),
+            RagioneSociale=mitt_anagrafica.get(
+                "ragione_sociale"
+            ),
+            Telefono=mittente_data.get(
+                "telefono"
+            )
+        )
+        destinatario_obj = DestinatarioType(
+            CAP=destinatario_data.get("cap"),
+            Citta=destinatario_data.get(
+                "comune"
+            ),
+            Cognome=dest_anagrafica.get(
+                "cognome"
+            ),
+            Indirizzo=destinatario_data.get(
+                "indirizzo"
+            ),
+            Nome=dest_anagrafica.get("nome"),
+            RagioneSociale=dest_anagrafica.get(
+                "ragione_sociale"
+            ),
+            Stato="ITALIA",
+            Telefono=destinatario_data.get(
+                "telefono"
+            )
+        )
+        telegramma_destinatario = (
+            TelegrammaDestinatarioType(
+                Destinatario=destinatario_obj,
+                Frazionario="",
+                IDTelegramma="",
+                LineaPilota="",
+                NumeroDestinatarioCorrente=1,
+                TipoRec=TipoRecType("Item"),
+                TipoRecapitoJokid=None
+            )
+        )
+        info_testo = InfoTestoType(
+            NumeroParteCorrente=1,
+            Testo=testo
+        )
+        opzioni = OpzioniType(
+            CTA=False,
+            Note=""
+        )
+        indirizzo_elettronico_obj = (
+            IndirizzoElettronicoType(
+                Indirizzo=email_esito,
+                TipoIndirizzo="Mail"
+            )
+        )
+        array_indirizzi_elettronici_obj = (
+            ArrayIndirizzoElettronicoType(
+                IndirizzoElettronico=[
+                    indirizzo_elettronico_obj
+                ]
+            )
+        )
+        mod60_elettronico_obj = (
+            Mod60ElettronicoType(
+                IndirizziElettronici=(
+                    array_indirizzi_elettronici_obj
+                )
+            )
+        )
+        parole = int(
+            pratica.get("parole")
+            or len(testo.split())
+            or 1
+        )
+        pricing_plain = {
+            "note": (
+                "Preventivo non chiamato: "
+                "anteprima XML di sola lettura"
+            ),
+            "preventivo_chiamato": False,
+            "parole": parole,
+            "opzione": "MOD60_ELETTRONICO",
+            "costo_poste_stimato_aggiuntivo": 0.36,
+            "prezzo_eccomi_previsto": (
+                0.99
+                if parole <= 3
+                else 0.50
+            )
+        }
+        id_request = str(
+            uuid.uuid4()
+        )
+        guid_message = id_request
+        telegramma_obj = TelegrammaType(
+            Coupon=None,
+            DataTelegramma=(
+                datetime.datetime.now()
+                .replace(microsecond=0)
+            ),
+            Destinatari={
+                "TelegrammaDestinatario": [
+                    telegramma_destinatario
+                ]
+            },
+            Firma=firma_mittente,
+            GUIDMessage=guid_message,
+            # Jokid completo non richiesto.
+            Jokid=None,
+            Mittente=mittente_obj,
+            # Comunicazione Mod60 via email.
+            Mod60Elettronico=(
+                mod60_elettronico_obj
+            ),
+            Nazionale=True,
+            Opzioni=opzioni,
+            PartiTesto=info_testo,
+            # Valore ufficiale previsto dal WSDL Poste.
+            TipoRecapitoMod60="Elettronico",
+            TipoTelegramma="TS",
+            Valorizzazione=xsd.SkipValue
+        )
+        # Crea esclusivamente il documento XML.
+        # Non effettua la chiamata SOAP.
+        message = client.create_message(
+            service,
+            "Submit",
+            telegramma=telegramma_obj,
+            Customer=POSTE_H2H_TOL_CUSTOMER,
+            idRequest=id_request,
+            CodiceContratto=(
+                POSTE_H2H_TOL_CONTRACT_ID
+            )
+        )
+        fix_telegramma_wsa_to(
+            message
+        )
+        xml_string = etree.tostring(
+            message,
+            pretty_print=True,
+            encoding="unicode"
+        )
+        controlli_xml = {
+            "contiene_mod60_elettronico": (
+                "Mod60Elettronico"
+                in xml_string
+            ),
+            "contiene_email_esito": (
+                email_esito
+                in xml_string
+            ),
+            "contiene_tipo_mail": (
+                "Mail"
+                in xml_string
+            ),
+            "contiene_tipo_elettronico": (
+                "Elettronico"
+                in xml_string
+            ),
+            "contiene_jokid_attivo": False
+        }
+        return {
+            "success": True,
+            "step": (
+                "TELEGRAMMA_SUBMIT_PREVIEW_ELETTRONICO"
+            ),
+            "safe_read_only": True,
+            "service_submit_called": False,
+            "preconfirm_called": False,
+            "confirm_called": False,
+            "costi_generati": False,
+            "pratica_id": pratica_id,
+            "id_request": id_request,
+            "guid_message": guid_message,
+            "mittente": mittente_data,
+            "destinatario": destinatario_data,
+            "mittente_anagrafica_poste": (
+                mitt_anagrafica
+            ),
+            "destinatario_anagrafica_poste": (
+                dest_anagrafica
+            ),
+            "firma_mittente": firma_mittente,
+            "pricing": pricing_plain,
+            "notifica_elettronica": {
+                "attiva": True,
+                "email": email_esito,
+                "tipo_indirizzo": "Mail",
+                "tipo_recapito_mod60": (
+                    "Elettronico"
+                ),
+                "jokid": False,
+                "modalita": (
+                    "MOD60_ELETTRONICO"
+                ),
+                "safe_preview_only": True
+            },
+            "controlli_xml": controlli_xml,
+            "xml_preview": xml_string
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "step": (
+                "ERRORE_TELEGRAMMA_"
+                "SUBMIT_PREVIEW_ELETTRONICO"
+            ),
+            "safe_read_only": True,
+            "service_submit_called": False,
+            "costi_generati": False,
+            "pratica_id": pratica_id,
+            "error_type": type(e).__name__,
+            "error": str(e)
+        }
+
+@app.get("/poste/h2h/telegramma/submit-preview-elettronico/{pratica_id}")
+def telegramma_submit_preview_elettronico(pratica_id: str):
+    """
+    Genera anteprima XML Submit Telegramma.
+
+    NON chiama service.Submit.
+    NON esegue PreConfirm.
+    NON esegue Confirm.
+    NON genera costi Poste.
+    """
+
+    from zeep import xsd
+
+    try:
+        pratica_res = (
+            supabase
+            .table("pratiche")
+            .select("*")
+            .eq("id", pratica_id)
+            .single()
+            .execute()
+        )
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        if pratica.get("tipo_servizio") != "TELEGRAMMA":
+            return {
+                "success": False,
+                "error": "Questa pratica non è un Telegramma",
+                "tipo_servizio": pratica.get(
+                    "tipo_servizio"
+                ),
+                "pratica_id": pratica_id
+            }
+
+        mittente_data = (
+            telegramma_normalizza_dati_indirizzo(
+                pratica.get("mittente") or {}
+            )
+        )
+
+        destinatario_data = (
+            telegramma_normalizza_dati_indirizzo(
+                pratica.get("destinatario") or {}
+            )
+        )
+
+        testo = (
+            clean_h2h_text(
+                pratica.get("testo") or ""
+            )
+            .replace("Ã™", "U'")
+            .replace("Ãš", "U'")
+            .replace("Ù", "U'")
+            .replace("ù", "u'")
+            .upper()
+        )
+
+        if not testo:
+            return {
+                "success": False,
+                "error": "Testo Telegramma mancante",
+                "pratica_id": pratica_id
+            }
+
+        client, service = telegramma_service(
+            timeout=60
+        )
+
+        TelegrammaType = telegramma_find_type(
+            client,
+            "Telegramma",
+            "Telegramma.WS"
+        )
+
+        MittenteType = telegramma_find_type(
+            client,
+            "Mittente",
+            "Telegramma.Schema"
+        )
+
+        DestinatarioType = telegramma_find_type(
+            client,
+            "Destinatario",
+            "Telegramma.Schema"
+        )
+
+        TelegrammaDestinatarioType = (
+            telegramma_find_type(
+                client,
+                "TelegrammaDestinatario",
+                "Telegramma.Schema"
+            )
+        )
+
+        InfoTestoType = telegramma_find_type(
+            client,
+            "InfoTesto",
+            "Telegramma.Schema"
+        )
+
+        OpzioniType = telegramma_find_type(
+            client,
+            "Opzioni",
+            "Telegramma.WS"
+        )
+
+        TipoRecType = telegramma_find_type(
+            client,
+            "TelegrammaDestinatarioTipoRec",
+            "Telegramma.Schema"
+        )
+
+        mitt_anagrafica = (
+            telegramma_prepara_anagrafica_poste(
+                mittente_data
+            )
+        )
+
+        dest_anagrafica = (
+            telegramma_prepara_anagrafica_poste(
+                destinatario_data
+            )
+        )
+
+        firma_mittente = (
+            mitt_anagrafica.get(
+                "ragione_sociale"
+            )
+            or " ".join(
+                valore
+                for valore in [
+                    str(
+                        mitt_anagrafica.get("nome")
+                        or ""
+                    ).strip(),
+                    str(
+                        mitt_anagrafica.get("cognome")
+                        or ""
+                    ).strip()
+                ]
+                if valore
+            ).strip()
+            or str(
+                mittente_data.get("nome")
+                or ""
+            ).strip()
+        )
+
+        mittente_obj = MittenteType(
+            CAP=mittente_data.get("cap"),
+            Citta=mittente_data.get("comune"),
+            Cognome=mitt_anagrafica.get(
+                "cognome"
+            ),
+            Indirizzo=mittente_data.get(
+                "indirizzo"
+            ),
+            InvioAlMittente=False,
+            Nome=mitt_anagrafica.get("nome"),
+            RagioneSociale=mitt_anagrafica.get(
+                "ragione_sociale"
+            ),
+            Telefono=mittente_data.get(
+                "telefono"
+            )
+        )
+
+        destinatario_obj = DestinatarioType(
+            CAP=destinatario_data.get("cap"),
+            Citta=destinatario_data.get(
+                "comune"
+            ),
+            Cognome=dest_anagrafica.get(
+                "cognome"
+            ),
+            Indirizzo=destinatario_data.get(
+                "indirizzo"
+            ),
+            Nome=dest_anagrafica.get("nome"),
+            RagioneSociale=dest_anagrafica.get(
+                "ragione_sociale"
+            ),
+            Stato="ITALIA",
+            Telefono=destinatario_data.get(
+                "telefono"
+            )
+        )
+
+        telegramma_destinatario = (
+            TelegrammaDestinatarioType(
+                Destinatario=destinatario_obj,
+                Frazionario="",
+                IDTelegramma="",
+                LineaPilota="",
+                NumeroDestinatarioCorrente=1,
+                TipoRec=TipoRecType("Item"),
+                TipoRecapitoJokid=None
+            )
+        )
+
+        info_testo = InfoTestoType(
+            NumeroParteCorrente=1,
+            Testo=testo
+        )
+
+        opzioni = OpzioniType(
+            CTA=False,
+            Note=""
+        )
+
+        parole = int(
+            pratica.get("parole")
+            or len(testo.split())
+            or 1
+        )
+
+        pricing_plain = {
+            "note": (
+                "Preventivo rimosso dal flusso "
+                "come indicato da Poste"
+            ),
+            "preventivo_chiamato": False,
+            "parole": parole
+        }
+
+        id_request = str(uuid.uuid4())
+        guid_message = id_request
+
+        telegramma_obj = TelegrammaType(
+            Coupon=None,
+            DataTelegramma=(
+                datetime.datetime.now()
+                .replace(microsecond=0)
+            ),
+            Destinatari={
+                "TelegrammaDestinatario": [
+                    telegramma_destinatario
+                ]
+            },
+            Firma=firma_mittente,
+            GUIDMessage=guid_message,
+            Jokid=None,
+            Mittente=mittente_obj,
+            Mod60Elettronico=None,
+            Nazionale=True,
+            Opzioni=opzioni,
+            PartiTesto=info_testo,
+            TipoRecapitoMod60=None,
+            TipoTelegramma="TS",
+            Valorizzazione=xsd.SkipValue
+        )
+
+        message = client.create_message(
+            service,
+            "Submit",
+            telegramma=telegramma_obj,
+            Customer=POSTE_H2H_TOL_CUSTOMER,
+            idRequest=id_request,
+            CodiceContratto=(
+                POSTE_H2H_TOL_CONTRACT_ID
+            )
+        )
+
+        fix_telegramma_wsa_to(message)
+
+        xml_string = etree.tostring(
+            message,
+            pretty_print=True,
+            encoding="unicode"
+        )
+
+        return {
+            "success": True,
+            "step": (
+                "TELEGRAMMA_SUBMIT_PREVIEW"
+            ),
+            "pratica_id": pratica_id,
+            "id_request": id_request,
+            "guid_message": guid_message,
+            "mittente": mittente_data,
+            "destinatario": destinatario_data,
+            "mittente_anagrafica_poste": (
+                mitt_anagrafica
+            ),
+            "destinatario_anagrafica_poste": (
+                dest_anagrafica
+            ),
+            "firma_mittente": firma_mittente,
+            "pricing": pricing_plain,
+            "xml_preview": xml_string
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": (
+                "ERRORE_TELEGRAMMA_SUBMIT_PREVIEW"
+            ),
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
+@app.get(
     "/poste/h2h/telegramma/verifica-indirizzo/{pratica_id}",
     response_class=HTMLResponse
 )
