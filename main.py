@@ -3231,6 +3231,197 @@ def poste_reporting_debug_getreport_signature():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/reporting/get-report-test")
+def poste_reporting_get_report_test(
+    report_name: str,
+    year: int,
+    month: int
+):
+    """
+    Chiama GetReport in sola lettura.
+
+    NON invia Telegrammi.
+    NON esegue Submit.
+    NON esegue PreConfirm/Confirm.
+    NON modifica Supabase.
+    NON genera costi postali.
+    """
+
+    history = HistoryPlugin()
+    xml_sent = None
+    xml_received = None
+
+    try:
+        report_name = str(
+            report_name or ""
+        ).strip()
+
+        if not report_name:
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "REPORT_NAME_MANCANTE",
+                "error": "Specificare report_name"
+            }
+
+        if month < 1 or month > 12:
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "REPORT_MONTH_NON_VALIDO",
+                "error": "Il mese deve essere compreso tra 1 e 12",
+                "month": month
+            }
+
+        if year < 2000 or year > 2100:
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "REPORT_YEAR_NON_VALIDO",
+                "error": "Anno non valido",
+                "year": year
+            }
+
+        if (
+            not POSTE_H2H_REPORTING_USERID
+            or not POSTE_H2H_REPORTING_PASSWORD
+        ):
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "REPORTING_CREDENZIALI_MANCANTI",
+                "error": (
+                    "POSTE_H2H_REPORTING_USERID e "
+                    "POSTE_H2H_REPORTING_PASSWORD non configurate"
+                )
+            }
+
+        session = Session()
+
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_REPORTING_USERID,
+            POSTE_H2H_REPORTING_PASSWORD
+        )
+
+        session.verify = False
+
+        transport = Transport(
+            session=session,
+            timeout=90
+        )
+
+        client = Client(
+            wsdl=POSTE_H2H_REPORTING_WSDL,
+            transport=transport,
+            plugins=[history]
+        )
+
+        # Usa esclusivamente il binding pubblico.
+        service = client.create_service(
+            (
+                "{http://ComunicazioniElettroniche."
+                "ManagementServices/FE}"
+                "BasicHttpBinding_Reports"
+            ),
+            POSTE_H2H_REPORTING_SERVICE_URL
+        )
+
+        request_payload = {
+            "Month": month,
+            "ReportName": report_name,
+            "Year": year
+        }
+
+        result = service.GetReport(
+            getReportRequest=request_payload
+        )
+
+        plain_result = make_json_safe(
+            zeep_to_plain(result)
+        )
+
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        # Evita una risposta enorme se Poste restituisce
+        # un file mensile molto grande.
+        try:
+            plain_json = json.dumps(
+                plain_result,
+                ensure_ascii=False,
+                default=str
+            )
+        except Exception:
+            plain_json = str(plain_result)
+
+        result_is_truncated = len(plain_json) > 20000
+
+        if result_is_truncated:
+            result_output = {
+                "truncated": True,
+                "total_characters": len(plain_json),
+                "preview": plain_json[:20000]
+            }
+        else:
+            result_output = plain_result
+
+        return {
+            "success": True,
+            "step": "REPORTING_GET_REPORT_TEST_OK",
+            "request": request_payload,
+            "result": result_output,
+            "result_truncated": result_is_truncated,
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
+    except Exception as e:
+        try:
+            xml_sent = etree.tostring(
+                history.last_sent["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        try:
+            xml_received = etree.tostring(
+                history.last_received["envelope"],
+                pretty_print=True,
+                encoding="unicode"
+            )
+        except Exception:
+            pass
+
+        return {
+            "success": False,
+            "step": "ERRORE_REPORTING_GET_REPORT_TEST",
+            "request": {
+                "Month": month,
+                "ReportName": report_name,
+                "Year": year
+            },
+            "error": str(e),
+            "xml_sent": xml_sent,
+            "xml_received": xml_received
+        }
+
 @app.get("/poste/h2h/test")
 def test_poste_h2h():
     try:
