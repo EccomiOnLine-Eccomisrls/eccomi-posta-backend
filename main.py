@@ -9512,7 +9512,137 @@ def telegramma_debug_mod60_schema():
             "step": "ERRORE_TELEGRAMMA_MOD60_SCHEMA",
             "error": str(e)
         }
-        
+
+@app.get("/poste/h2h/telegramma/debug-jokid-enums")
+def telegramma_debug_jokid_enums():
+    """
+    Legge una sola volta il Single WSDL Telegramma
+    ed estrae i valori enumeration dei tipi Jokid.
+
+    NON esegue Submit.
+    NON esegue SubmitJokid.
+    NON invia Telegrammi.
+    NON genera costi.
+    """
+
+    from lxml import etree as lxml_etree
+
+    try:
+        if not TELEGRAMMA_GET_STATUS_JOKID_ENABLED:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Diagnostica Jokid di sola lettura "
+                    "disattivata"
+                )
+            )
+
+        single_wsdl_url = (
+            "https://cewebservices.posteitaliane.it/"
+            "TelegrammaExtranet/WsTOL.svc?singleWsdl"
+        )
+
+        session = Session()
+
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_TOL_USERID,
+            POSTE_H2H_TOL_PASSWORD
+        )
+
+        session.verify = False
+
+        response = session.get(
+            single_wsdl_url,
+            timeout=30
+        )
+
+        response.raise_for_status()
+
+        root = lxml_etree.fromstring(
+            response.content
+        )
+
+        target_types = [
+            "TipoRecapito",
+            "TipoRecapitoComunicazioneDiServizio"
+        ]
+
+        risultati = {}
+
+        for type_name in target_types:
+            nodes = root.xpath(
+                """
+                //*[local-name()='simpleType'
+                   and @name=$type_name]
+                """,
+                type_name=type_name
+            )
+
+            type_results = []
+
+            for node in nodes:
+                enumerations = node.xpath(
+                    """
+                    .//*[local-name()='enumeration']/@value
+                    """
+                )
+
+                restriction_base = node.xpath(
+                    """
+                    ./*[local-name()='restriction']/@base
+                    """
+                )
+
+                documentation = node.xpath(
+                    """
+                    .//*[local-name()='documentation']/text()
+                    """
+                )
+
+                type_results.append({
+                    "name": type_name,
+                    "enumerations": [
+                        str(value)
+                        for value in enumerations
+                    ],
+                    "restriction_base": (
+                        restriction_base[0]
+                        if restriction_base
+                        else None
+                    ),
+                    "documentation": [
+                        str(value).strip()
+                        for value in documentation
+                        if str(value).strip()
+                    ],
+                    "xml": lxml_etree.tostring(
+                        node,
+                        pretty_print=True,
+                        encoding="unicode"
+                    )
+                })
+
+            risultati[type_name] = {
+                "found": bool(type_results),
+                "definitions_count": len(type_results),
+                "definitions": type_results
+            }
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_JOKID_ENUMS_OK",
+            "safe_read_only": True,
+            "single_wsdl_url": single_wsdl_url,
+            "types": risultati
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_JOKID_ENUMS",
+            "error": str(e)
+        }
+
 
 @app.get(
     "/poste/h2h/telegramma/submit-preview-html/{pratica_id}",
