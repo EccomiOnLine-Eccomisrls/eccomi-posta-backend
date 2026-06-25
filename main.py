@@ -3422,6 +3422,291 @@ def poste_reporting_get_report_test(
             "xml_received": xml_received
         }
 
+
+@app.get("/poste/h2h/reporting/inspect-report")
+def poste_reporting_inspect_report(
+    report_name: str = "Analitico",
+    year: int = 2026,
+    month: int = 5,
+    needle: str = ""
+):
+    """
+    Scarica un report Poste, apre lo ZIP e analizza i CSV contenuti.
+
+    Senza `needle` restituisce:
+    - nomi file;
+    - intestazioni CSV;
+    - numero righe.
+
+    Con `needle` cerca l'identificativo nelle righe del report.
+
+    NON invia Telegrammi.
+    NON genera costi postali.
+    NON modifica Supabase.
+    """
+
+    import base64
+    import csv
+    import io
+    import zipfile
+
+    try:
+        report_name = str(report_name or "").strip()
+        needle = str(needle or "").strip()
+
+        if not report_name:
+            return {
+                "success": False,
+                "step": "REPORT_NAME_MANCANTE"
+            }
+
+        if month < 1 or month > 12:
+            return {
+                "success": False,
+                "step": "MESE_NON_VALIDO",
+                "month": month
+            }
+
+        if year < 2000 or year > 2100:
+            return {
+                "success": False,
+                "step": "ANNO_NON_VALIDO",
+                "year": year
+            }
+
+        if (
+            not POSTE_H2H_REPORTING_USERID
+            or not POSTE_H2H_REPORTING_PASSWORD
+        ):
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "REPORTING_CREDENZIALI_MANCANTI"
+            }
+
+        session = Session()
+
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_REPORTING_USERID,
+            POSTE_H2H_REPORTING_PASSWORD
+        )
+
+        session.verify = False
+
+        transport = Transport(
+            session=session,
+            timeout=120
+        )
+
+        client = Client(
+            wsdl=POSTE_H2H_REPORTING_WSDL,
+            transport=transport
+        )
+
+        service = client.create_service(
+            (
+                "{http://ComunicazioniElettroniche."
+                "ManagementServices/FE}"
+                "BasicHttpBinding_Reports"
+            ),
+            POSTE_H2H_REPORTING_SERVICE_URL
+        )
+
+        request_payload = {
+            "Month": month,
+            "ReportName": report_name,
+            "Year": year
+        }
+
+        result = service.GetReport(
+            getReportRequest=request_payload
+        )
+
+        content = getattr(result, "Content", None)
+
+        if content is None and isinstance(result, dict):
+            content = result.get("Content")
+
+        if content is None:
+            return {
+                "success": False,
+                "step": "REPORT_CONTENT_ASSENTE",
+                "request": request_payload
+            }
+
+        # Zeep normalmente restituisce già bytes per xsd:base64Binary.
+        if isinstance(content, bytes):
+            zip_bytes = content
+
+        elif isinstance(content, bytearray):
+            zip_bytes = bytes(content)
+
+        elif isinstance(content, str):
+            clean_content = content.strip()
+
+            try:
+                zip_bytes = base64.b64decode(
+                    clean_content,
+                    validate=True
+                )
+            except Exception:
+                # Compatibilità con eventuale stringa binaria
+                zip_bytes = clean_content.encode(
+                    "latin-1",
+                    errors="ignore"
+                )
+
+        else:
+            return {
+                "success": False,
+                "step": "REPORT_CONTENT_TIPO_NON_SUPPORTATO",
+                "content_type": str(type(content))
+            }
+
+        # Secondo tentativo nel caso il contenuto sia ancora Base64.
+        if not zip_bytes.startswith(b"PK"):
+            try:
+                decoded_again = base64.b64decode(
+                    zip_bytes,
+                    validate=True
+                )
+
+                if decoded_again.startswith(b"PK"):
+                    zip_bytes = decoded_again
+            except Exception:
+                pass
+
+        if not zip_bytes.startswith(b"PK"):
+            return {
+                "success": False,
+                "step": "REPORT_NON_E_UNO_ZIP",
+                "first_bytes": repr(zip_bytes[:30]),
+                "size_bytes": len(zip_bytes)
+            }
+
+        files_result = []
+
+        with zipfile.ZipFile(
+            io.BytesIO(zip_bytes),
+            mode="r"
+        ) as zip_file:
+
+            zip_names = zip_file.namelist()
+
+            for filename in zip_names:
+                if filename.endswith("/"):
+                    continue
+
+                raw_file = zip_file.read(filename)
+
+                # Prova le codifiche più frequenti nei report italiani.
+                decoded_text = None
+                encoding_used = None
+
+                for encoding_name in [
+                    "utf-8-sig",
+                    "utf-8",
+                    "cp1252",
+                    "latin-1"
+                ]:
+                    try:
+                        decoded_text = raw_file.decode(
+                            encoding_name
+                        )
+                        encoding_used = encoding_name
+                        break
+                    except Exception:
+                        continue
+
+                if decoded_text is None:
+                    files_result.append({
+                        "filename": filename,
+                        "size_bytes": len(raw_file),
+                        "error": "Impossibile decodificare il file"
+                    })
+                    continue
+
+                # Individua automaticamente il separatore.
+                delimiter = ";"
+
+                try:
+                    sample = decoded_text[:5000]
+
+                    dialect = csv.Sniffer().sniff(
+                        sample,
+                        delimiters=";,|\t"
+                    )
+
+                    delimiter = dialect.delimiter
+
+                except Exception:
+                    delimiter = ";"
+
+                text_stream = io.StringIO(decoded_text)
+
+                reader = csv.DictReader(
+                    text_stream,
+                    delimiter=delimiter
+                )
+
+                headers = reader.fieldnames or []
+
+                total_rows = 0
+                matches = []
+
+                needle_lower = needle.casefold()
+
+                for row in reader:
+                    total_rows += 1
+
+                    if needle:
+                        searchable_text = " | ".join(
+                            str(value or "")
+                            for value in row.values()
+                        ).casefold()
+
+                        if needle_lower in searchable_text:
+                            matches.append({
+                                str(key): value
+                                for key, value in row.items()
+                            })
+
+                            # Evita risposte eccessivamente grandi.
+                            if len(matches) >= 20:
+                                break
+
+                files_result.append({
+                    "filename": filename,
+                    "size_bytes": len(raw_file),
+                    "encoding": encoding_used,
+                    "delimiter": delimiter,
+                    "headers": headers,
+                    "total_rows_scanned": total_rows,
+                    "needle": needle or None,
+                    "matches_count": len(matches),
+                    "matches": matches
+                })
+
+        return {
+            "success": True,
+            "step": "REPORTING_INSPECT_REPORT_OK",
+            "request": request_payload,
+            "zip_size_bytes": len(zip_bytes),
+            "files": files_result
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_REPORTING_INSPECT_REPORT",
+            "request": {
+                "Month": month,
+                "ReportName": report_name,
+                "Year": year
+            },
+            "error": str(e)
+        }
+
 @app.get("/poste/h2h/test")
 def test_poste_h2h():
     try:
