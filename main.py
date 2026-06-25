@@ -2968,33 +2968,46 @@ def supabase_test():
 
 @app.get("/poste/h2h/reporting/debug-operations")
 def poste_reporting_debug_operations():
+    """
+    Legge il WSDL Reporting e mostra le operazioni disponibili.
+
+    NON invia Telegrammi.
+    NON genera costi.
+    NON modifica le pratiche.
+    """
+
     try:
+        if (
+            not POSTE_H2H_REPORTING_USERID
+            or not POSTE_H2H_REPORTING_PASSWORD
+        ):
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "REPORTING_CREDENZIALI_MANCANTI",
+                "error": (
+                    "POSTE_H2H_REPORTING_USERID e "
+                    "POSTE_H2H_REPORTING_PASSWORD non configurate"
+                ),
+                "wsdl": POSTE_H2H_REPORTING_WSDL,
+                "service_url": POSTE_H2H_REPORTING_SERVICE_URL
+            }
+
         history = HistoryPlugin()
 
         session = Session()
-if (
-    not POSTE_H2H_REPORTING_USERID
-    or not POSTE_H2H_REPORTING_PASSWORD
-):
-    return {
-        "success": False,
-        "blocked": True,
-        "step": "REPORTING_CREDENZIALI_MANCANTI",
-        "error": (
-            "POSTE_H2H_REPORTING_USERID e "
-            "POSTE_H2H_REPORTING_PASSWORD non configurate"
-        ),
-        "wsdl": POSTE_H2H_REPORTING_WSDL,
-        "service_url": POSTE_H2H_REPORTING_SERVICE_URL
-    }
 
-session.auth = HTTPBasicAuth(
-    POSTE_H2H_REPORTING_USERID,
-    POSTE_H2H_REPORTING_PASSWORD
-)
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_REPORTING_USERID,
+            POSTE_H2H_REPORTING_PASSWORD
+        )
+
         session.verify = False
 
-        transport = Transport(session=session, timeout=60)
+        transport = Transport(
+            session=session,
+            timeout=60
+        )
 
         client = Client(
             wsdl=POSTE_H2H_REPORTING_WSDL,
@@ -3006,7 +3019,9 @@ session.auth = HTTPBasicAuth(
 
         for service_name, service in client.wsdl.services.items():
             for port_name, port in service.ports.items():
-                operations = list(port.binding._operations.keys())
+                operations = list(
+                    port.binding._operations.keys()
+                )
 
                 services.append({
                     "service": service_name,
@@ -3017,6 +3032,7 @@ session.auth = HTTPBasicAuth(
 
         return {
             "success": True,
+            "step": "REPORTING_OPERATIONS_OK",
             "wsdl": POSTE_H2H_REPORTING_WSDL,
             "service_url": POSTE_H2H_REPORTING_SERVICE_URL,
             "services": services
@@ -3025,6 +3041,9 @@ session.auth = HTTPBasicAuth(
     except Exception as e:
         return {
             "success": False,
+            "step": "ERRORE_REPORTING_DEBUG_OPERATIONS",
+            "wsdl": POSTE_H2H_REPORTING_WSDL,
+            "service_url": POSTE_H2H_REPORTING_SERVICE_URL,
             "error": str(e)
         }
 
