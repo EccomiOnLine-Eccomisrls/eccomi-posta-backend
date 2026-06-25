@@ -3047,6 +3047,189 @@ def poste_reporting_debug_operations():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/reporting/debug-getreport-signature")
+def poste_reporting_debug_getreport_signature():
+    """
+    Legge dal WSDL la firma dell'operazione GetReport.
+
+    NON chiama GetReport.
+    NON modifica pratiche.
+    NON invia Telegrammi.
+    NON genera costi.
+    """
+
+    try:
+        if (
+            not POSTE_H2H_REPORTING_USERID
+            or not POSTE_H2H_REPORTING_PASSWORD
+        ):
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "REPORTING_CREDENZIALI_MANCANTI",
+                "error": (
+                    "POSTE_H2H_REPORTING_USERID e "
+                    "POSTE_H2H_REPORTING_PASSWORD non configurate"
+                )
+            }
+
+        session = Session()
+
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_REPORTING_USERID,
+            POSTE_H2H_REPORTING_PASSWORD
+        )
+
+        session.verify = False
+
+        transport = Transport(
+            session=session,
+            timeout=60
+        )
+
+        client = Client(
+            wsdl=POSTE_H2H_REPORTING_WSDL,
+            transport=transport
+        )
+
+        risultati = []
+
+        for service_name, wsdl_service in client.wsdl.services.items():
+            for port_name, port in wsdl_service.ports.items():
+
+                operation = port.binding._operations.get(
+                    "GetReport"
+                )
+
+                if not operation:
+                    continue
+
+                input_signature = None
+                output_signature = None
+                soap_action = None
+                endpoint_address = None
+                method_doc = None
+                input_elements = []
+
+                try:
+                    input_signature = (
+                        operation.input.signature()
+                    )
+                except Exception as input_err:
+                    input_signature = (
+                        f"Errore lettura firma input: "
+                        f"{str(input_err)}"
+                    )
+
+                try:
+                    output_signature = (
+                        operation.output.signature()
+                    )
+                except Exception as output_err:
+                    output_signature = (
+                        f"Errore lettura firma output: "
+                        f"{str(output_err)}"
+                    )
+
+                try:
+                    soap_action = operation.soapaction
+                except Exception:
+                    soap_action = None
+
+                try:
+                    endpoint_address = (
+                        port.binding_options.get("address")
+                    )
+                except Exception:
+                    endpoint_address = None
+
+                try:
+                    bound_service = client.bind(
+                        service_name,
+                        port_name
+                    )
+
+                    get_report_method = getattr(
+                        bound_service,
+                        "GetReport"
+                    )
+
+                    method_doc = getattr(
+                        get_report_method,
+                        "__doc__",
+                        None
+                    )
+                except Exception:
+                    method_doc = None
+
+                try:
+                    body_type = operation.input.body.type
+
+                    elementi = getattr(
+                        body_type,
+                        "elements",
+                        []
+                    )
+
+                    for nome_elemento, elemento in elementi:
+                        input_elements.append({
+                            "name": nome_elemento,
+                            "type": str(
+                                getattr(
+                                    elemento,
+                                    "type",
+                                    ""
+                                )
+                            ),
+                            "min_occurs": getattr(
+                                elemento,
+                                "min_occurs",
+                                None
+                            ),
+                            "max_occurs": str(
+                                getattr(
+                                    elemento,
+                                    "max_occurs",
+                                    None
+                                )
+                            )
+                        })
+
+                except Exception as elements_err:
+                    input_elements.append({
+                        "error": str(elements_err)
+                    })
+
+                risultati.append({
+                    "service": service_name,
+                    "port": port_name,
+                    "binding": str(
+                        port.binding.name
+                    ),
+                    "endpoint_address": endpoint_address,
+                    "soap_action": soap_action,
+                    "input_signature": input_signature,
+                    "output_signature": output_signature,
+                    "method_doc": method_doc,
+                    "input_elements": input_elements
+                })
+
+        return {
+            "success": True,
+            "step": "REPORTING_GETREPORT_SIGNATURE_OK",
+            "wsdl": POSTE_H2H_REPORTING_WSDL,
+            "service_url": POSTE_H2H_REPORTING_SERVICE_URL,
+            "getreport": risultati
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_REPORTING_GETREPORT_SIGNATURE",
+            "wsdl": POSTE_H2H_REPORTING_WSDL,
+            "service_url": POSTE_H2H_REPORTING_SERVICE_URL,
+            "error": str(e)
+        }
 
 @app.get("/poste/h2h/test")
 def test_poste_h2h():
