@@ -9154,6 +9154,261 @@ def telegramma_debug_preventivo_jokid(
             ),
             "error": str(e)
         }
+
+@app.get("/poste/h2h/telegramma/debug-mod60-schema")
+def telegramma_debug_mod60_schema():
+    """
+    Legge WSDL e XSD Telegramma e mostra le strutture
+    relative a Jokid elettronico e Mod60.
+
+    NON esegue Submit.
+    NON invia Telegrammi.
+    NON esegue PreConfirm o Confirm.
+    NON genera costi.
+    """
+
+    from urllib.parse import urljoin
+    from lxml import etree as lxml_etree
+
+    try:
+        if not TELEGRAMMA_GET_STATUS_JOKID_ENABLED:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Diagnostica Jokid di sola lettura "
+                    "disattivata"
+                )
+            )
+
+        client, service = telegramma_service(
+            timeout=60
+        )
+
+        wsdl_url = str(
+            getattr(
+                client.wsdl,
+                "location",
+                ""
+            )
+            or ""
+        ).strip()
+
+        if not wsdl_url:
+            return {
+                "success": False,
+                "step": "WSDL_URL_NON_TROVATO"
+            }
+
+        session = Session()
+
+        session.auth = HTTPBasicAuth(
+            POSTE_H2H_TOL_USERID,
+            POSTE_H2H_TOL_PASSWORD
+        )
+
+        session.verify = False
+
+        nomi_target = {
+            "IndirizzoElettronico",
+            "ArrayOfIndirizzoElettronico",
+            "Mod60Elettronico",
+            "TipoRecapitoComunicazioneDiServizio",
+            "Destinazioni",
+            "DestinazioneFisica"
+        }
+
+        documenti_da_leggere = [
+            wsdl_url
+        ]
+
+        documenti_letti = set()
+        risultati = []
+        errori_documenti = []
+
+        while (
+            documenti_da_leggere
+            and len(documenti_letti) < 30
+        ):
+            documento_url = documenti_da_leggere.pop(0)
+
+            if documento_url in documenti_letti:
+                continue
+
+            documenti_letti.add(documento_url)
+
+            try:
+                response = session.get(
+                    documento_url,
+                    timeout=60
+                )
+
+                response.raise_for_status()
+
+                root = lxml_etree.fromstring(
+                    response.content
+                )
+
+            except Exception as documento_error:
+                errori_documenti.append({
+                    "url": documento_url,
+                    "error": str(documento_error)
+                })
+                continue
+
+            # Segue automaticamente eventuali WSDL/XSD importati.
+            import_locations = root.xpath(
+                """
+                //@schemaLocation
+                |
+                //@location
+                """
+            )
+
+            for location in import_locations:
+                location = str(
+                    location or ""
+                ).strip()
+
+                if not location:
+                    continue
+
+                url_importato = urljoin(
+                    documento_url,
+                    location
+                )
+
+                if (
+                    url_importato not in documenti_letti
+                    and url_importato not in documenti_da_leggere
+                ):
+                    documenti_da_leggere.append(
+                        url_importato
+                    )
+
+            # Cerca tipi complessi, tipi semplici ed elementi globali.
+            nodi = root.xpath(
+                """
+                //*[local-name()='complexType']
+                |
+                //*[local-name()='simpleType']
+                |
+                //*[local-name()='element']
+                """
+            )
+
+            for nodo in nodi:
+                nome = str(
+                    nodo.get("name")
+                    or ""
+                ).strip()
+
+                if nome not in nomi_target:
+                    continue
+
+                xml_node = lxml_etree.tostring(
+                    nodo,
+                    pretty_print=True,
+                    encoding="unicode"
+                )
+
+                risultati.append({
+                    "name": nome,
+                    "node_type": (
+                        lxml_etree.QName(
+                            nodo
+                        ).localname
+                    ),
+                    "source_url": documento_url,
+                    "xml": xml_node
+                })
+
+        # Riporta anche le firme Zeep dei tipi.
+        firme_zeep = {}
+
+        for nome_tipo in sorted(nomi_target):
+            try:
+                tipo = telegramma_find_type(
+                    client,
+                    nome_tipo,
+                    "Telegramma"
+                )
+
+                firma = None
+
+                try:
+                    firma = tipo.signature()
+                except Exception:
+                    firma = str(tipo)
+
+                elementi = []
+
+                try:
+                    for nome_elemento, elemento in (
+                        getattr(
+                            tipo,
+                            "elements",
+                            []
+                        )
+                    ):
+                        elementi.append({
+                            "name": nome_elemento,
+                            "type": str(
+                                getattr(
+                                    elemento,
+                                    "type",
+                                    ""
+                                )
+                            ),
+                            "min_occurs": getattr(
+                                elemento,
+                                "min_occurs",
+                                None
+                            ),
+                            "max_occurs": str(
+                                getattr(
+                                    elemento,
+                                    "max_occurs",
+                                    None
+                                )
+                            )
+                        })
+                except Exception as element_error:
+                    elementi.append({
+                        "error": str(element_error)
+                    })
+
+                firme_zeep[nome_tipo] = {
+                    "found": True,
+                    "signature": firma,
+                    "elements": elementi
+                }
+
+            except Exception as type_error:
+                firme_zeep[nome_tipo] = {
+                    "found": False,
+                    "error": str(type_error)
+                }
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_MOD60_SCHEMA_OK",
+            "safe_read_only": True,
+            "wsdl_url": wsdl_url,
+            "documents_scanned": list(
+                documenti_letti
+            ),
+            "documents_errors": errori_documenti,
+            "types_found_count": len(risultati),
+            "types_found": risultati,
+            "zeep_signatures": firme_zeep
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_MOD60_SCHEMA",
+            "error": str(e)
+        }
         
 
 @app.get(
