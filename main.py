@@ -9516,8 +9516,8 @@ def telegramma_debug_mod60_schema():
 @app.get("/poste/h2h/telegramma/debug-jokid-enums")
 def telegramma_debug_jokid_enums():
     """
-    Legge una sola volta il Single WSDL Telegramma
-    ed estrae i valori enumeration dei tipi Jokid.
+    Cerca le enumeration Jokid esclusivamente nei WSDL/XSD
+    importati dal servizio Telegramma.
 
     NON esegue Submit.
     NON esegue SubmitJokid.
@@ -9526,6 +9526,7 @@ def telegramma_debug_jokid_enums():
     """
 
     from lxml import etree as lxml_etree
+    from urllib.parse import urljoin, urlparse
 
     try:
         if not TELEGRAMMA_GET_STATUS_JOKID_ENABLED:
@@ -9537,10 +9538,24 @@ def telegramma_debug_jokid_enums():
                 )
             )
 
-        single_wsdl_url = (
-            "https://cewebservices.posteitaliane.it/"
-            "TelegrammaExtranet/WsTOL.svc?singleWsdl"
+        client, service = telegramma_service(
+            timeout=30
         )
+
+        start_url = str(
+            getattr(
+                client.wsdl,
+                "location",
+                ""
+            )
+            or ""
+        ).strip()
+
+        if not start_url:
+            return {
+                "success": False,
+                "step": "URL_WSDL_TELEGRAMMA_NON_TROVATO"
+            }
 
         session = Session()
 
@@ -9551,95 +9566,197 @@ def telegramma_debug_jokid_enums():
 
         session.verify = False
 
-        response = session.get(
-            single_wsdl_url,
-            timeout=30
-        )
-
-        response.raise_for_status()
-
-        root = lxml_etree.fromstring(
-            response.content
-        )
-
-        target_types = [
+        target_types = {
             "TipoRecapito",
             "TipoRecapitoComunicazioneDiServizio"
-        ]
+        }
 
-        risultati = {}
+        host_consentito = urlparse(
+            start_url
+        ).netloc.lower()
 
-        for type_name in target_types:
-            nodes = root.xpath(
-                """
-                //*[local-name()='simpleType'
-                   and @name=$type_name]
-                """,
-                type_name=type_name
+        coda = [start_url]
+        visitati = set()
+        documenti_errori = []
+        definizioni = []
+        tipi_correlati = []
+
+        # Limite rigido per evitare blocchi del worker Render.
+        massimo_documenti = 12
+
+        while coda and len(visitati) < massimo_documenti:
+            documento_url = coda.pop(0)
+
+            if documento_url in visitati:
+                continue
+
+            visitati.add(documento_url)
+
+            try:
+                response = session.get(
+                    documento_url,
+                    timeout=8
+                )
+
+                response.raise_for_status()
+
+                root = lxml_etree.fromstring(
+                    response.content
+                )
+
+            except Exception as documento_error:
+                documenti_errori.append({
+                    "url": documento_url,
+                    "error": str(documento_error)
+                })
+                continue
+
+            simple_types = root.xpath(
+                "//*[local-name()='simpleType']"
             )
 
-            type_results = []
+            for node in simple_types:
+                nome_tipo = str(
+                    node.get("name")
+                    or ""
+                ).strip()
 
-            for node in nodes:
-                enumerations = node.xpath(
-                    """
-                    .//*[local-name()='enumeration']/@value
-                    """
-                )
+                if not nome_tipo:
+                    continue
 
-                restriction_base = node.xpath(
-                    """
-                    ./*[local-name()='restriction']/@base
-                    """
-                )
-
-                documentation = node.xpath(
-                    """
-                    .//*[local-name()='documentation']/text()
-                    """
-                )
-
-                type_results.append({
-                    "name": type_name,
-                    "enumerations": [
-                        str(value)
-                        for value in enumerations
-                    ],
-                    "restriction_base": (
-                        restriction_base[0]
-                        if restriction_base
-                        else None
-                    ),
-                    "documentation": [
-                        str(value).strip()
-                        for value in documentation
-                        if str(value).strip()
-                    ],
-                    "xml": lxml_etree.tostring(
-                        node,
-                        pretty_print=True,
-                        encoding="unicode"
+                enumerations = [
+                    str(value)
+                    for value in node.xpath(
+                        """
+                        .//*[local-name()='enumeration']
+                        /@value
+                        """
                     )
-                })
+                ]
 
-            risultati[type_name] = {
-                "found": bool(type_results),
-                "definitions_count": len(type_results),
-                "definitions": type_results
+                if (
+                    nome_tipo in target_types
+                    or "recapito" in nome_tipo.lower()
+                    or "jokid" in nome_tipo.lower()
+                ):
+                    dettaglio = {
+                        "name": nome_tipo,
+                        "source_url": documento_url,
+                        "enumerations": enumerations,
+                        "restriction_base": (
+                            node.xpath(
+                                """
+                                ./*[local-name()='restriction']
+                                /@base
+                                """
+                            )[0]
+                            if node.xpath(
+                                """
+                                ./*[local-name()='restriction']
+                                /@base
+                                """
+                            )
+                            else None
+                        ),
+                        "xml": lxml_etree.tostring(
+                            node,
+                            pretty_print=True,
+                            encoding="unicode"
+                        )
+                    }
+
+                    tipi_correlati.append(
+                        dettaglio
+                    )
+
+                    if nome_tipo in target_types:
+                        definizioni.append(
+                            dettaglio
+                        )
+
+            import_locations = root.xpath(
+                """
+                //@schemaLocation
+                |
+                //*[local-name()='import']/@location
+                """
+            )
+
+            for location in import_locations:
+                location = str(
+                    location or ""
+                ).strip()
+
+                if not location:
+                    continue
+
+                url_importato = urljoin(
+                    documento_url,
+                    location
+                )
+
+                parsed = urlparse(
+                    url_importato
+                )
+
+                if parsed.netloc.lower() != host_consentito:
+                    continue
+
+                identificatore = (
+                    parsed.path
+                    + "?"
+                    + parsed.query
+                ).lower()
+
+                # Seguiamo solo documenti tecnici WSDL/XSD.
+                if not any(
+                    parola in identificatore
+                    for parola in [
+                        "xsd",
+                        "wsdl"
+                    ]
+                ):
+                    continue
+
+                if (
+                    url_importato not in visitati
+                    and url_importato not in coda
+                ):
+                    coda.append(
+                        url_importato
+                    )
+
+        risultato_tipi = {}
+
+        for target_name in sorted(target_types):
+            trovate = [
+                item
+                for item in definizioni
+                if item.get("name") == target_name
+            ]
+
+            risultato_tipi[target_name] = {
+                "found": bool(trovate),
+                "definitions_count": len(trovate),
+                "definitions": trovate
             }
 
         return {
             "success": True,
-            "step": "TELEGRAMMA_JOKID_ENUMS_OK",
+            "step": "TELEGRAMMA_JOKID_ENUMS_IMPORT_OK",
             "safe_read_only": True,
-            "single_wsdl_url": single_wsdl_url,
-            "types": risultati
+            "start_url": start_url,
+            "documents_scanned": list(visitati),
+            "documents_scanned_count": len(visitati),
+            "documents_errors": documenti_errori,
+            "types": risultato_tipi,
+            "related_simple_types": tipi_correlati
         }
 
     except Exception as e:
         return {
             "success": False,
-            "step": "ERRORE_TELEGRAMMA_JOKID_ENUMS",
+            "step": "ERRORE_TELEGRAMMA_JOKID_ENUMS_IMPORT",
             "error": str(e)
         }
 
