@@ -229,6 +229,16 @@ POSTE_H2H_REPORTING_SERVICE_URL = os.getenv(
     "https://sptest.posteitaliane.it/Reporting/Reports.svc"
 )
 
+POSTE_H2H_REPORTING_USERID = os.getenv(
+    "POSTE_H2H_REPORTING_USERID",
+    ""
+).strip()
+
+POSTE_H2H_REPORTING_PASSWORD = os.getenv(
+    "POSTE_H2H_REPORTING_PASSWORD",
+    ""
+).strip()
+
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # ============================================================
@@ -2962,10 +2972,26 @@ def poste_reporting_debug_operations():
         history = HistoryPlugin()
 
         session = Session()
-        session.auth = HTTPBasicAuth(
-            POSTE_H2H_TOL_USERID,
-            POSTE_H2H_TOL_PASSWORD
-        )
+if (
+    not POSTE_H2H_REPORTING_USERID
+    or not POSTE_H2H_REPORTING_PASSWORD
+):
+    return {
+        "success": False,
+        "blocked": True,
+        "step": "REPORTING_CREDENZIALI_MANCANTI",
+        "error": (
+            "POSTE_H2H_REPORTING_USERID e "
+            "POSTE_H2H_REPORTING_PASSWORD non configurate"
+        ),
+        "wsdl": POSTE_H2H_REPORTING_WSDL,
+        "service_url": POSTE_H2H_REPORTING_SERVICE_URL
+    }
+
+session.auth = HTTPBasicAuth(
+    POSTE_H2H_REPORTING_USERID,
+    POSTE_H2H_REPORTING_PASSWORD
+)
         session.verify = False
 
         transport = Transport(session=session, timeout=60)
