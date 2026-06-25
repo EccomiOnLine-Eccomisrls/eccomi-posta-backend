@@ -9017,6 +9017,145 @@ def telegramma_debug_operations_signatures():
             "error": str(e)
         }
 
+@app.get("/poste/h2h/telegramma/debug-preventivo-jokid")
+def telegramma_debug_preventivo_jokid(
+    parole: int = 10
+):
+    """
+    Confronta i preventivi Telegramma:
+    - base;
+    - Jokid;
+    - Jokid elettronico.
+
+    NON esegue Submit.
+    NON invia Telegrammi.
+    NON esegue PreConfirm o Confirm.
+    NON genera costi postali.
+    """
+
+    try:
+        if not TELEGRAMMA_GET_STATUS_JOKID_ENABLED:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Diagnostica Jokid di sola lettura "
+                    "disattivata"
+                )
+            )
+
+        if parole < 1:
+            parole = 1
+
+        if parole > 1000:
+            parole = 1000
+
+        client, service = telegramma_service(
+            timeout=60
+        )
+
+        TOLPricingRequestType = telegramma_find_type(
+            client,
+            "TOLPricingRequest",
+            "Telegramma.WS"
+        )
+
+        combinazioni = [
+            {
+                "nome": "BASE",
+                "Jokid": False,
+                "JoikidElettronico": False
+            },
+            {
+                "nome": "JOKID",
+                "Jokid": True,
+                "JoikidElettronico": False
+            },
+            {
+                "nome": "JOKID_ELETTRONICO",
+                "Jokid": True,
+                "JoikidElettronico": True
+            },
+            {
+                "nome": "SOLO_ELETTRONICO",
+                "Jokid": False,
+                "JoikidElettronico": True
+            }
+        ]
+
+        risultati = []
+
+        for combinazione in combinazioni:
+            try:
+                request_obj = TOLPricingRequestType(
+                    AnticipazioneTelefonica=False,
+                    CopiaMittente=False,
+                    Coupon=None,
+                    JoikidElettronico=(
+                        combinazione[
+                            "JoikidElettronico"
+                        ]
+                    ),
+                    Jokid=combinazione["Jokid"],
+                    Nazionale=True,
+                    NumeroDestinatari=1,
+                    Parole=parole,
+                    StatoDestinazione="ITALIA"
+                )
+
+                response = service.Preventivo(
+                    request=request_obj
+                )
+
+                risultati.append({
+                    "nome": combinazione["nome"],
+                    "jokid": combinazione["Jokid"],
+                    "joikid_elettronico": (
+                        combinazione[
+                            "JoikidElettronico"
+                        ]
+                    ),
+                    "success": True,
+                    "result": make_json_safe(
+                        zeep_to_plain(response)
+                    )
+                })
+
+            except Exception as combinazione_error:
+                risultati.append({
+                    "nome": combinazione["nome"],
+                    "jokid": combinazione["Jokid"],
+                    "joikid_elettronico": (
+                        combinazione[
+                            "JoikidElettronico"
+                        ]
+                    ),
+                    "success": False,
+                    "error": str(
+                        combinazione_error
+                    )
+                })
+
+        return {
+            "success": True,
+            "step": (
+                "TELEGRAMMA_PREVENTIVO_JOKID_OK"
+            ),
+            "safe_read_only": True,
+            "parole": parole,
+            "numero_destinatari": 1,
+            "risultati": risultati
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": (
+                "ERRORE_TELEGRAMMA_PREVENTIVO_JOKID"
+            ),
+            "error": str(e)
+        }
+        
+
 @app.get(
     "/poste/h2h/telegramma/submit-preview-html/{pratica_id}",
     response_class=HTMLResponse
