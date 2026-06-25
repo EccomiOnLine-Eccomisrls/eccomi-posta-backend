@@ -4081,6 +4081,236 @@ def telegramma_get_status_debug(pratica_id: str, guid: str = ""):
             "error": str(e)
         }
 
+@app.get(
+    "/poste/h2h/telegramma/get-status-jokid/{pratica_id}"
+)
+def telegramma_get_status_jokid_debug(
+    pratica_id: str,
+    guid_message: str = "",
+    id_telegramma: str = ""
+):
+    """
+    Interroga GetStatusJokid per verificare lo stato
+    della comunicazione di servizio collegata al Telegramma.
+
+    NON invia Telegrammi.
+    NON esegue Submit.
+    NON esegue PreConfirm o Confirm.
+    NON genera costi.
+    NON modifica Supabase.
+    """
+
+    import json
+    import re
+
+    try:
+        require_h2h_debug_enabled()
+
+        pratica_res = (
+            supabase
+            .table("pratiche")
+            .select("*")
+            .eq("id", pratica_id)
+            .single()
+            .execute()
+        )
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "PRATICA_NON_TROVATA",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        tipo_servizio = str(
+            pratica.get("tipo_servizio") or ""
+        ).strip().upper()
+
+        if tipo_servizio != "TELEGRAMMA":
+            return {
+                "success": False,
+                "step": "SERVIZIO_NON_VALIDO",
+                "error": (
+                    "La pratica indicata non è "
+                    "un Telegramma"
+                ),
+                "tipo_servizio": tipo_servizio
+            }
+
+        poste_response = (
+            pratica.get("poste_response")
+            or {}
+        )
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(
+                    poste_response
+                )
+            except Exception:
+                poste_response = {
+                    "raw": poste_response
+                }
+
+        def normalizza_chiave(value):
+            return re.sub(
+                r"[^a-z0-9]",
+                "",
+                str(value or "").lower()
+            )
+
+        def cerca_valore(node, chiavi_cercate):
+            chiavi_normalizzate = {
+                normalizza_chiave(item)
+                for item in chiavi_cercate
+            }
+
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if (
+                        normalizza_chiave(key)
+                        in chiavi_normalizzate
+                    ):
+                        if value not in [
+                            None,
+                            "",
+                            [],
+                            {}
+                        ]:
+                            return str(value).strip()
+
+                for value in node.values():
+                    trovato = cerca_valore(
+                        value,
+                        chiavi_cercate
+                    )
+
+                    if trovato:
+                        return trovato
+
+            elif isinstance(node, list):
+                for value in node:
+                    trovato = cerca_valore(
+                        value,
+                        chiavi_cercate
+                    )
+
+                    if trovato:
+                        return trovato
+
+            return ""
+
+        guid_message = str(
+            guid_message or ""
+        ).strip()
+
+        id_telegramma = str(
+            id_telegramma or ""
+        ).strip()
+
+        if not guid_message:
+            guid_message = cerca_valore(
+                poste_response,
+                [
+                    "GUIDMessage",
+                    "guid_message",
+                    "GuidMessage"
+                ]
+            )
+
+        if not guid_message:
+            possibile_guid = str(
+                pratica.get("id_richiesta") or ""
+            ).strip()
+
+            if re.fullmatch(
+                (
+                    r"[0-9a-fA-F]{8}-"
+                    r"[0-9a-fA-F]{4}-"
+                    r"[0-9a-fA-F]{4}-"
+                    r"[0-9a-fA-F]{4}-"
+                    r"[0-9a-fA-F]{12}"
+                ),
+                possibile_guid
+            ):
+                guid_message = possibile_guid
+
+        if not id_telegramma:
+            id_telegramma = cerca_valore(
+                poste_response,
+                [
+                    "IDTelegramma",
+                    "id_telegramma",
+                    "IdTelegramma"
+                ]
+            )
+
+        if not guid_message:
+            return {
+                "success": False,
+                "step": "GUID_MESSAGE_NON_TROVATO",
+                "error": (
+                    "Impossibile recuperare GUIDMessage "
+                    "dalla pratica. Può essere passato "
+                    "manualmente nella query."
+                ),
+                "pratica_id": pratica_id,
+                "id_telegramma_trovato": (
+                    id_telegramma or None
+                )
+            }
+
+        client, service = telegramma_service(
+            timeout=60
+        )
+
+        request_payload = {
+            "GUIDMessage": guid_message,
+            "NumeroElementiPerPagina": 100,
+            "NumeroPagina": 1
+        }
+
+        if id_telegramma:
+            request_payload[
+                "IDTelegramma"
+            ] = id_telegramma
+
+        result = service.GetStatusJokid(
+            getStatusJokidRequest=request_payload
+        )
+
+        result_plain = make_json_safe(
+            zeep_to_plain(result)
+        )
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_GET_STATUS_JOKID_OK",
+            "safe_read_only": True,
+            "pratica_id": pratica_id,
+            "ordine": (
+                pratica.get("shopify_order_name")
+                or pratica.get("order_name")
+            ),
+            "request": request_payload,
+            "numero_accettazione": (
+                pratica.get("numero_raccomandata")
+            ),
+            "result": result_plain
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": (
+                "ERRORE_TELEGRAMMA_GET_STATUS_JOKID"
+            ),
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
+
 @app.get("/poste/h2h/telegramma/preconfirm/{pratica_id}")
 def telegramma_preconfirm_debug(pratica_id: str, guid: str = "", force: int = 0):
     """
