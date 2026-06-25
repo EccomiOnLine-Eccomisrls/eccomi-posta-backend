@@ -8556,6 +8556,221 @@ def telegramma_verifica_indirizzo(pratica_id: str):
             status_code=500
         )
 
+@app.get("/poste/h2h/telegramma/debug-operations-signatures")
+def telegramma_debug_operations_signatures():
+    """
+    Legge dal WSDL Telegramma tutte le operazioni disponibili
+    e le relative firme di input/output.
+
+    NON chiama operazioni Poste.
+    NON invia Telegrammi.
+    NON esegue Submit, PreConfirm o Confirm.
+    NON genera costi.
+    """
+
+    try:
+        client, service = telegramma_service(
+            timeout=60
+        )
+
+        risultati = []
+
+        for service_name, wsdl_service in (
+            client.wsdl.services.items()
+        ):
+            for port_name, port in (
+                wsdl_service.ports.items()
+            ):
+                endpoint_address = None
+
+                try:
+                    endpoint_address = (
+                        port.binding_options.get("address")
+                    )
+                except Exception:
+                    endpoint_address = None
+
+                for operation_name, operation in (
+                    port.binding._operations.items()
+                ):
+                    input_signature = None
+                    output_signature = None
+                    soap_action = None
+                    input_elements = []
+
+                    try:
+                        input_signature = (
+                            operation.input.signature()
+                        )
+                    except Exception as e:
+                        input_signature = (
+                            "Errore firma input: "
+                            + str(e)
+                        )
+
+                    try:
+                        output_signature = (
+                            operation.output.signature()
+                        )
+                    except Exception as e:
+                        output_signature = (
+                            "Errore firma output: "
+                            + str(e)
+                        )
+
+                    try:
+                        soap_action = (
+                            operation.soapaction
+                        )
+                    except Exception:
+                        soap_action = None
+
+                    try:
+                        body_type = (
+                            operation.input.body.type
+                        )
+
+                        elements = getattr(
+                            body_type,
+                            "elements",
+                            []
+                        )
+
+                        for element_name, element in elements:
+                            element_type = getattr(
+                                element,
+                                "type",
+                                None
+                            )
+
+                            element_info = {
+                                "name": element_name,
+                                "type": str(element_type),
+                                "min_occurs": getattr(
+                                    element,
+                                    "min_occurs",
+                                    None
+                                ),
+                                "max_occurs": str(
+                                    getattr(
+                                        element,
+                                        "max_occurs",
+                                        None
+                                    )
+                                ),
+                                "children": []
+                            }
+
+                            child_elements = getattr(
+                                element_type,
+                                "elements",
+                                []
+                            )
+
+                            for (
+                                child_name,
+                                child_element
+                            ) in child_elements:
+                                element_info[
+                                    "children"
+                                ].append({
+                                    "name": child_name,
+                                    "type": str(
+                                        getattr(
+                                            child_element,
+                                            "type",
+                                            ""
+                                        )
+                                    ),
+                                    "min_occurs": getattr(
+                                        child_element,
+                                        "min_occurs",
+                                        None
+                                    ),
+                                    "max_occurs": str(
+                                        getattr(
+                                            child_element,
+                                            "max_occurs",
+                                            None
+                                        )
+                                    )
+                                })
+
+                            input_elements.append(
+                                element_info
+                            )
+
+                    except Exception as e:
+                        input_elements.append({
+                            "error": str(e)
+                        })
+
+                    risultati.append({
+                        "service": service_name,
+                        "port": port_name,
+                        "binding": str(
+                            port.binding.name
+                        ),
+                        "endpoint_address": (
+                            endpoint_address
+                        ),
+                        "operation": operation_name,
+                        "soap_action": soap_action,
+                        "input_signature": (
+                            input_signature
+                        ),
+                        "output_signature": (
+                            output_signature
+                        ),
+                        "input_elements": (
+                            input_elements
+                        )
+                    })
+
+        parole_interesse = [
+            "avviso",
+            "consegna",
+            "delivery",
+            "notify",
+            "notification",
+            "status",
+            "esito"
+        ]
+
+        possibili_operazioni_esito = []
+
+        for item in risultati:
+            testo_item = str(item).lower()
+
+            if any(
+                parola in testo_item
+                for parola in parole_interesse
+            ):
+                possibili_operazioni_esito.append(
+                    item
+                )
+
+        return {
+            "success": True,
+            "step": (
+                "TELEGRAMMA_OPERATIONS_SIGNATURES_OK"
+            ),
+            "operations_count": len(risultati),
+            "possible_delivery_operations": (
+                possibili_operazioni_esito
+            ),
+            "operations": risultati
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": (
+                "ERRORE_TELEGRAMMA_OPERATIONS_SIGNATURES"
+            ),
+            "error": str(e)
+        }
+
 @app.get(
     "/poste/h2h/telegramma/submit-preview-html/{pratica_id}",
     response_class=HTMLResponse
