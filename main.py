@@ -9158,17 +9158,14 @@ def telegramma_debug_preventivo_jokid(
 @app.get("/poste/h2h/telegramma/debug-mod60-schema")
 def telegramma_debug_mod60_schema():
     """
-    Legge WSDL e XSD Telegramma e mostra le strutture
-    relative a Jokid elettronico e Mod60.
+    Legge esclusivamente i tipi Mod60/Jokid già caricati
+    dal WSDL tramite Zeep.
 
+    NON scarica ricorsivamente altri documenti.
     NON esegue Submit.
     NON invia Telegrammi.
-    NON esegue PreConfirm o Confirm.
     NON genera costi.
     """
-
-    from urllib.parse import urljoin
-    from lxml import etree as lxml_etree
 
     try:
         if not TELEGRAMMA_GET_STATUS_JOKID_ENABLED:
@@ -9181,226 +9178,332 @@ def telegramma_debug_mod60_schema():
             )
 
         client, service = telegramma_service(
-            timeout=60
+            timeout=30
         )
 
-        wsdl_url = str(
-            getattr(
-                client.wsdl,
-                "location",
-                ""
-            )
-            or ""
-        ).strip()
-
-        if not wsdl_url:
-            return {
-                "success": False,
-                "step": "WSDL_URL_NON_TROVATO"
-            }
-
-        session = Session()
-
-        session.auth = HTTPBasicAuth(
-            POSTE_H2H_TOL_USERID,
-            POSTE_H2H_TOL_PASSWORD
-        )
-
-        session.verify = False
-
-        nomi_target = {
+        nomi_target = [
             "IndirizzoElettronico",
             "ArrayOfIndirizzoElettronico",
             "Mod60Elettronico",
             "TipoRecapitoComunicazioneDiServizio",
             "Destinazioni",
             "DestinazioneFisica"
-        }
-
-        documenti_da_leggere = [
-            wsdl_url
         ]
 
-        documenti_letti = set()
-        risultati = []
-        errori_documenti = []
+        def safe_value(value):
+            if value is None:
+                return None
 
-        while (
-            documenti_da_leggere
-            and len(documenti_letti) < 30
-        ):
-            documento_url = documenti_da_leggere.pop(0)
+            if isinstance(
+                value,
+                (str, int, float, bool)
+            ):
+                return value
 
-            if documento_url in documenti_letti:
-                continue
+            if isinstance(
+                value,
+                (list, tuple, set)
+            ):
+                return [
+                    safe_value(item)
+                    for item in list(value)[:50]
+                ]
 
-            documenti_letti.add(documento_url)
+            if isinstance(value, dict):
+                return {
+                    str(key): safe_value(item)
+                    for key, item
+                    in list(value.items())[:50]
+                }
 
-            try:
-                response = session.get(
-                    documento_url,
-                    timeout=60
-                )
+            return str(value)
 
-                response.raise_for_status()
+        def descrivi_tipo(nome_tipo):
+            tipo = None
+            errori = []
 
-                root = lxml_etree.fromstring(
-                    response.content
-                )
-
-            except Exception as documento_error:
-                errori_documenti.append({
-                    "url": documento_url,
-                    "error": str(documento_error)
-                })
-                continue
-
-            # Segue automaticamente eventuali WSDL/XSD importati.
-            import_locations = root.xpath(
-                """
-                //@schemaLocation
-                |
-                //@location
-                """
-            )
-
-            for location in import_locations:
-                location = str(
-                    location or ""
-                ).strip()
-
-                if not location:
-                    continue
-
-                url_importato = urljoin(
-                    documento_url,
-                    location
-                )
-
-                if (
-                    url_importato not in documenti_letti
-                    and url_importato not in documenti_da_leggere
-                ):
-                    documenti_da_leggere.append(
-                        url_importato
+            for namespace_hint in [
+                "Telegramma.WS",
+                "Telegramma"
+            ]:
+                try:
+                    tipo = telegramma_find_type(
+                        client,
+                        nome_tipo,
+                        namespace_hint
                     )
 
-            # Cerca tipi complessi, tipi semplici ed elementi globali.
-            nodi = root.xpath(
-                """
-                //*[local-name()='complexType']
-                |
-                //*[local-name()='simpleType']
-                |
-                //*[local-name()='element']
-                """
-            )
+                    if tipo is not None:
+                        break
 
-            for nodo in nodi:
-                nome = str(
-                    nodo.get("name")
-                    or ""
-                ).strip()
+                except Exception as type_error:
+                    errori.append(
+                        str(type_error)
+                    )
 
-                if nome not in nomi_target:
-                    continue
+            if tipo is None:
+                return {
+                    "found": False,
+                    "errors": errori
+                }
 
-                xml_node = lxml_etree.tostring(
-                    nodo,
-                    pretty_print=True,
-                    encoding="unicode"
-                )
-
-                risultati.append({
-                    "name": nome,
-                    "node_type": (
-                        lxml_etree.QName(
-                            nodo
-                        ).localname
-                    ),
-                    "source_url": documento_url,
-                    "xml": xml_node
-                })
-
-        # Riporta anche le firme Zeep dei tipi.
-        firme_zeep = {}
-
-        for nome_tipo in sorted(nomi_target):
             try:
-                tipo = telegramma_find_type(
-                    client,
-                    nome_tipo,
-                    "Telegramma"
-                )
+                signature = tipo.signature()
+            except Exception:
+                signature = str(tipo)
 
-                firma = None
+            elementi = []
 
-                try:
-                    firma = tipo.signature()
-                except Exception:
-                    firma = str(tipo)
+            try:
+                for nome_elemento, elemento in (
+                    getattr(
+                        tipo,
+                        "elements",
+                        []
+                    )
+                    or []
+                ):
+                    element_type = getattr(
+                        elemento,
+                        "type",
+                        None
+                    )
 
-                elementi = []
+                    sotto_elementi = []
 
-                try:
-                    for nome_elemento, elemento in (
-                        getattr(
-                            tipo,
-                            "elements",
-                            []
-                        )
-                    ):
-                        elementi.append({
-                            "name": nome_elemento,
-                            "type": str(
-                                getattr(
-                                    elemento,
-                                    "type",
-                                    ""
-                                )
-                            ),
-                            "min_occurs": getattr(
-                                elemento,
-                                "min_occurs",
-                                None
-                            ),
-                            "max_occurs": str(
-                                getattr(
-                                    elemento,
-                                    "max_occurs",
-                                    None
-                                )
+                    try:
+                        for (
+                            nome_figlio,
+                            elemento_figlio
+                        ) in (
+                            getattr(
+                                element_type,
+                                "elements",
+                                []
                             )
-                        })
-                except Exception as element_error:
+                            or []
+                        ):
+                            sotto_elementi.append({
+                                "name": nome_figlio,
+                                "type": str(
+                                    getattr(
+                                        elemento_figlio,
+                                        "type",
+                                        ""
+                                    )
+                                ),
+                                "min_occurs": getattr(
+                                    elemento_figlio,
+                                    "min_occurs",
+                                    None
+                                ),
+                                "max_occurs": str(
+                                    getattr(
+                                        elemento_figlio,
+                                        "max_occurs",
+                                        None
+                                    )
+                                )
+                            })
+
+                    except Exception:
+                        sotto_elementi = []
+
                     elementi.append({
-                        "error": str(element_error)
+                        "name": nome_elemento,
+                        "type": str(element_type),
+                        "min_occurs": getattr(
+                            elemento,
+                            "min_occurs",
+                            None
+                        ),
+                        "max_occurs": str(
+                            getattr(
+                                elemento,
+                                "max_occurs",
+                                None
+                            )
+                        ),
+                        "children": sotto_elementi
                     })
 
-                firme_zeep[nome_tipo] = {
-                    "found": True,
-                    "signature": firma,
-                    "elements": elementi
-                }
+            except Exception as elements_error:
+                elementi.append({
+                    "error": str(elements_error)
+                })
 
-            except Exception as type_error:
-                firme_zeep[nome_tipo] = {
-                    "found": False,
-                    "error": str(type_error)
-                }
+            accepted_types = []
+
+            try:
+                accepted_types = [
+                    str(item)
+                    for item in (
+                        getattr(
+                            tipo,
+                            "accepted_types",
+                            []
+                        )
+                        or []
+                    )
+                ]
+            except Exception:
+                accepted_types = []
+
+            dettagli_interni = {}
+
+            for origine_nome, origine in [
+                ("tipo", tipo),
+                ("classe", tipo.__class__)
+            ]:
+                try:
+                    internal_dict = getattr(
+                        origine,
+                        "__dict__",
+                        {}
+                    )
+
+                    for key, value in internal_dict.items():
+                        key_lower = str(key).lower()
+
+                        if any(
+                            parola in key_lower
+                            for parola in [
+                                "enum",
+                                "restriction",
+                                "accepted",
+                                "value"
+                            ]
+                        ):
+                            dettagli_interni[
+                                f"{origine_nome}.{key}"
+                            ] = safe_value(value)
+
+                except Exception:
+                    pass
+
+            for restriction_name in [
+                "_restriction",
+                "restriction"
+            ]:
+                try:
+                    restriction = getattr(
+                        tipo,
+                        restriction_name,
+                        None
+                    )
+
+                    if restriction is not None:
+                        dettagli_interni[
+                            restriction_name
+                        ] = safe_value(restriction)
+
+                        for values_name in [
+                            "enumeration",
+                            "values",
+                            "accepted_values"
+                        ]:
+                            values = getattr(
+                                restriction,
+                                values_name,
+                                None
+                            )
+
+                            if values is not None:
+                                dettagli_interni[
+                                    (
+                                        restriction_name
+                                        + "."
+                                        + values_name
+                                    )
+                                ] = safe_value(values)
+
+                except Exception:
+                    pass
+
+            return {
+                "found": True,
+                "qname": str(
+                    getattr(
+                        tipo,
+                        "qname",
+                        None
+                    )
+                ),
+                "class": str(
+                    tipo.__class__
+                ),
+                "signature": signature,
+                "accepted_types": accepted_types,
+                "elements": elementi,
+                "internal_details": dettagli_interni
+            }
+
+        risultati = {
+            nome_tipo: descrivi_tipo(nome_tipo)
+            for nome_tipo in nomi_target
+        }
+
+        candidati = []
+
+        try:
+            for tipo in client.wsdl.types.types:
+                qname = getattr(
+                    tipo,
+                    "qname",
+                    None
+                )
+
+                localname = str(
+                    getattr(
+                        qname,
+                        "localname",
+                        ""
+                    )
+                    or ""
+                )
+
+                localname_lower = (
+                    localname.lower()
+                )
+
+                if any(
+                    parola in localname_lower
+                    for parola in [
+                        "mod60",
+                        "elettron",
+                        "jokid",
+                        "recapito",
+                        "destinaz"
+                    ]
+                ):
+                    try:
+                        candidate_signature = (
+                            tipo.signature()
+                        )
+                    except Exception:
+                        candidate_signature = str(
+                            tipo
+                        )
+
+                    candidati.append({
+                        "name": localname,
+                        "qname": str(qname),
+                        "signature": (
+                            candidate_signature
+                        )
+                    })
+
+        except Exception as candidates_error:
+            candidati.append({
+                "error": str(candidates_error)
+            })
 
         return {
             "success": True,
             "step": "TELEGRAMMA_MOD60_SCHEMA_OK",
             "safe_read_only": True,
-            "wsdl_url": wsdl_url,
-            "documents_scanned": list(
-                documenti_letti
-            ),
-            "documents_errors": errori_documenti,
-            "types_found_count": len(risultati),
-            "types_found": risultati,
-            "zeep_signatures": firme_zeep
+            "types": risultati,
+            "related_types": candidati[:100]
         }
 
     except Exception as e:
