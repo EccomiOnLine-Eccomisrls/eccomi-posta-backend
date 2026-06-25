@@ -493,6 +493,18 @@ def h2h_debug_enabled():
         "on"
     ]
 
+TELEGRAMMA_GET_STATUS_JOKID_ENABLED = os.getenv(
+    "TELEGRAMMA_GET_STATUS_JOKID_ENABLED",
+    "false"
+).strip().lower() in [
+    "true",
+    "1",
+    "yes",
+    "si",
+    "sì",
+    "on"
+]
+
 
 def require_h2h_debug_enabled():
     if not h2h_debug_enabled():
@@ -4104,7 +4116,11 @@ def telegramma_get_status_jokid_debug(
     import re
 
     try:
-        require_h2h_debug_enabled()
+        if not TELEGRAMMA_GET_STATUS_JOKID_ENABLED:
+            raise HTTPException(
+                status_code=403,
+                detail="GetStatusJokid di sola lettura disattivato"
+            )
 
         pratica_res = (
             supabase
