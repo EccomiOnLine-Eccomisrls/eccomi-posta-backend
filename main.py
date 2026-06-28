@@ -7465,8 +7465,8 @@ def telegramma_submit_preview_elettronico(
             "error": str(e)
         }
 
-@app.get("/poste/h2h/telegramma/submit-preview-elettronico/{pratica_id}")
-def telegramma_submit_preview_elettronico(pratica_id: str):
+@app.get("/poste/h2h/telegramma/submit-preview/{pratica_id}")
+def telegramma_submit_preview(pratica_id: str):
     """
     Genera anteprima XML Submit Telegramma.
 
