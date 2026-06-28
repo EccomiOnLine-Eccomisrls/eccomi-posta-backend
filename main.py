@@ -11305,13 +11305,49 @@ def _telegramma_submit_poste(
             "on"
         ]
 
+        # Vecchia pratica tecnica usata per test precedenti.
         is_pratica_tecnica = (
             pratica_id
             == "525aceed-cd97-400e-9a25-49ec102078f1"
         )
 
+        # Nuovo test protetto Mod60 elettronico.
+        telegramma_mod60_test_enabled = os.getenv(
+            "TELEGRAMMA_MOD60_TEST_ENABLED",
+            "false"
+        ).strip().lower() in [
+            "true",
+            "1",
+            "yes",
+            "si",
+            "sì",
+            "on"
+        ]
+
+        telegramma_mod60_test_pratica_id = str(
+            os.getenv(
+                "TELEGRAMMA_MOD60_TEST_PRACTICE_ID",
+                ""
+            )
+            or ""    
+        ).strip()
+
+        is_pratica_mod60_test = (
+            telegramma_mod60_test_enabled
+            and bool(telegramma_mod60_test_pratica_id)
+            and pratica_id == telegramma_mod60_test_pratica_id
+            and variant == "mod60_elettronico"
+        )
+
+        # Autorizza il Submit reale solo alla vecchia pratica tecnica
+        # oppure alla nuova pratica Mod60 esplicitamente abilitata.
+        is_submit_tecnico_autorizzato = (
+            is_pratica_tecnica
+            or is_pratica_mod60_test
+        )
+
         if (
-            not is_pratica_tecnica
+            not is_submit_tecnico_autorizzato
             and not telegramma_auto_enabled
         ):
             return {
@@ -11346,7 +11382,7 @@ def _telegramma_submit_poste(
         ]
 
         if (
-            not is_pratica_tecnica
+            not is_submit_tecnico_autorizzato
             and "sptest" in str(
                 POSTE_H2H_TOL_SERVICE_URL
             ).lower()
@@ -11492,6 +11528,42 @@ def _telegramma_submit_poste(
                 "pratica_id": pratica_id
             }
 
+        email_esito = None
+
+        if is_pratica_mod60_test:
+            import re
+    
+            email_esito = str(
+                pratica.get("cliente_email")
+                or pratica.get("email_to")
+                or ""
+            ).strip()
+            
+            email_pattern = (
+                r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+            )
+            
+            if not re.match(
+                email_pattern,
+                email_esito
+            ):
+                return {
+                    "success": False,
+                    "blocked": True,
+                    "step": "EMAIL_MOD60_NON_VALIDA",
+                    "error": (
+                        "La pratica tecnica Mod60 non contiene "
+                        "una email cliente valida."
+                    ),
+                    "pratica_id": pratica_id,
+                    "cliente_email": pratica.get(
+                        "cliente_email"
+                    ),
+                    "email_to": pratica.get(
+                        "email_to"
+                    )
+                }
+                
         if is_pratica_tecnica:
             if variant in [
                 "15_words",
@@ -11567,6 +11639,35 @@ def _telegramma_submit_poste(
                 "Telegramma.WS"
             )
         )
+        
+        IndirizzoElettronicoType = None
+        ArrayIndirizzoElettronicoType = None
+        Mod60ElettronicoType = None
+
+        if is_pratica_mod60_test:
+            IndirizzoElettronicoType = (
+                telegramma_find_type(
+                    client,
+                    "IndirizzoElettronico",
+                    "Telegramma.WS"
+                )
+            )
+
+            ArrayIndirizzoElettronicoType = (
+                telegramma_find_type(
+                    client,
+                    "ArrayOfIndirizzoElettronico",
+                    "Telegramma.WS"
+                )
+            )
+
+            Mod60ElettronicoType = (
+                telegramma_find_type(
+                    client,
+                    "Mod60Elettronico",
+                    "Telegramma.WS"
+                )
+            )
 
         mitt_anagrafica = (
             telegramma_prepara_anagrafica_poste(
@@ -12052,6 +12153,35 @@ def _telegramma_submit_poste(
                 )
             }
 
+        mod60_elettronico_obj = None
+        tipo_recapito_mod60 = None
+
+        if is_pratica_mod60_test:
+            indirizzo_elettronico_obj = (
+                IndirizzoElettronicoType(
+                    Indirizzo=email_esito,
+                    TipoIndirizzo="Mail"
+                )
+            )
+
+            array_indirizzi_elettronici_obj = (
+                ArrayIndirizzoElettronicoType(
+                    IndirizzoElettronico=[
+                        indirizzo_elettronico_obj
+                    ]
+                )
+            )
+
+            mod60_elettronico_obj = (
+                Mod60ElettronicoType(
+                    IndirizziElettronici=(
+                        array_indirizzi_elettronici_obj
+                    )
+                )
+            )
+
+            tipo_recapito_mod60 = "Elettronico"
+
         # =====================================================
         # COSTRUZIONE TELEGRAMMA DEFINITIVO
         # =====================================================
@@ -12083,13 +12213,25 @@ def _telegramma_submit_poste(
             GUIDMessage=(
                 guid_message_da_inviare
             ),
+            # Jokid completo NON attivo.
             Jokid=None,
+
             Mittente=mittente_obj,
-            Mod60Elettronico=None,
+
+            # Mod60 elettronico attivo solo per la pratica tecnica autorizzata.
+            Mod60Elettronico=(
+                mod60_elettronico_obj
+            ),
+
             Nazionale=True,
             Opzioni=opzioni,
             PartiTesto=info_testo,
-            TipoRecapitoMod60=None,
+
+            # Tipo recapito Mod60 attivo solo per la pratica tecnica autorizzata.
+            TipoRecapitoMod60=(
+                tipo_recapito_mod60
+            ),
+
             TipoTelegramma="TS",
             Valorizzazione=xsd.SkipValue
         )
@@ -12186,6 +12328,21 @@ def _telegramma_submit_poste(
             ),
             "submit_ok": submit_ok,
             "pricing": pricing_plain,
+            "mod60_elettronico": {
+                "attivo": is_pratica_mod60_test,
+                "email": email_esito,
+                "tipo_indirizzo": (
+                    "Mail"
+                    if is_pratica_mod60_test
+                    else None
+                ),
+                "tipo_recapito": (
+                    "Elettronico"
+                    if is_pratica_mod60_test
+                    else None
+                ),
+                "jokid": False
+            },
             "validation_same_id_request": (
                 validation_plain
             ),
@@ -12257,6 +12414,21 @@ def _telegramma_submit_poste(
             "destinatario_normalizzato": (
                 destinatario_data
             ),
+            "mod60_elettronico": {
+                "attivo": is_pratica_mod60_test,
+                "email": email_esito,
+                "tipo_indirizzo": (
+                    "Mail"
+                    if is_pratica_mod60_test
+                    else None
+                ),
+                "tipo_recapito": (
+                    "Elettronico"
+                    if is_pratica_mod60_test
+                    else None
+                ),
+                "jokid": False
+            },
             "submit_result": plain_result,
             "xml_sent": xml_sent,
             "xml_received": xml_received
