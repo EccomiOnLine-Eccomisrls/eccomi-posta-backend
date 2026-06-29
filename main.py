@@ -3962,7 +3962,7 @@ def telegramma_flow_types():
         }
 
 @app.get("/poste/h2h/telegramma/get-status/{pratica_id}")
-def telegramma_get_status_debug(pratica_id: str, guid: str = ""):
+def telegramma_get_status_debug(pratica_id: str, guid: str = "", redirect: str = ""):
     """
     GetStatus Telegramma H2H.
 
@@ -4228,6 +4228,19 @@ def telegramma_get_status_debug(pratica_id: str, guid: str = ""):
             .eq("id", pratica_id)
             .execute()
         )
+        
+        if str(redirect).strip().lower() in [
+            "1",
+            "true",
+            "yes",
+            "si",
+            "sì",
+            "on"
+        ]:
+            return RedirectResponse(
+                url="/dashboard/pratiche",
+                status_code=302
+            )
 
         return {
             "success": True,
@@ -25746,8 +25759,7 @@ def dashboard_pratiche(stato: str = None):
             ]:
                 telegramma_status_html += f"""
                     <a class="btn-action"
-                       href="/poste/h2h/telegramma/get-status/{pratica_id}"
-                       target="_blank"
+                       href="/poste/h2h/telegramma/get-status/{pratica_id}?redirect=1"
                        onclick="return confirm('Aggiornare lo stato Telegramma da Poste? Non verrà inviato nulla e non verranno generati costi.')">
                         🔄 Aggiorna stato Telegramma
                     </a>
