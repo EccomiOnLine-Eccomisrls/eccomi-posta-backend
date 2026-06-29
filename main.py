@@ -25591,6 +25591,168 @@ def dashboard_pratiche(stato: str = None):
                 </span>
             """
 
+                telegramma_status_html = ""
+
+        if tipo_servizio_upper == "TELEGRAMMA":
+            ultimo_evento_val = str(
+                p.get("ultimo_evento") or ""
+            ).strip()
+
+            ultimo_messaggio_val = str(
+                p.get("ultimo_messaggio") or ""
+            ).strip()
+
+            ultimo_aggiornamento_val = str(
+                p.get("ultimo_aggiornamento") or ""
+            ).strip()
+
+            telegramma_state_val = ""
+            id_telegramma_val = ""
+
+            try:
+                pr_status = p.get("poste_response") or {}
+
+                if isinstance(pr_status, str):
+                    try:
+                        pr_status = json.loads(pr_status)
+                    except Exception:
+                        pr_status = {}
+
+                last_get_status = (
+                    pr_status.get("last_get_status")
+                    or {}
+                )
+
+                telegramma_state_val = str(
+                    last_get_status.get("state") or ""
+                ).strip()
+
+                id_telegramma_val = str(
+                    last_get_status.get("id_telegramma") or ""
+                ).strip()
+
+                if not ultimo_evento_val:
+                    ultimo_evento_val = str(
+                        last_get_status.get("ultimo_evento")
+                        or ""
+                    ).strip()
+
+                if not ultimo_messaggio_val:
+                    ultimo_messaggio_val = str(
+                        last_get_status.get("ultimo_messaggio")
+                        or ""
+                    ).strip()
+
+                if not ultimo_aggiornamento_val:
+                    ultimo_aggiornamento_val = str(
+                        last_get_status.get("checked_at")
+                        or ""
+                    ).strip()
+
+            except Exception:
+                pass
+
+            ultimo_messaggio_safe = (
+                ultimo_messaggio_val
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "")
+            )
+
+            ultimo_evento_safe = (
+                ultimo_evento_val
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "")
+            )
+
+            telegramma_state_safe = (
+                telegramma_state_val
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "")
+            )
+
+            id_telegramma_safe = (
+                id_telegramma_val
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "")
+            )
+
+            ultimo_aggiornamento_display = ""
+
+            if ultimo_aggiornamento_val:
+                try:
+                    dt_status = datetime.datetime.fromisoformat(
+                        ultimo_aggiornamento_val.replace(
+                            "Z",
+                            "+00:00"
+                        )
+                    )
+
+                    dt_status_it = dt_status.astimezone(
+                        datetime.timezone(
+                            datetime.timedelta(hours=2)
+                        )
+                    )
+
+                    ultimo_aggiornamento_display = (
+                        dt_status_it.strftime("%d/%m/%Y %H:%M")
+                    )
+
+                except Exception:
+                    ultimo_aggiornamento_display = (
+                        ultimo_aggiornamento_val
+                        .replace("T", " ")[:16]
+                    )
+
+            if (
+                telegramma_state_safe
+                or ultimo_messaggio_safe
+                or ultimo_evento_safe
+            ):
+                telegramma_status_html = f"""
+                    <div style="
+                        margin-top:10px;
+                        padding:12px 14px;
+                        border-radius:14px;
+                        background:#eef6ff;
+                        border:1px solid #bfdbfe;
+                        color:#1e3a8a;
+                        font-size:14px;
+                        line-height:1.35;
+                        font-weight:700;
+                    ">
+                        📨 Stato Telegramma:
+                        <strong>{telegramma_state_safe or ultimo_evento_safe}</strong>
+                        <br>
+                        <span style="font-weight:600;color:#334155;">
+                            {ultimo_messaggio_safe}
+                        </span>
+                        {"<br><small style='color:#64748b;'>ID Telegramma: " + id_telegramma_safe + "</small>" if id_telegramma_safe else ""}
+                        {"<br><small style='color:#64748b;'>Aggiornato: " + ultimo_aggiornamento_display + "</small>" if ultimo_aggiornamento_display else ""}
+                    </div>
+                """
+
+            if stato_pratica in [
+                "SUBMIT_POSTE_OK",
+                "INVIATO_POSTE",
+                "COMPLETATO"
+            ]:
+                telegramma_status_html += f"""
+                    <a class="btn-action"
+                       href="/poste/h2h/telegramma/get-status/{pratica_id}"
+                       target="_blank"
+                       onclick="return confirm('Aggiornare lo stato Telegramma da Poste? Non verrà inviato nulla e non verranno generati costi.')">
+                        🔄 Aggiorna stato Telegramma
+                    </a>
+                """
+
         monitor_btn = ""
 
         stato_monitorabile = str(stato_pratica or "").upper().strip()
@@ -26045,6 +26207,8 @@ def dashboard_pratiche(stato: str = None):
                     {ricevuta_cliente_html}
 
                     {email_cliente_html}
+                    
+                    {telegramma_status_html}
 
                     {monitor_btn}
 
