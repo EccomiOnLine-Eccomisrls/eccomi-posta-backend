@@ -3965,19 +3965,26 @@ def telegramma_flow_types():
 def telegramma_get_status_debug(pratica_id: str, guid: str = ""):
     """
     GetStatus Telegramma H2H.
-    NON invia Telegrammi.
-    NON genera costi.
-    Usa GUIDMessage / idRequest per leggere lo stato.
+
+    SICUREZZA:
+    - NON invia Telegrammi
+    - NON chiama Submit
+    - NON genera costi
+    - legge solo lo stato tecnico Poste
+    - salva ultimo evento in dashboard
     """
 
     history = HistoryPlugin()
 
     try:
-        pratica_res = supabase.table("pratiche") \
-            .select("*") \
-            .eq("id", pratica_id) \
-            .single() \
+        pratica_res = (
+            supabase
+            .table("pratiche")
+            .select("*")
+            .eq("id", pratica_id)
+            .single()
             .execute()
+        )
 
         if not pratica_res.data:
             return {
@@ -4055,31 +4062,184 @@ def telegramma_get_status_debug(pratica_id: str, guid: str = ""):
         except Exception:
             pass
 
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        now_iso = (
+            datetime.datetime.now(
+                datetime.timezone.utc
+            ).isoformat()
+        )
 
-        new_poste_response = dict(poste_response or {})
-        new_poste_response["last_get_status"] = {
+        # =====================================================
+        # ESTRAZIONE STATO POSTE
+        # =====================================================
+
+        status_obj = (
+            plain_result.get("Status")
+            if isinstance(plain_result, dict)
+            else {}
+        ) or {}
+
+        details_obj = (
+            status_obj.get("TelgramStatusDetails")
+            or {}
+        )
+
+        raw_details = (
+            details_obj.get(
+                "TelegrammaStatusDetailsType"
+            )
+            or []
+        )
+
+        if isinstance(raw_details, dict):
+            status_details = [raw_details]
+        elif isinstance(raw_details, list):
+            status_details = raw_details
+        else:
+            status_details = []
+
+        primo_detail = (
+            status_details[0]
+            if status_details
+            else {}
+        )
+
+        telegramma_state = str(
+            primo_detail.get("State")
+            or ""
+        ).strip()
+
+        id_telegramma = str(
+            primo_detail.get("IDTelegramma")
+            or ""
+        ).strip()
+
+        parte_telegramma = (
+            primo_detail.get("Parte")
+        )
+
+        state_upper = telegramma_state.upper()
+
+        if state_upper == "SUBMIT":
+            ultimo_evento = "TELEGRAMMA_SUBMIT"
+            ultimo_messaggio = (
+                "Telegramma accettato da Poste, "
+                "in attesa di lavorazione."
+            )
+
+        elif state_upper == "PRINTING":
+            ultimo_evento = "TELEGRAMMA_PRINTING"
+            ultimo_messaggio = (
+                "Telegramma in lavorazione/stampa "
+                "presso Poste."
+            )
+
+        elif state_upper == "PRINTED":
+            ultimo_evento = "TELEGRAMMA_PRINTED"
+            ultimo_messaggio = (
+                "Telegramma lavorato/stampato da Poste."
+            )
+
+        elif telegramma_state:
+            ultimo_evento = (
+                "TELEGRAMMA_STATUS_"
+                + "".join(
+                    c
+                    if c.isalnum()
+                    else "_"
+                    for c in state_upper
+                )
+            )
+            ultimo_messaggio = (
+                f"Stato Poste Telegramma: "
+                f"{telegramma_state}"
+            )
+
+        else:
+            ultimo_evento = "TELEGRAMMA_STATUS_UNKNOWN"
+            ultimo_messaggio = (
+                "Stato Telegramma non disponibile "
+                "nella risposta Poste."
+            )
+
+        # =====================================================
+        # SALVATAGGIO IN POSTE_RESPONSE
+        # =====================================================
+
+        new_poste_response = dict(
+            poste_response or {}
+        )
+
+        last_get_status_payload = {
             "step": "TELEGRAMMA_GET_STATUS",
             "guid_message": guid_message,
+            "id_telegramma": id_telegramma,
+            "parte": parte_telegramma,
+            "state": telegramma_state,
+            "ultimo_evento": ultimo_evento,
+            "ultimo_messaggio": ultimo_messaggio,
             "result": plain_result,
             "xml_sent": xml_sent,
             "xml_received": xml_received,
             "checked_at": now_iso
         }
 
-        supabase.table("pratiche") \
+        new_poste_response["last_get_status"] = (
+            last_get_status_payload
+        )
+
+        status_history = (
+            new_poste_response.get(
+                "telegramma_status_history"
+            )
+            or []
+        )
+
+        if not isinstance(status_history, list):
+            status_history = []
+
+        status_history.append({
+            "checked_at": now_iso,
+            "guid_message": guid_message,
+            "id_telegramma": id_telegramma,
+            "parte": parte_telegramma,
+            "state": telegramma_state,
+            "ultimo_evento": ultimo_evento,
+            "ultimo_messaggio": ultimo_messaggio
+        })
+
+        # Manteniamo solo gli ultimi 20 controlli
+        # per non appesantire troppo la colonna JSON.
+        new_poste_response[
+            "telegramma_status_history"
+        ] = status_history[-20:]
+
+        # Non tocchiamo "stato" principale della pratica.
+        # SUBMIT_POSTE_OK resta SUBMIT_POSTE_OK.
+        (
+            supabase
+            .table("pratiche")
             .update({
                 "poste_response": new_poste_response,
+                "ultimo_evento": ultimo_evento,
+                "ultimo_messaggio": ultimo_messaggio,
+                "ultimo_aggiornamento": now_iso,
                 "updated_at": now_iso
-            }) \
-            .eq("id", pratica_id) \
+            })
+            .eq("id", pratica_id)
             .execute()
+        )
 
         return {
             "success": True,
             "step": "TELEGRAMMA_GET_STATUS",
+            "safe_read_only": True,
             "pratica_id": pratica_id,
             "guid_message": guid_message,
+            "id_telegramma": id_telegramma,
+            "telegramma_state": telegramma_state,
+            "ultimo_evento": ultimo_evento,
+            "ultimo_messaggio": ultimo_messaggio,
+            "ultimo_aggiornamento": now_iso,
             "result": plain_result,
             "xml_sent": xml_sent,
             "xml_received": xml_received
