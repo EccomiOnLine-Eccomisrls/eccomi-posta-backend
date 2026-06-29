@@ -25786,7 +25786,7 @@ def dashboard_pratiche(stato: str = None):
                         {"<br><small style='color:#64748b;'>Aggiornato: " + ultimo_aggiornamento_display + "</small>" if ultimo_aggiornamento_display else ""}
                     </div>
                 """
-                📨 Stato Telegramma:
+                                        {telegramma_box_icon} Stato Telegramma:
                         <strong>{telegramma_state_safe or ultimo_evento_safe}</strong>
                         <br>
                         <span style="font-weight:600;color:#334155;">
