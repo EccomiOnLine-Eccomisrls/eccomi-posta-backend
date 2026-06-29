@@ -25724,6 +25724,41 @@ def dashboard_pratiche(stato: str = None):
                         .replace("T", " ")[:16]
                     )
 
+            telegramma_box_bg = "#eef6ff"
+            telegramma_box_border = "#bfdbfe"
+            telegramma_box_color = "#1e3a8a"
+            telegramma_box_icon = "📨"
+
+            state_upper_box = (
+                telegramma_state_safe
+                or ultimo_evento_safe
+                or ""
+            ).upper()
+
+            if state_upper_box == "SUBMIT" or "SUBMIT" in state_upper_box:
+                telegramma_box_bg = "#eef6ff"
+                telegramma_box_border = "#bfdbfe"
+                telegramma_box_color = "#1e3a8a"
+                telegramma_box_icon = "📨"
+
+            elif state_upper_box == "PRINTING" or "PRINTING" in state_upper_box:
+                telegramma_box_bg = "#fff7ed"
+                telegramma_box_border = "#fed7aa"
+                telegramma_box_color = "#9a3412"
+                telegramma_box_icon = "🖨️"
+
+            elif state_upper_box == "PRINTED" or "PRINTED" in state_upper_box:
+                telegramma_box_bg = "#ecfdf5"
+                telegramma_box_border = "#bbf7d0"
+                telegramma_box_color = "#166534"
+                telegramma_box_icon = "✅"
+
+            elif state_upper_box:
+                telegramma_box_bg = "#f5f3ff"
+                telegramma_box_border = "#ddd6fe"
+                telegramma_box_color = "#5b21b6"
+                telegramma_box_icon = "ℹ️"
+
             if (
                 telegramma_state_safe
                 or ultimo_messaggio_safe
@@ -25734,14 +25769,24 @@ def dashboard_pratiche(stato: str = None):
                         margin-top:10px;
                         padding:12px 14px;
                         border-radius:14px;
-                        background:#eef6ff;
-                        border:1px solid #bfdbfe;
-                        color:#1e3a8a;
+                        background:{telegramma_box_bg};
+                        border:1px solid {telegramma_box_border};
+                        color:{telegramma_box_color};
                         font-size:14px;
                         line-height:1.35;
                         font-weight:700;
                     ">
-                        📨 Stato Telegramma:
+                        {telegramma_box_icon} Stato Telegramma:
+                        <strong>{telegramma_state_safe or ultimo_evento_safe}</strong>
+                        <br>
+                        <span style="font-weight:600;color:#334155;">
+                            {ultimo_messaggio_safe}
+                        </span>
+                        {"<br><small style='color:#64748b;'>ID Telegramma: " + id_telegramma_safe + "</small>" if id_telegramma_safe else ""}
+                        {"<br><small style='color:#64748b;'>Aggiornato: " + ultimo_aggiornamento_display + "</small>" if ultimo_aggiornamento_display else ""}
+                    </div>
+                """
+                📨 Stato Telegramma:
                         <strong>{telegramma_state_safe or ultimo_evento_safe}</strong>
                         <br>
                         <span style="font-weight:600;color:#334155;">
