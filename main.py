@@ -25604,7 +25604,7 @@ def dashboard_pratiche(stato: str = None):
                 </span>
             """
 
-        telegramma_status_html = ""
+                telegramma_status_html = ""
 
         if tipo_servizio_upper == "TELEGRAMMA":
             ultimo_evento_val = str(
@@ -25621,6 +25621,7 @@ def dashboard_pratiche(stato: str = None):
 
             telegramma_state_val = ""
             id_telegramma_val = ""
+            costo_telegramma_val = ""
 
             try:
                 pr_status = p.get("poste_response") or {}
@@ -25662,6 +25663,18 @@ def dashboard_pratiche(stato: str = None):
                         or ""
                     ).strip()
 
+                try:
+                    costo_telegramma_val = (
+                        pr_status
+                        .get("submit_result", {})
+                        .get("telegramma", {})
+                        .get("Valorizzazione", {})
+                        .get("ImportoTotale")
+                        or ""
+                    )
+                except Exception:
+                    costo_telegramma_val = ""
+
             except Exception:
                 pass
 
@@ -25691,6 +25704,14 @@ def dashboard_pratiche(stato: str = None):
 
             id_telegramma_safe = (
                 id_telegramma_val
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "")
+            )
+
+            costo_telegramma_safe = (
+                str(costo_telegramma_val or "")
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
@@ -25735,11 +25756,11 @@ def dashboard_pratiche(stato: str = None):
                 or ""
             ).upper()
 
-            if "SUBMIT" in state_upper_box:
-                telegramma_box_bg = "#eef6ff"
-                telegramma_box_border = "#bfdbfe"
-                telegramma_box_color = "#1e3a8a"
-                telegramma_box_icon = "📨"
+            if "PRINTED" in state_upper_box:
+                telegramma_box_bg = "#ecfdf5"
+                telegramma_box_border = "#bbf7d0"
+                telegramma_box_color = "#166534"
+                telegramma_box_icon = "✅"
 
             elif "PRINTING" in state_upper_box:
                 telegramma_box_bg = "#fff7ed"
@@ -25747,11 +25768,11 @@ def dashboard_pratiche(stato: str = None):
                 telegramma_box_color = "#9a3412"
                 telegramma_box_icon = "🖨️"
 
-            elif "PRINTED" in state_upper_box:
-                telegramma_box_bg = "#ecfdf5"
-                telegramma_box_border = "#bbf7d0"
-                telegramma_box_color = "#166534"
-                telegramma_box_icon = "✅"
+            elif "SUBMIT" in state_upper_box:
+                telegramma_box_bg = "#eef6ff"
+                telegramma_box_border = "#bfdbfe"
+                telegramma_box_color = "#1e3a8a"
+                telegramma_box_icon = "📨"
 
             elif state_upper_box:
                 telegramma_box_bg = "#f5f3ff"
@@ -25763,23 +25784,47 @@ def dashboard_pratiche(stato: str = None):
                 telegramma_state_safe
                 or ultimo_messaggio_safe
                 or ultimo_evento_safe
+                or costo_telegramma_safe
             ):
+                stato_visibile = (
+                    telegramma_state_safe
+                    or ultimo_evento_safe
+                    or "Non disponibile"
+                )
+
                 id_telegramma_html = ""
 
                 if id_telegramma_safe:
                     id_telegramma_html = (
-                        f"<br><small style='color:#64748b;'>"
-                        f"ID Telegramma: {id_telegramma_safe}"
-                        f"</small>"
+                        "<br><small style='color:#64748b;'>"
+                        "ID Telegramma: "
+                        + id_telegramma_safe
+                        + "</small>"
+                    )
+
+                costo_telegramma_html = ""
+
+                if costo_telegramma_safe:
+                    costo_display = costo_telegramma_safe.replace(
+                        ".",
+                        ","
+                    )
+
+                    costo_telegramma_html = (
+                        "<br><small style='color:#92400e;font-weight:800;'>"
+                        "Costo Poste valorizzato: € "
+                        + costo_display
+                        + "</small>"
                     )
 
                 aggiornamento_html = ""
 
                 if ultimo_aggiornamento_display:
                     aggiornamento_html = (
-                        f"<br><small style='color:#64748b;'>"
-                        f"Aggiornato: {ultimo_aggiornamento_display}"
-                        f"</small>"
+                        "<br><small style='color:#64748b;'>"
+                        "Aggiornato: "
+                        + ultimo_aggiornamento_display
+                        + "</small>"
                     )
 
                 telegramma_status_html = (
@@ -25787,22 +25832,26 @@ def dashboard_pratiche(stato: str = None):
                     "margin-top:10px;"
                     "padding:12px 14px;"
                     "border-radius:14px;"
-                    f"background:{telegramma_box_bg};"
-                    f"border:1px solid {telegramma_box_border};"
-                    f"color:{telegramma_box_color};"
+                    "background:" + telegramma_box_bg + ";"
+                    "border:1px solid " + telegramma_box_border + ";"
+                    "color:" + telegramma_box_color + ";"
                     "font-size:14px;"
                     "line-height:1.35;"
                     "font-weight:700;"
                     "'>"
-                    f"{telegramma_box_icon} Stato Telegramma: "
-                    f"<strong>{telegramma_state_safe or ultimo_evento_safe}</strong>"
-                    "<br>"
-                    f"<span style='font-weight:600;color:#334155;'>"
-                    f"{ultimo_messaggio_safe}"
-                    f"</span>"
-                    f"{id_telegramma_html}"
-                    f"{aggiornamento_html}"
-                    "</div>"
+                    + telegramma_box_icon
+                    + " Stato Telegramma: "
+                    + "<strong>"
+                    + stato_visibile
+                    + "</strong>"
+                    + "<br>"
+                    + "<span style='font-weight:600;color:#334155;'>"
+                    + ultimo_messaggio_safe
+                    + "</span>"
+                    + id_telegramma_html
+                    + costo_telegramma_html
+                    + aggiornamento_html
+                    + "</div>"
                 )
 
             if stato_pratica in [
