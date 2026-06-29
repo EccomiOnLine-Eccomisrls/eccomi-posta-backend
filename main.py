@@ -28497,7 +28497,7 @@ def telegramma_costo_salvato_debug(pratica_id: str):
                     key_lower = str(k).lower()
                     nuovo_path = f"{path}.{k}"
 
-                    if any parola in key_lower for parola in parole_chiave):
+                    if any(parola in key_lower for parola in parole_chiave):
                         risultati.append({
                             "path": nuovo_path,
                             "key": k,
