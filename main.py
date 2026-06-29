@@ -28440,3 +28440,126 @@ def dashboard_pratica_errore(pratica_id: str):
         "pratica_id": pratica_id,
         "nuovo_stato": "ERRORE_POSTE"
     }
+
+@app.get("/poste/h2h/telegramma/costo-salvato/{pratica_id}")
+def telegramma_costo_salvato_debug(pratica_id: str):
+    """
+    Verifica interna costo Telegramma salvato in Supabase.
+    NON chiama Poste.
+    NON invia Telegrammi.
+    NON genera costi.
+    Legge solo la pratica e scandisce poste_response.
+    """
+
+    try:
+        pratica_res = (
+            supabase
+            .table("pratiche")
+            .select("*")
+            .eq("id", pratica_id)
+            .single()
+            .execute()
+        )
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "TELEGRAMMA_COSTO_SALVATO",
+                "error": "Pratica non trovata",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        poste_response = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response, str):
+            try:
+                poste_response = json.loads(poste_response)
+            except Exception:
+                poste_response = {}
+
+        risultati = []
+
+        parole_chiave = [
+            "importo",
+            "totale",
+            "prezzo",
+            "costo",
+            "amount",
+            "valorizzazione",
+            "tariffa"
+        ]
+
+        def cerca_valori(obj, path="poste_response"):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    key_lower = str(k).lower()
+                    nuovo_path = f"{path}.{k}"
+
+                    if any parola in key_lower for parola in parole_chiave):
+                        risultati.append({
+                            "path": nuovo_path,
+                            "key": k,
+                            "value": v
+                        })
+
+                    cerca_valori(v, nuovo_path)
+
+            elif isinstance(obj, list):
+                for idx, item in enumerate(obj):
+                    cerca_valori(
+                        item,
+                        f"{path}[{idx}]"
+                    )
+
+        cerca_valori(poste_response)
+
+        numero_raccomandata = (
+            pratica.get("numero_raccomandata")
+            or ""
+        )
+
+        guid_message = (
+            poste_response.get("guid_message")
+            or poste_response.get("id_request")
+            or pratica.get("id_richiesta")
+            or ""
+        )
+
+        id_telegramma = ""
+
+        try:
+            last_get_status = (
+                poste_response.get("last_get_status")
+                or {}
+            )
+            id_telegramma = (
+                last_get_status.get("id_telegramma")
+                or ""
+            )
+        except Exception:
+            id_telegramma = ""
+
+        return {
+            "success": True,
+            "step": "TELEGRAMMA_COSTO_SALVATO",
+            "safe_read_only": True,
+            "pratica_id": pratica_id,
+            "order_name": pratica.get("order_name"),
+            "shopify_order_name": pratica.get("shopify_order_name"),
+            "stato": pratica.get("stato"),
+            "guid_message": guid_message,
+            "id_telegramma": id_telegramma,
+            "numero_accettazione": numero_raccomandata,
+            "candidati_costo_trovati": risultati,
+            "poste_response_keys": list(poste_response.keys())
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "step": "ERRORE_TELEGRAMMA_COSTO_SALVATO",
+            "pratica_id": pratica_id,
+            "error": str(e)
+        }
