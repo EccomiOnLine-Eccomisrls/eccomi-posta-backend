@@ -25604,7 +25604,7 @@ def dashboard_pratiche(stato: str = None):
                 </span>
             """
 
-        telegramma_status_html = ""
+                telegramma_status_html = ""
 
         if tipo_servizio_upper == "TELEGRAMMA":
             ultimo_evento_val = str(
@@ -25735,19 +25735,19 @@ def dashboard_pratiche(stato: str = None):
                 or ""
             ).upper()
 
-            if state_upper_box == "SUBMIT" or "SUBMIT" in state_upper_box:
+            if "SUBMIT" in state_upper_box:
                 telegramma_box_bg = "#eef6ff"
                 telegramma_box_border = "#bfdbfe"
                 telegramma_box_color = "#1e3a8a"
                 telegramma_box_icon = "📨"
 
-            elif state_upper_box == "PRINTING" or "PRINTING" in state_upper_box:
+            elif "PRINTING" in state_upper_box:
                 telegramma_box_bg = "#fff7ed"
                 telegramma_box_border = "#fed7aa"
                 telegramma_box_color = "#9a3412"
                 telegramma_box_icon = "🖨️"
 
-            elif state_upper_box == "PRINTED" or "PRINTED" in state_upper_box:
+            elif "PRINTED" in state_upper_box:
                 telegramma_box_bg = "#ecfdf5"
                 telegramma_box_border = "#bbf7d0"
                 telegramma_box_color = "#166534"
@@ -25764,38 +25764,46 @@ def dashboard_pratiche(stato: str = None):
                 or ultimo_messaggio_safe
                 or ultimo_evento_safe
             ):
-                telegramma_status_html = f"""
-                    <div style="
-                        margin-top:10px;
-                        padding:12px 14px;
-                        border-radius:14px;
-                        background:{telegramma_box_bg};
-                        border:1px solid {telegramma_box_border};
-                        color:{telegramma_box_color};
-                        font-size:14px;
-                        line-height:1.35;
-                        font-weight:700;
-                    ">
-                        {telegramma_box_icon} Stato Telegramma:
-                        <strong>{telegramma_state_safe or ultimo_evento_safe}</strong>
-                        <br>
-                        <span style="font-weight:600;color:#334155;">
-                            {ultimo_messaggio_safe}
-                        </span>
-                        {"<br><small style='color:#64748b;'>ID Telegramma: " + id_telegramma_safe + "</small>" if id_telegramma_safe else ""}
-                        {"<br><small style='color:#64748b;'>Aggiornato: " + ultimo_aggiornamento_display + "</small>" if ultimo_aggiornamento_display else ""}
-                    </div>
-                """
-                                        {telegramma_box_icon} Stato Telegramma:
-                        <strong>{telegramma_state_safe or ultimo_evento_safe}</strong>
-                        <br>
-                        <span style="font-weight:600;color:#334155;">
-                            {ultimo_messaggio_safe}
-                        </span>
-                        {"<br><small style='color:#64748b;'>ID Telegramma: " + id_telegramma_safe + "</small>" if id_telegramma_safe else ""}
-                        {"<br><small style='color:#64748b;'>Aggiornato: " + ultimo_aggiornamento_display + "</small>" if ultimo_aggiornamento_display else ""}
-                    </div>
-                """
+                id_telegramma_html = ""
+
+                if id_telegramma_safe:
+                    id_telegramma_html = (
+                        f"<br><small style='color:#64748b;'>"
+                        f"ID Telegramma: {id_telegramma_safe}"
+                        f"</small>"
+                    )
+
+                aggiornamento_html = ""
+
+                if ultimo_aggiornamento_display:
+                    aggiornamento_html = (
+                        f"<br><small style='color:#64748b;'>"
+                        f"Aggiornato: {ultimo_aggiornamento_display}"
+                        f"</small>"
+                    )
+
+                telegramma_status_html = (
+                    "<div style='"
+                    "margin-top:10px;"
+                    "padding:12px 14px;"
+                    "border-radius:14px;"
+                    f"background:{telegramma_box_bg};"
+                    f"border:1px solid {telegramma_box_border};"
+                    f"color:{telegramma_box_color};"
+                    "font-size:14px;"
+                    "line-height:1.35;"
+                    "font-weight:700;"
+                    "'>"
+                    f"{telegramma_box_icon} Stato Telegramma: "
+                    f"<strong>{telegramma_state_safe or ultimo_evento_safe}</strong>"
+                    "<br>"
+                    f"<span style='font-weight:600;color:#334155;'>"
+                    f"{ultimo_messaggio_safe}"
+                    f"</span>"
+                    f"{id_telegramma_html}"
+                    f"{aggiornamento_html}"
+                    "</div>"
+                )
 
             if stato_pratica in [
                 "SUBMIT_POSTE_OK",
