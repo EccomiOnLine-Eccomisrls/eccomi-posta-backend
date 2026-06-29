@@ -25591,7 +25591,7 @@ def dashboard_pratiche(stato: str = None):
                 </span>
             """
 
-                telegramma_status_html = ""
+        telegramma_status_html = ""
 
         if tipo_servizio_upper == "TELEGRAMMA":
             ultimo_evento_val = str(
