@@ -5237,7 +5237,91 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
                 "error": "Ambiente Poste TEST rilevato. Per testare su sptest imposta TELEGRAMMA_H2H_TEST_SEND_ENABLED=true.",
                 "service_url": POSTE_H2H_TOL_SERVICE_URL,
                 "pratica_id": pratica_id
-            }   
+            }
+
+        # =====================================================
+        # SICUREZZA ANTI DOPPIO SUBMIT
+        # =====================================================
+        pratica_res = (
+            supabase
+            .table("pratiche")
+            .select("*")
+            .eq("id", pratica_id)
+            .single()
+            .execute()
+        )
+
+        if not pratica_res.data:
+            return {
+                "success": False,
+                "step": "TELEGRAMMA_INVIA_COMPLETO_PRATICA_NON_TROVATA",
+                "pratica_id": pratica_id
+            }
+
+        pratica = pratica_res.data
+
+        stato_pratica = str(
+            pratica.get("stato") or ""
+        ).strip().upper()
+
+        tipo_servizio = str(
+            pratica.get("tipo_servizio") or ""
+        ).strip().upper()
+
+        if tipo_servizio != "TELEGRAMMA":
+            return {
+                "success": False,
+                "blocked": True,
+                "step": "TELEGRAMMA_INVIA_COMPLETO_NON_TELEGRAMMA",
+                "tipo_servizio": tipo_servizio,
+                "pratica_id": pratica_id
+            }
+
+        poste_response_attuale = pratica.get("poste_response") or {}
+
+        if isinstance(poste_response_attuale, str):
+            try:
+                poste_response_attuale = json.loads(poste_response_attuale)
+            except Exception:
+                poste_response_attuale = {}
+
+        id_richiesta_esistente = (
+            pratica.get("id_richiesta")
+            or poste_response_attuale.get("guid_message")
+            or poste_response_attuale.get("id_request")
+            or ""
+        )
+
+        numero_esistente = (
+            pratica.get("numero_raccomandata")
+            or ""
+        )
+
+        stati_gia_lavorati = {
+            "INVIATO_POSTE",
+            "COMPLETATO",
+            "RICEVUTA_SALVATA",
+            "COMPLETATO_MANUALE"
+        }
+
+        if (
+            stato_pratica in stati_gia_lavorati
+            or numero_esistente
+        ):
+            return {
+                "success": True,
+                "skipped": True,
+                "blocked": True,
+                "step": "TELEGRAMMA_GIA_INVIATO_NO_DOPPIO_SUBMIT",
+                "message": (
+                    "La pratica risulta già inviata/lavorata. "
+                    "Nessun nuovo Submit eseguito."
+                ),
+                "pratica_id": pratica_id,
+                "stato": stato_pratica,
+                "id_richiesta": id_richiesta_esistente,
+                "numero_raccomandata": numero_esistente
+            }
             
         # 1. Submit
         submit_response = _telegramma_submit_poste(
@@ -5456,28 +5540,48 @@ def auto_telegramma_post_pagamento(pratica_id: str):
                 "tipo_servizio": tipo_servizio
             }
 
-        if stato == "INVIATO_POSTE" and email_sent:
+        if stato in [
+            "COMPLETATO",
+            "RICEVUTA_SALVATA",
+            "COMPLETATO_MANUALE"
+        ]:
             return {
                 "success": True,
                 "skipped": True,
-                "step": "AUTO_TELEGRAMMA_GIA_COMPLETO",
+                "step": "AUTO_TELEGRAMMA_STATO_FINALE_NO_INVIO",
+                "mode": mode,
+                "stato": stato
+            }
+
+        if stato == "INVIATO_POSTE" and not email_sent:
+            try:
+                pdf_cliente_url = ensure_pdf_cliente_telegramma(pratica)
+            except Exception:
+                pdf_cliente_url = None
+
+            email_result = dashboard_invia_email_cliente(pratica_id)
+
+            return {
+                "success": True,
+                "skipped": True,
+                "step": "AUTO_TELEGRAMMA_GIA_INVIATO_EMAIL_CLIENTE",
                 "mode": mode,
                 "stato": stato,
-                "email_sent": email_sent
+                "pdf_cliente_url": pdf_cliente_url,
+                "email_result": str(email_result)
             }
 
-        preventivo_result = dashboard_telegramma_preventivo(
-            pratica_id=pratica_id,
-            redirect=0
-        )
-
-        if isinstance(preventivo_result, dict) and preventivo_result.get("success") is False:
-            return {
-                "success": False,
-                "step": "AUTO_TELEGRAMMA_ERRORE_PREVENTIVO",
-                "mode": mode,
-                "preventivo_result": preventivo_result
-            }
+        # Preventivo rimosso dal flusso automatico Telegramma.
+        # Il prezzo reale viene restituito da Poste nel Submit/Valorizzazione.
+        preventivo_result = {
+            "success": True,
+            "skipped": True,
+            "step": "AUTO_TELEGRAMMA_PREVENTIVO_NON_NECESSARIO",
+            "note": (
+                "Preventivo non chiamato nel flusso automatico. "
+                "Si usa la valorizzazione restituita dal Submit Poste."
+            )
+        }
 
         invio_result = telegramma_invia_completo(
             pratica_id=pratica_id,
