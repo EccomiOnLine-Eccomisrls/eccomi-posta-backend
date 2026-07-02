@@ -5480,7 +5480,7 @@ def auto_telegramma_post_pagamento(pratica_id: str):
             }
 
         invio_result = telegramma_invia_completo(
-            pratica_id=pratica_id
+            pratica_id=pratica_id,
             variant="mod60_elettronico"
         )
 
