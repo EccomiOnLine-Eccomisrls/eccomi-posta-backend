@@ -4213,22 +4213,79 @@ def telegramma_get_status_debug(pratica_id: str, guid: str = "", redirect: str =
             "telegramma_status_history"
         ] = status_history[-20:]
 
-        # Non tocchiamo "stato" principale della pratica.
-        # SUBMIT_POSTE_OK resta SUBMIT_POSTE_OK.
+        # =====================================================
+        # REGOLA ECCOMI STATO TELEGRAMMA
+        # =====================================================
+        # Se:
+        # - la pratica è Telegramma
+        # - Poste ha restituito uno stato Telegramma
+        # - esiste una valorizzazione/prezzo Poste
+        # allora per Eccomi la pratica è INVIATO_POSTE.
+
+        tipo_servizio = str(
+            pratica.get("tipo_servizio") or ""
+        ).strip().upper()
+
+        stato_attuale_pratica = str(
+            pratica.get("stato") or ""
+        ).strip().upper()
+
+        costo_poste_valorizzato = (
+            telegramma_estrai_costo_da_poste_response(
+                new_poste_response
+            )
+        )
+
+        update_pratica = {
+            "poste_response": new_poste_response,
+            "ultimo_evento": ultimo_evento,
+            "ultimo_messaggio": ultimo_messaggio,
+            "ultimo_aggiornamento": now_iso,
+            "updated_at": now_iso
+        }
+
+        stati_da_non_sovrascrivere = {
+            "COMPLETATO",
+            "RICEVUTA_SALVATA",
+            "ANNULLATO",
+            "ERRORE_POSTE"
+        }
+
+        if (
+            tipo_servizio == "TELEGRAMMA"
+            and telegramma_state
+            and costo_poste_valorizzato is not None
+            and stato_attuale_pratica not in stati_da_non_sovrascrivere
+        ):
+            update_pratica["stato"] = "INVIATO_POSTE"
+
+            if id_telegramma:
+                update_pratica["numero_raccomandata"] = (
+                    pratica.get("numero_raccomandata")
+                    or id_telegramma
+                )
+
+            new_poste_response["telegramma_stato_eccomi"] = {
+                "stato_pratica": "INVIATO_POSTE",
+                "motivo": (
+                    "Cliente pagato, Poste valorizzato, "
+                    "GetStatus ha restituito uno stato Telegramma."
+                ),
+                "telegramma_state": telegramma_state,
+                "id_telegramma": id_telegramma,
+                "costo_poste": costo_poste_valorizzato,
+                "updated_at": now_iso
+            }
+
+            update_pratica["poste_response"] = new_poste_response
+
         (
             supabase
             .table("pratiche")
-            .update({
-                "poste_response": new_poste_response,
-                "ultimo_evento": ultimo_evento,
-                "ultimo_messaggio": ultimo_messaggio,
-                "ultimo_aggiornamento": now_iso,
-                "updated_at": now_iso
-            })
+            .update(update_pratica)
             .eq("id", pratica_id)
             .execute()
-        )
-        
+        )        
         if str(redirect).strip().lower() in [
             "1",
             "true",
@@ -4810,10 +4867,21 @@ def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
         preconfirm_plain = None
         preconfirm_called = False
         
-        stati_finali_ok = ["Printing", "Confirmed"]
+        stati_finali_ok = [
+            "Submit",
+            "Printing",
+            "Printed",
+            "Confirmed"
+        ]
+
+        stati_che_non_richiedono_preconfirm = [
+            "Printing",
+            "Printed",
+            "Confirmed"
+        ]
 
         # 2. Se non è già in stato finale, chiama PreConfirm
-        if state_before not in stati_finali_ok:
+        if state_before not in stati_che_non_richiedono_preconfirm:
             id_request_array = ArrayOfstringType(
                 string=[guid_message]
             )
@@ -4867,7 +4935,29 @@ def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
 
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        nuovo_stato = "INVIATO_POSTE" if final_state in stati_finali_ok else "SUBMIT_POSTE_OK"
+        preconfirm_ok = False
+
+        try:
+            preconfirm_ok = (
+                (preconfirm_plain or {})
+                .get("Result", {})
+                .get("ResType") == "I"
+            )
+        except Exception:
+            preconfirm_ok = False
+
+        nuovo_stato = (
+            "INVIATO_POSTE"
+            if (
+                final_state in stati_finali_ok
+                and (
+                    importo_totale
+                    or preconfirm_ok
+                    or id_telegramma
+                )
+            )
+            else "SUBMIT_POSTE_OK"
+        )
 
         new_poste_response = dict(poste_response or {})
         new_poste_response["telegramma_flow_complete"] = {
@@ -4875,6 +4965,7 @@ def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
             "guid_message": guid_message,
             "id_request": guid_message,
             "preconfirm_called": preconfirm_called,
+            "preconfirm_ok": preconfirm_ok,
             "status_before": status_before,
             "preconfirm_result": preconfirm_plain,
             "status_after": status_after,
@@ -5225,12 +5316,30 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
         id_telegramma = complete_response.get("id_telegramma")
         importo_totale = complete_response.get("importo_totale")
 
+        preconfirm_ok = bool(
+            complete_response.get("preconfirm_ok")
+        )
+
         invio_ok = bool(
-            final_state in ["Printing", "Confirmed"]
-            or (
-                poste_res_type in ["I", "W"]
-                and numero_accettazione
-                and id_telegramma
+            poste_res_type in ["I", "W"]
+            and final_state in [
+                "Submit",
+                "Printing",
+                "Printed",
+                "Confirmed"
+            ]
+            and (
+                preconfirm_ok
+                or final_state in [
+                    "Printing",
+                    "Printed",
+                    "Confirmed"
+                ]
+            )
+            and (
+                importo_totale
+                or numero_accettazione
+                or id_telegramma
             )
         )
 
@@ -6116,6 +6225,59 @@ def telegramma_clean_telefono(value):
         return ""
 
     return cleaned
+
+def telegramma_estrai_costo_da_poste_response(poste_response):
+    """
+    Cerca il costo Telegramma dentro poste_response.
+
+    Serve per applicare la regola:
+    Telegramma pagato + Poste valorizzato + stato Telegramma
+    = INVIATO_POSTE
+    """
+
+    if not poste_response:
+        return None
+
+    if isinstance(poste_response, str):
+        try:
+            poste_response = json.loads(poste_response)
+        except Exception:
+            return None
+
+    def cerca(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                key_lower = str(key or "").lower()
+
+                if key_lower in [
+                    "importototale",
+                    "grossvalue",
+                    "totalwithidb",
+                    "prezzo_totale",
+                    "costo",
+                    "totale"
+                ]:
+                    if value not in [None, "", [], {}]:
+                        try:
+                            return float(str(value).replace(",", "."))
+                        except Exception:
+                            pass
+
+                trovato = cerca(value)
+
+                if trovato not in [None, "", [], {}]:
+                    return trovato
+
+        elif isinstance(node, list):
+            for item in node:
+                trovato = cerca(item)
+
+                if trovato not in [None, "", [], {}]:
+                    return trovato
+
+        return None
+
+    return cerca(poste_response)
 
 def telegramma_build_valorizzazione(client, service, parole):
     """
