@@ -5481,6 +5481,7 @@ def auto_telegramma_post_pagamento(pratica_id: str):
 
         invio_result = telegramma_invia_completo(
             pratica_id=pratica_id
+            variant="mod60_elettronico"
         )
 
         if not isinstance(invio_result, dict) or not invio_result.get("success"):
@@ -11673,6 +11674,10 @@ def _telegramma_submit_poste(
             and pratica_id == telegramma_mod60_test_pratica_id
             and variant == "mod60_elettronico"
         )
+        richiedi_mod60_elettronico = (
+            is_pratica_mod60_test
+            or variant == "mod60_elettronico"
+        )
 
         # Autorizza il Submit reale solo alla vecchia pratica tecnica
         # oppure alla nuova pratica Mod60 esplicitamente abilitata.
@@ -11741,6 +11746,7 @@ def _telegramma_submit_poste(
             }
 
         stati_consentiti = [
+            "RICEVUTO_PAGATO",
             "PREZZATA_DA_CONFERMARE",
             "ERRORE_POSTE",
             "ERRORE_SUBMIT_POSTE",
@@ -11753,6 +11759,7 @@ def _telegramma_submit_poste(
                 "blocked": True,
                 "error": (
                     "Submit Telegramma consentito solo "
+                    "da RICEVUTO_PAGATO, "
                     "da PREZZATA_DA_CONFERMARE, "
                     "ERRORE_POSTE, "
                     "ERRORE_SUBMIT_POSTE oppure "
@@ -11865,7 +11872,7 @@ def _telegramma_submit_poste(
 
         email_esito = None
 
-        if is_pratica_mod60_test:
+        if richiedi_mod60_elettronico:
             import re
     
             email_esito = str(
@@ -11979,7 +11986,7 @@ def _telegramma_submit_poste(
         ArrayIndirizzoElettronicoType = None
         Mod60ElettronicoType = None
 
-        if is_pratica_mod60_test:
+        if richiedi_mod60_elettronico:
             IndirizzoElettronicoType = (
                 telegramma_find_type(
                     client,
@@ -12491,7 +12498,7 @@ def _telegramma_submit_poste(
         mod60_elettronico_obj = None
         tipo_recapito_mod60 = None
 
-        if is_pratica_mod60_test:
+        if richiedi_mod60_elettronico:
             indirizzo_elettronico_obj = (
                 IndirizzoElettronicoType(
                     Indirizzo=email_esito,
@@ -12664,19 +12671,24 @@ def _telegramma_submit_poste(
             "submit_ok": submit_ok,
             "pricing": pricing_plain,
             "mod60_elettronico": {
-                "attivo": is_pratica_mod60_test,
+                "attivo": richiedi_mod60_elettronico,
                 "email": email_esito,
                 "tipo_indirizzo": (
                     "Mail"
-                    if is_pratica_mod60_test
+                    if richiedi_mod60_elettronico
                     else None
                 ),
                 "tipo_recapito": (
                     "Elettronico"
-                    if is_pratica_mod60_test
+                    if richiedi_mod60_elettronico
                     else None
                 ),
-                "jokid": False
+                "jokid": False,
+                "nota": (
+                    "Mod60 elettronico richiesto a Poste. "
+                    "Non venduto come ricevuta certa fino "
+                    "a conferma ufficiale Poste."
+                )
             },
             "validation_same_id_request": (
                 validation_plain
@@ -12750,19 +12762,24 @@ def _telegramma_submit_poste(
                 destinatario_data
             ),
             "mod60_elettronico": {
-                "attivo": is_pratica_mod60_test,
+                "attivo": richiedi_mod60_elettronico,
                 "email": email_esito,
                 "tipo_indirizzo": (
                     "Mail"
-                    if is_pratica_mod60_test
+                    if richiedi_mod60_elettronico
                     else None
                 ),
                 "tipo_recapito": (
                     "Elettronico"
-                    if is_pratica_mod60_test
+                    if richiedi_mod60_elettronico
                     else None
                 ),
-                "jokid": False
+                "jokid": False,
+                "nota": (
+                    "Mod60 elettronico richiesto a Poste. "
+                    "Non venduto come ricevuta certa fino "
+                    "a conferma ufficiale Poste."
+                )
             },
             "submit_result": plain_result,
             "xml_sent": xml_sent,
