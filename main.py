@@ -6945,7 +6945,10 @@ def telegramma_anagrafica_is_azienda(data: dict) -> bool:
         " ISTITUTO ",
         " UNIVERSITA ",
         " UNIVERSITÀ ",
-        " AZIENDA "
+        " AZIENDA ",
+        " COMMISSARIATO ",
+        " QUESTURA ",
+        " PREFETTURA "
     ]
 
     return any(
@@ -7087,6 +7090,74 @@ def telegramma_prepara_anagrafica_poste(data: dict) -> dict:
         "cognome": cognome_persona or "",
         "ragione_sociale": ""
     }
+
+
+def telegramma_valida_dati_obbligatori(
+    data: dict,
+    ruolo: str
+) -> list:
+    """
+    Valida localmente i dati indispensabili prima di contattare Poste.
+
+    In particolare impedisce che un Telegramma pagato venga inviato con
+    Citta vuota, caso che Poste rifiuta con MOD60MITTENTECITTA EMPTY.
+    """
+
+    data = data or {}
+    ruolo = str(ruolo or "anagrafica").strip().lower()
+    etichetta = (
+        "mittente"
+        if ruolo == "mittente"
+        else "destinatario"
+    )
+
+    errori = []
+
+    anagrafica = telegramma_prepara_anagrafica_poste(
+        data
+    )
+
+    if not (
+        str(anagrafica.get("nome") or "").strip()
+        or str(anagrafica.get("cognome") or "").strip()
+        or str(
+            anagrafica.get("ragione_sociale") or ""
+        ).strip()
+    ):
+        errori.append(
+            f"Nome o ragione sociale {etichetta} mancante"
+        )
+
+    if not str(data.get("indirizzo") or "").strip():
+        errori.append(
+            f"Indirizzo {etichetta} mancante"
+        )
+
+    cap = normalizza_cap(
+        data.get("cap") or ""
+    )
+
+    if len(cap) != 5:
+        errori.append(
+            f"CAP {etichetta} mancante o non valido"
+        )
+
+    if not str(data.get("comune") or "").strip():
+        errori.append(
+            f"Città {etichetta} mancante"
+        )
+
+    if (
+        ruolo == "destinatario"
+        and not str(
+            data.get("provincia") or ""
+        ).strip()
+    ):
+        errori.append(
+            "Provincia destinatario mancante"
+        )
+
+    return errori
 
 
 def telegramma_estrai_esito_validazione(
@@ -11854,6 +11925,7 @@ def _telegramma_submit_poste(
             "PREZZATA_DA_CONFERMARE",
             "ERRORE_POSTE",
             "ERRORE_SUBMIT_POSTE",
+            "ERRORE_DATI_TELEGRAMMA",
             "INDIRIZZO_DA_VERIFICARE"
         ]
 
@@ -11867,6 +11939,7 @@ def _telegramma_submit_poste(
                     "da PREZZATA_DA_CONFERMARE, "
                     "ERRORE_POSTE, "
                     "ERRORE_SUBMIT_POSTE oppure "
+                    "ERRORE_DATI_TELEGRAMMA oppure "
                     "INDIRIZZO_DA_VERIFICARE."
                 ),
                 "stato": stato,
@@ -11955,6 +12028,83 @@ def _telegramma_submit_poste(
                 "provincia": "AL",
                 "telefono": ""
             })
+
+        # =====================================================
+        # VALIDAZIONE LOCALE PRIMA DI QUALSIASI CHIAMATA POSTE
+        # =====================================================
+
+        errori_dati = (
+            telegramma_valida_dati_obbligatori(
+                mittente_data,
+                "mittente"
+            )
+            + telegramma_valida_dati_obbligatori(
+                destinatario_data,
+                "destinatario"
+            )
+        )
+
+        if errori_dati:
+            now_iso_dati = datetime.datetime.now(
+                datetime.timezone.utc
+            ).isoformat()
+
+            poste_payload_dati = {
+                "step": (
+                    "TELEGRAMMA_DATI_OBBLIGATORI_"
+                    "MANCANTI"
+                ),
+                "blocked": True,
+                "submit_eseguito": False,
+                "error": "; ".join(errori_dati),
+                "errors": errori_dati,
+                "note": (
+                    "Invio bloccato dal backend prima "
+                    "di contattare Poste."
+                ),
+                "mittente_normalizzato": mittente_data,
+                "destinatario_normalizzato": (
+                    destinatario_data
+                ),
+                "checked_at": now_iso_dati
+            }
+
+            (
+                supabase
+                .table("pratiche")
+                .update({
+                    "stato": "ERRORE_DATI_TELEGRAMMA",
+                    "poste_response": poste_payload_dati,
+                    "updated_at": now_iso_dati
+                })
+                .eq("id", pratica_id)
+                .execute()
+            )
+
+            print(
+                "TELEGRAMMA_DATI_OBBLIGATORI_MANCANTI:",
+                {
+                    "pratica_id": pratica_id,
+                    "errors": errori_dati
+                }
+            )
+
+            return {
+                "success": False,
+                "blocked": True,
+                "step": (
+                    "TELEGRAMMA_DATI_OBBLIGATORI_"
+                    "MANCANTI"
+                ),
+                "pratica_id": pratica_id,
+                "submit_eseguito": False,
+                "error": "; ".join(errori_dati),
+                "errors": errori_dati,
+                "mittente_normalizzato": mittente_data,
+                "destinatario_normalizzato": (
+                    destinatario_data
+                )
+            }
 
         testo = (
             clean_h2h_text(
@@ -25580,7 +25730,10 @@ def dashboard_pratiche(stato: str = None):
     elif filtro_stato in ["ERRORI", "ERRORE_POSTE"]:
         pratiche = [
             p for p in tutte_pratiche
-            if p.get("stato") == "ERRORE_POSTE"
+            if str(
+                p.get("stato") or ""
+            ).upper().startswith("ERRORE_")
+            or p.get("stato") == "INDIRIZZO_DA_VERIFICARE"
         ]
 
     elif filtro_stato in ["INVIATI", "INVIATO_POSTE"]:
