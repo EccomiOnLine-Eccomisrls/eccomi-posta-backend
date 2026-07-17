@@ -4999,6 +4999,7 @@ def telegramma_completa_da_submit(pratica_id: str, guid: str = ""):
             "pratica_id": pratica_id,
             "guid_message": guid_message,
             "preconfirm_called": preconfirm_called,
+            "preconfirm_ok": preconfirm_ok,
             "state_before": state_before,
             "state_after": state_after,
             "final_state": final_state,
@@ -5414,6 +5415,7 @@ def telegramma_invia_completo(pratica_id: str, variant: str = ""):
             ]
             and (
                 preconfirm_ok
+                or nuovo_stato == "INVIATO_POSTE"
                 or final_state in [
                     "Printing",
                     "Printed",
@@ -20406,7 +20408,105 @@ def genera_pdf_cliente_telegramma_bytes(
     Genera ricevuta cliente Eccomi Posta per Telegramma.
     NON include importo/costo Poste.
     """
+    from zoneinfo import ZoneInfo
+
     buffer = BytesIO()
+
+    # Usa prima l'orario reale restituito da Poste nel Submit.
+    # Solo come fallback usa gli orari tecnici della pratica.
+    poste_response = pratica.get("poste_response") or {}
+
+    if isinstance(poste_response, str):
+        try:
+            poste_response = json.loads(poste_response)
+        except Exception:
+            poste_response = {}
+
+    submit_response = poste_response.get("submit_response") or {}
+    submit_result = (
+        poste_response.get("submit_result")
+        or submit_response.get("submit_result")
+        or {}
+    )
+
+    telegramma_poste = (
+        submit_result.get("telegramma")
+        or poste_response.get("telegramma")
+        or {}
+    )
+
+    flow = (
+        poste_response.get("telegramma_flow_complete")
+        or poste_response.get("complete_response")
+        or {}
+    )
+
+    candidati_data = [
+        (
+            telegramma_poste.get("DataTelegramma"),
+            "poste_locale"
+        ),
+        (poste_response.get("submit_at"), "utc"),
+        (flow.get("completed_at"), "utc"),
+        (pratica.get("updated_at"), "utc")
+    ]
+
+    data_operazione_dt = None
+    fuso_roma = ZoneInfo("Europe/Rome")
+
+    for valore_data, origine_data in candidati_data:
+        if not valore_data:
+            continue
+
+        try:
+            if isinstance(
+                valore_data,
+                datetime.datetime
+            ):
+                data_provvisoria = valore_data
+            else:
+                data_provvisoria = (
+                    datetime.datetime.fromisoformat(
+                        str(valore_data)
+                        .strip()
+                        .replace("Z", "+00:00")
+                    )
+                )
+
+            if data_provvisoria.tzinfo is None:
+                if origine_data == "poste_locale":
+                    data_provvisoria = (
+                        data_provvisoria.replace(
+                            tzinfo=fuso_roma
+                        )
+                    )
+                else:
+                    data_provvisoria = (
+                        data_provvisoria.replace(
+                            tzinfo=datetime.timezone.utc
+                        )
+                    )
+
+            data_operazione_dt = (
+                data_provvisoria.astimezone(
+                    fuso_roma
+                )
+            )
+            break
+
+        except Exception:
+            continue
+
+    if data_operazione_dt is None:
+        data_operazione_dt = datetime.datetime.now(
+            fuso_roma
+        )
+
+    data_operazione_display = (
+        data_operazione_dt.strftime(
+            "%d/%m/%Y %H:%M"
+        )
+    )
 
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
@@ -20486,7 +20586,11 @@ def genera_pdf_cliente_telegramma_bytes(
     c.setFont("Helvetica-Bold", 12)
     c.drawString(2 * cm, y, "Data operazione")
     c.setFont("Helvetica", 11)
-    c.drawString(6 * cm, y, datetime.datetime.now().strftime("%d/%m/%Y %H:%M"))
+    c.drawString(
+        6 * cm,
+        y,
+        data_operazione_display
+    )
 
     y -= 1.6 * cm
 
