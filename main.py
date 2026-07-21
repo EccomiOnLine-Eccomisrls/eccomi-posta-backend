@@ -15,6 +15,7 @@ from zeep.plugins import HistoryPlugin
 from zeep.transports import Transport
 from zeep.wsa import WsAddressingPlugin
 from zeep.xsd import AnySimpleType
+from hub_read_api import router as hub_read_router
 from lxml import etree
 from urllib.parse import urljoin
 from reportlab.pdfgen import canvas
@@ -40,6 +41,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 app = FastAPI()
+app.include_router(hub_read_router)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
